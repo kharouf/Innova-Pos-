@@ -1,0 +1,153 @@
+{
+  "entities": {
+    "product": {
+      "title": "Product",
+      "description": "Superette product inventory catalog",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "code": { "type": "string" },
+        "name": { "type": "string" },
+        "category": { "type": "string" },
+        "purchasePrice": { "type": "number" },
+        "sellingPrice": { "type": "number" },
+        "stock": { "type": "number" },
+        "minAlertQty": { "type": "number" },
+        "unit": { "type": "string" }
+      },
+      "required": ["id", "code", "name", "category", "purchasePrice", "sellingPrice", "stock", "minAlertQty", "unit"]
+    },
+    "partner": {
+      "title": "Partner",
+      "description": "Client or supplier file with basic balance",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "type": { "type": "string", "enum": ["client", "fournisseur"] },
+        "name": { "type": "string" },
+        "phone": { "type": "string" },
+        "address": { "type": "string" },
+        "currentBalance": { "type": "number" },
+        "email": { "type": "string" },
+        "nif": { "type": "string" },
+        "rc": { "type": "string" },
+        "ai": { "type": "string" }
+      },
+      "required": ["id", "type", "name", "phone", "address", "currentBalance"]
+    },
+    "invoiceItem": {
+      "title": "InvoiceItem",
+      "description": "Line item of an invoice",
+      "type": "object",
+      "properties": {
+        "productId": { "type": "string" },
+        "productName": { "type": "string" },
+        "qty": { "type": "number" },
+        "purchasePrice": { "type": "number" },
+        "sellingPrice": { "type": "number" },
+        "total": { "type": "number" }
+      },
+      "required": ["productId", "productName", "qty", "purchasePrice", "sellingPrice", "total"]
+    },
+    "invoice": {
+      "title": "Invoice",
+      "description": "Customer cash-register invoice or delivery note",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "number": { "type": "string" },
+        "date": { "type": "string" },
+        "partnerId": { "type": "string" },
+        "partnerName": { "type": "string" },
+        "type": { "type": "string", "enum": ["facture", "bl"] },
+        "subTotal": { "type": "number" },
+        "discount": { "type": "number" },
+        "taxRate": { "type": "number" },
+        "taxAmount": { "type": "number" },
+        "total": { "type": "number" },
+        "paidAmount": { "type": "number" },
+        "balance": { "type": "number" },
+        "dueDate": { "type": "string" },
+        "notes": { "type": "string" }
+      },
+      "required": ["id", "number", "date", "partnerName", "type", "subTotal", "discount", "taxRate", "taxAmount", "total", "paidAmount", "balance"]
+    },
+    "paymentTransaction": {
+      "title": "PaymentTransaction",
+      "description": "Activity history log of an installment or debt clearance",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "date": { "type": "string" },
+        "partnerId": { "type": "string" },
+        "partnerName": { "type": "string" },
+        "partnerType": { "type": "string", "enum": ["client", "fournisseur"] },
+        "type": { "type": "string", "enum": ["payment_received", "payment_sent", "credit_adjust"] },
+        "amount": { "type": "number" },
+        "notes": { "type": "string" },
+        "invoiceId": { "type": "string" }
+      },
+      "required": ["id", "date", "partnerId", "partnerName", "partnerType", "type", "amount", "notes"]
+    },
+    "traite": {
+      "title": "Traite",
+      "description": "Promissory note / commercial bill used in standard terms banking trade",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "number": { "type": "string" },
+        "dateIssue": { "type": "string" },
+        "dateDue": { "type": "string" },
+        "partnerId": { "type": "string" },
+        "partnerName": { "type": "string" },
+        "partnerPhone": { "type": "string" },
+        "amount": { "type": "number" },
+        "bankName": { "type": "string" },
+        "rib": { "type": "string" },
+        "city": { "type": "string" },
+        "status": { "type": "string", "enum": ["pending", "cleared", "cancelled"] },
+        "notes": { "type": "string" }
+      },
+      "required": ["id", "number", "dateIssue", "dateDue", "partnerId", "partnerName", "amount", "bankName", "rib", "city", "status"]
+    },
+    "expense": {
+      "title": "DailyExpense",
+      "description": "Journal entries of office or operations administrative overhead expenses",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "date": { "type": "string" },
+        "description": { "type": "string" },
+        "amount": { "type": "number" },
+        "category": { "type": "string" }
+      },
+      "required": ["id", "date", "description", "amount", "category"]
+    }
+  },
+  "firestore": {
+    "users/{userId}/products/{productId}": {
+      "schema": "product",
+      "description": "User specific product inventory catalog"
+    },
+    "users/{userId}/partners/{partnerId}": {
+      "schema": "partner",
+      "description": "User specific partner contacts and debt registry"
+    },
+    "users/{userId}/invoices/{invoiceId}": {
+      "schema": "invoice",
+      "description": "User specific point-of-sale invoices"
+    },
+    "users/{userId}/payments/{paymentId}": {
+      "schema": "paymentTransaction",
+      "description": "User specific accounts receivables ledger entries"
+    },
+    "users/{userId}/traites/{traiteId}": {
+      "schema": "traite",
+      "description": "User specific bank promissory drafts"
+    },
+    "users/{userId}/expenses/{expenseId}": {
+      "schema": "expense",
+      "description": "User specific operational utility outgoings"
+    }
+  }
+}

@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- Rounded elegant background -->
+  <rect width="512" height="512" rx="110" fill="#0f172a"/>
+  
+  <!-- Outer accent gradient ring -->
+  <circle cx="256" cy="256" r="180" fill="none" stroke="url(#g)" stroke-width="28" stroke-linecap="round"/>
+  
+  <defs>
+    <linearGradient id="g" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#3b82f6"/>
+      <stop offset="50%" stop-color="#10b981"/>
+      <stop offset="100%" stop-color="#06b6d4"/>
+    </linearGradient>
+  </defs>
+  
+  <!-- Inner Brand Initials -->
+  <text x="256" y="300" font-family="system-ui, -apple-system, sans-serif" font-weight="900" font-size="140" fill="#ffffff" text-anchor="middle" letter-spacing="-2">IN</text>
+</svg>

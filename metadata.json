@@ -1,0 +1,8 @@
+{
+  "name": "INNOVA POS",
+  "description": "Logiciel INNOVA POS - Système de gestion commerciale complet : Factures/BL, Caisse tactile (POS), Stock avec alertes, suivi Crédit/Débit Clients & Fournisseurs, Impression de Traites, et Statistiques de bénéfice intégrées (نظام تسيير تجاري ومحاسبي متكامل - إينوفا بوس).",
+  "requestFramePermissions": [
+    "camera"
+  ],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

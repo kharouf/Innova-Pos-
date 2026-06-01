@@ -1,0 +1,80 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Global safety catch-all
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Helper functions
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return isSignedIn() && request.auth.token.email == "walakharouf665@gmail.com";
+    }
+
+    // Tenant Isolation match rule helper
+    function isOwner(userId) {
+      return isSignedIn() && (request.auth.uid == userId || isAdmin());
+    }
+
+    // Ensure document IDs aren't poisoned with overflow contents (PII or injections)
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    // System Updates
+    match /updates/{updateId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+    }
+
+    // Tenant Isolation match rule
+    match /users/{userId} {
+      // Allows user's single metadata or config read/write
+      allow get: if isOwner(userId) && isValidId(userId);
+      allow list: if isAdmin(); // Restrict listing overall user documents to master admin only
+      allow write: if isOwner(userId) && isValidId(userId);
+
+      // Secure subcollections
+      match /products/{productId} {
+        allow get: if isOwner(userId) && isValidId(productId);
+        allow list: if isOwner(userId);
+        allow write: if isOwner(userId) && isValidId(productId);
+      }
+      
+      match /partners/{partnerId} {
+        allow get: if isOwner(userId) && isValidId(partnerId);
+        allow list: if isOwner(userId);
+        allow write: if isOwner(userId) && isValidId(partnerId);
+      }
+      
+      match /invoices/{invoiceId} {
+        allow get: if isOwner(userId) && isValidId(invoiceId);
+        allow list: if isOwner(userId);
+        allow write: if isOwner(userId) && isValidId(invoiceId);
+      }
+      
+      match /payments/{paymentId} {
+        allow get: if isOwner(userId) && isValidId(paymentId);
+        allow list: if isOwner(userId);
+        allow write: if isOwner(userId) && isValidId(paymentId);
+      }
+      
+      match /traites/{traiteId} {
+        allow get: if isOwner(userId) && isValidId(traiteId);
+        allow list: if isOwner(userId);
+        allow write: if isOwner(userId) && isValidId(traiteId);
+      }
+      
+      match /expenses/{expenseId} {
+        allow get: if isOwner(userId) && isValidId(expenseId);
+        allow list: if isOwner(userId);
+        allow write: if isOwner(userId) && isValidId(expenseId);
+      }
+    }
+  }
+}
