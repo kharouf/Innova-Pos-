@@ -3,10 +3,13 @@ import { motion, AnimatePresence } from 'motion/react';
 import { DatabaseState, Product, DailyExpense } from '../types';
 import { getStockStatus, getTurnoverAndBenefits, getFinancialBalances, checkLowStockAlerts } from '../utils/db';
 import { useLanguage } from '../utils/LanguageContext';
+import { safeLocalStorage } from '../utils/storage';
 import { 
   ResponsiveContainer, 
   AreaChart, 
   Area, 
+  BarChart,
+  Bar,
   XAxis, 
   YAxis, 
   CartesianGrid, 
@@ -60,7 +63,7 @@ export default function Dashboard({ db, onNavigate, onUpdateDb }: DashboardProps
   const [settingsMatricule, setSettingsMatricule] = useState(db.settings?.matriculeFiscal || '');
   const [settingsLogo, setSettingsLogo] = useState(db.settings?.storeLogo || '🛒');
   const [settingsCashierName, setSettingsCashierName] = useState(() => {
-    return localStorage.getItem('activeCashierName') || 'Caissier Principal';
+    return safeLocalStorage.getItem('activeCashierName') || 'Caissier Principal';
   });
   const logoUploadRef = useRef<HTMLInputElement>(null);
 
@@ -79,7 +82,7 @@ export default function Dashboard({ db, onNavigate, onUpdateDb }: DashboardProps
 
   // 4. Toast Feedback State & Helper
   const [toastMessage, setToastMessage] = useState<string | null>(null);
-  const [chartTab, setChartTab] = useState<'evolution' | 'compare'>('evolution');
+  const [chartTab, setChartTab] = useState<'evolution' | 'dailyProfit' | 'compare'>('evolution');
 
   // Date Range Filters for Dashboard trends
   const [dateFilter, setDateFilter] = useState<'7days' | 'thisMonth' | 'thisYear' | 'custom'>('7days');
@@ -146,7 +149,7 @@ export default function Dashboard({ db, onNavigate, onUpdateDb }: DashboardProps
     setSettingsSector(db.settings?.activitySector || 'superette');
     setSettingsMatricule(db.settings?.matriculeFiscal || '');
     setSettingsLogo(db.settings?.storeLogo || '🛒');
-    setSettingsCashierName(localStorage.getItem('activeCashierName') || 'Caissier Principal');
+    setSettingsCashierName(safeLocalStorage.getItem('activeCashierName') || 'Caissier Principal');
     setIsEditingSettings(true);
   };
 
@@ -161,7 +164,7 @@ export default function Dashboard({ db, onNavigate, onUpdateDb }: DashboardProps
       storeLogo: settingsLogo
     };
 
-    localStorage.setItem('activeCashierName', settingsCashierName.trim() || 'Caissier Principal');
+    safeLocalStorage.setItem('activeCashierName', settingsCashierName.trim() || 'Caissier Principal');
 
     onUpdateDb({
       ...db,
@@ -241,8 +244,8 @@ export default function Dashboard({ db, onNavigate, onUpdateDb }: DashboardProps
   // ACTIVE SHIFT LIVE MONITOR & COMPARATIVE RATIO
   // ============================================
   const { shiftOpenTime, shiftCashierName, isActiveShift } = React.useMemo(() => {
-    const rawTime = localStorage.getItem('shift_open_time');
-    const rawCashier = localStorage.getItem('shift_active_cashier');
+    const rawTime = safeLocalStorage.getItem('shift_open_time');
+    const rawCashier = safeLocalStorage.getItem('shift_active_cashier');
     
     if (rawTime) {
       return {
@@ -596,6 +599,7 @@ export default function Dashboard({ db, onNavigate, onUpdateDb }: DashboardProps
           label,
           revenue: parseFloat(revenueSum.toFixed(3)),
           netProfit: parseFloat(netProfitSum.toFixed(3)),
+          dailyNetProfit: parseFloat((revenueSum - cogsSum).toFixed(3)),
           invoicesCount: count
         };
       });
@@ -642,6 +646,7 @@ export default function Dashboard({ db, onNavigate, onUpdateDb }: DashboardProps
           label,
           revenue: parseFloat(revenueSum.toFixed(3)),
           netProfit: parseFloat(netProfitSum.toFixed(3)),
+          dailyNetProfit: parseFloat((revenueSum - cogsSum).toFixed(3)),
           invoicesCount: count
         };
       });
@@ -1192,14 +1197,16 @@ export default function Dashboard({ db, onNavigate, onUpdateDb }: DashboardProps
           </div>
 
           {/* Chart Header Tab Selection */}
-          <div className="flex items-center justify-between border-t border-slate-100 pt-5 mt-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between border-t border-slate-100 pt-5 mt-4 gap-2">
             <span className="text-[10px] text-slate-500 font-extrabold uppercase tracking-wider font-mono flex items-center gap-1">
               <span className="inline-block w-1.5 h-1.5 rounded-full bg-blue-500"></span>
               {chartTab === 'evolution' 
                 ? (language === 'ar' ? 'تحليل المبيعات وصافي الأرباح التراكمية' : 'Courbes des performances (Ventes vs Profit)')
+                : chartTab === 'dailyProfit'
+                ? (language === 'ar' ? 'أرباح السلع والبيع اليومية (المبيعات - التكلفة)' : 'Bénéfice Net Quotidien (Ventes - Coût d\'Achat)')
                 : (language === 'ar' ? 'التوزيع المالي لبنود الميزانية' : 'Bilan synthétique global')}
             </span>
-            <div className="flex bg-slate-100 p-1 rounded-lg border border-slate-200 gap-1 select-none">
+            <div className="flex bg-slate-100 p-1 rounded-lg border border-slate-200 gap-1 select-none flex-wrap">
               <button
                 type="button"
                 onClick={() => setChartTab('evolution')}
@@ -1210,6 +1217,17 @@ export default function Dashboard({ db, onNavigate, onUpdateDb }: DashboardProps
                 }`}
               >
                 {language === 'ar' ? '📈 اتجاهات الأرباح' : 'Tendances (📈) '}
+              </button>
+              <button
+                type="button"
+                onClick={() => setChartTab('dailyProfit')}
+                className={`px-3 py-1 text-[10px] font-bold rounded-md cursor-pointer transition-all ${
+                  chartTab === 'dailyProfit'
+                    ? 'bg-slate-900 text-white shadow-xs scale-102'
+                    : 'text-slate-500 hover:text-slate-800 hover:bg-slate-200/50'
+                }`}
+              >
+                {language === 'ar' ? '💵 أرباح البيع' : 'Profit Quotidien (💵)'}
               </button>
               <button
                 type="button"
@@ -1225,7 +1243,73 @@ export default function Dashboard({ db, onNavigate, onUpdateDb }: DashboardProps
             </div>
           </div>
 
-          {chartTab === 'evolution' ? (
+          {chartTab === 'dailyProfit' ? (
+            /* Bar Chart for Daily Net Profit */
+            <div className="h-60 w-full bg-slate-900 rounded-xl p-4 flex flex-col justify-between border border-slate-850 shadow-xs relative" dir="ltr">
+              <div className="absolute top-2 right-3 flex items-center gap-3">
+                <span className="flex items-center gap-1">
+                  <span className="w-2 h-2 rounded-full bg-indigo-500 animate-pulse" />
+                  <span className="text-[8px] font-bold text-slate-400 tracking-wider font-mono uppercase">
+                    {language === 'ar' ? 'صافي أرباح السلع والمبيعات' : 'Net Profit (Revenue - COGS)'}
+                  </span>
+                </span>
+              </div>
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart
+                  data={trendChartData}
+                  margin={{ top: 15, right: 10, left: -25, bottom: -5 }}
+                >
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#1e293b" />
+                  <XAxis 
+                    dataKey="label" 
+                    stroke="#64748b" 
+                    fontSize={9} 
+                    tickLine={false} 
+                    axisLine={false}
+                    dy={6}
+                  />
+                  <YAxis 
+                    stroke="#64748b" 
+                    fontSize={9} 
+                    tickLine={false} 
+                    axisLine={false}
+                    tickFormatter={(val) => `${val.toFixed(1)}`}
+                  />
+                  <Tooltip
+                    content={({ active, payload }: any) => {
+                      if (active && payload && payload.length) {
+                        return (
+                          <div className="bg-slate-950 border border-slate-850 p-2.5 text-[10px] text-start font-mono leading-relaxed text-slate-200 rounded shadow-2xl">
+                            <p className="text-slate-400 font-sans font-bold mb-1 border-b border-slate-850 pb-1">
+                              {payload[0].payload.date} {payload[0].payload.label ? `(${payload[0].payload.label})` : ''}
+                            </p>
+                            <p className="text-violet-400 font-extrabold text-xs">
+                              {language === 'ar' ? 'صافي أرباح السلع: ' : 'Profit Net Direct: '}
+                              {formatCurrency(payload[0].payload.dailyNetProfit)}
+                            </p>
+                            <p className="text-emerald-400 text-[9px] mt-0.5">
+                              {language === 'ar' ? 'المبيعات الإجمالية: ' : 'Ventes Totales: '}
+                              {formatCurrency(payload[0].payload.revenue)}
+                            </p>
+                            <p className="text-amber-500 text-[9px] mt-0.5">
+                              {language === 'ar' ? 'تكلفة السلع المبيعة: ' : 'Coût d\'Achat (COGS): '}
+                              {formatCurrency(parseFloat((payload[0].payload.revenue - payload[0].payload.dailyNetProfit).toFixed(3)))}
+                            </p>
+                          </div>
+                        );
+                      }
+                      return null;
+                    }}
+                  />
+                  <Bar 
+                    dataKey="dailyNetProfit" 
+                    fill="#6366f1" 
+                    radius={[4, 4, 0, 0]} 
+                  />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          ) : chartTab === 'evolution' ? (
             /* Dual Area Chart plotting BOTH Revenue and Net profit */
             <div className="h-60 w-full bg-slate-900 rounded-xl p-4 flex flex-col justify-between border border-slate-850 shadow-xs relative" dir="ltr">
               <div className="absolute top-2 right-3 flex items-center gap-3">

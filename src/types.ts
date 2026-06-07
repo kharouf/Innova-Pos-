@@ -156,6 +156,8 @@ export interface StoreSettings {
   smtpPass?: string;
   smtpSecure?: boolean;
   smtpSenderName?: string;
+  themeMode?: 'light' | 'dark';
+  useGmailApi?: boolean;
 }
 
 export interface DatabaseState {

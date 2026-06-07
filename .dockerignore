@@ -1,0 +1,26 @@
+# This file prevents unnecessary or large files from being copied into the Docker container image.
+.git
+.gitignore
+.gcloudignore
+
+# Node/Vite build artifacts
+node_modules/
+dist/
+dist-desktop/
+build/
+coverage/
+
+# Environment and secrets configuration
+.env*
+!.env.example
+
+# Local scripts / executables / templates
+build_exe.bat
+run_locally.bat
+fix_pos.js
+logo_b64.txt
+
+# OS-specific files
+.DS_Store
+Thumbs.db
+*.log

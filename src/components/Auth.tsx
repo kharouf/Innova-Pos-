@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { signInWithPopup, GoogleAuthProvider } from 'firebase/auth';
-import { auth } from '../utils/firebase';
+import { auth, setCachedAccessToken } from '../utils/firebase';
 import { useLanguage } from '../utils/LanguageContext';
 import { getDatabase } from '../utils/db';
 import { DatabaseState } from '../types';
@@ -59,7 +59,11 @@ export default function Auth({ onEnterDemo, isLockedState = false, user, db }: {
     setError(null);
     const provider = new GoogleAuthProvider();
     try {
-      await signInWithPopup(auth, provider);
+      const result = await signInWithPopup(auth, provider);
+      const credential = GoogleAuthProvider.credentialFromResult(result);
+      if (credential?.accessToken) {
+        setCachedAccessToken(credential.accessToken);
+      }
     } catch (err: any) {
       console.error('Core Auth Error:', err);
       setError(
@@ -197,7 +201,7 @@ export default function Auth({ onEnterDemo, isLockedState = false, user, db }: {
     setScanMessage(language === 'ar' ? 'جاري فتح الكاميرا...' : 'Activation de la caméra...');
 
     const activeEmail = user?.email || auth.currentUser?.email;
-    const isDesignatedAdmin = activeEmail === 'walakharouf6665@gmail.com' || activeEmail === 'walakharouf65@gmail.com' || activeEmail === 'walakharouf665@gmail.com';
+    const isDesignatedAdmin = activeEmail === 'kharoufwala24@gmail.com';
 
     const verifyFaceIdentityAndComplete = (streamToStop?: MediaStream | null) => {
       setFaceScanState('success');
@@ -553,8 +557,8 @@ export default function Auth({ onEnterDemo, isLockedState = false, user, db }: {
                       <span className="text-[10px] text-slate-500 font-bold block">
                         {isLockedState ? (
                           language === 'ar' 
-                            ? '💡 يرجى إدخال الرمز السري فائق الأمان (يرجى مراجعة walakharouf665@gmail.com)' 
-                            : '💡 Saisir le code ultra-sécurisé ou contacter walakharouf665@gmail.com'
+                            ? '💡 يرجى إدخال الرمز السري فائق الأمان (يرجى مراجعة kharoufwala24@gmail.com)' 
+                            : '💡 Saisir le code ultra-sécurisé ou contacter kharoufwala24@gmail.com'
                         ) : (
                           language === 'ar' ? '💡 الرمز الافتراضي للمحل الجديد هو: 0000' : '💡 Le code secret par défaut est : 0000'
                         )}
@@ -673,7 +677,7 @@ export default function Auth({ onEnterDemo, isLockedState = false, user, db }: {
             {t('stable_version') || 'INNOVA SOLID'}
           </span>
           <span className="text-slate-700 hidden sm:inline">•</span>
-          <span>{t('tech_support') || 'Support email'} : walakharouf665@gmail.com</span>
+          <span>{t('tech_support') || 'Support email'} : kharoufwala24@gmail.com</span>
         </div>
       </footer>
     </div>

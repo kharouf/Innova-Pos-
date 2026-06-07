@@ -25,10 +25,10 @@ export interface UserLicenseData {
 
 /**
  * Generates a mathematical license activation signature based on UID, Expiry Date and Secret Developer Salt.
- * This guarantees the client cannot modify their license expiration date in Firestore without a valid key from walakharouf665@gmail.com
+ * This guarantees the client cannot modify their license expiration date in Firestore without a valid key from kharoufwala24@gmail.com
  */
 export function generateLicenseKey(uid: string, expiryDate: string): string {
-  const salt = "gp3000-tunisia-secure-salt-9988-walakharouf";
+  const salt = "gp3000-tunisia-secure-salt-9988-kharoufwala24";
   const rawData = `${uid.trim()}:${expiryDate.trim()}:${salt}`;
   
   // Simple deterministic Fowler-Noll-Vo or polynomial roll hash

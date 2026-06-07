@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { DatabaseState, Traite, DailyExpense } from '../types';
 import { useLanguage } from '../utils/LanguageContext';
+import { showToast } from '../utils/toast';
 import { 
   CreditCard, 
   ArrowUpRight, 
@@ -74,7 +75,7 @@ export default function Finance({ db, onUpdateDb }: FinanceProps) {
     setShowExpenseModal(false);
     setExpDesc('');
     setExpAmount(0);
-    alert("✅ Dépense enregistrée et comptabilisée dans le journal de caisse !");
+    showToast(language === 'ar' ? "تم تسجيل المصروف بنجاح" : "Dépense enregistrée avec succès !", 'success');
   };
 
   // Submit Traite onSubmit
@@ -120,7 +121,7 @@ export default function Finance({ db, onUpdateDb }: FinanceProps) {
     setTraRib('');
     setTraCity('Alger');
     setTraNotes('');
-    alert("✅ Traite commerciale (Lettre de change) émise avec succès ! Vous pouvez l'imprimer.");
+    showToast(language === 'ar' ? 'تم إنشاء الكمبيالة (الرسالة التجارية) بنجاح' : "Traite commerciale (Lettre de change) émise avec succès !", 'success');
   };
 
   // Settle or Cancel Traite status change
@@ -132,28 +133,44 @@ export default function Finance({ db, onUpdateDb }: FinanceProps) {
       return t;
     });
     onUpdateDb({ ...db, traites: updated });
+    showToast(language === 'ar' ? 'تم تحديث حالة الكمبيالة' : 'Statut de la traite mis à jour', 'info');
   };
 
   const handlePrintTraite = () => {
     try {
       const printContent = document.getElementById('print-area');
       const portal = document.getElementById('print-portal');
+      const isIframe = window.self !== window.top;
+
       if (printContent && portal) {
         portal.innerHTML = `
           <div class="a4-print-layout" dir="${language === 'ar' ? 'rtl' : 'ltr'}">
             ${printContent.innerHTML}
           </div>
         `;
-        window.print();
+        if (!isIframe) {
+          try {
+            window.print();
+          } catch (printErr) {
+            console.warn("window.print failed", printErr);
+          }
+        } else {
+          console.log("[INNOVA PRINT] Traite print triggered inside sandboxed preview.");
+        }
         setTimeout(() => {
           portal.innerHTML = '';
         }, 1000);
       } else {
-        window.print();
+        if (!isIframe) {
+          try {
+            window.print();
+          } catch (printErr) {
+            console.error(printErr);
+          }
+        }
       }
     } catch (err) {
-      console.warn("Robust print failed, falling back to window.print", err);
-      window.print();
+      console.warn("Robust print failed", err);
     }
   };
 
@@ -668,8 +685,13 @@ export default function Finance({ db, onUpdateDb }: FinanceProps) {
                   Imprimer Traite (Lettre)
                 </button>
                 <button
-                  onClick={() => setSelectedTraiteToPrint(null)}
-                  className="px-3 py-2 bg-slate-50 border border-slate-200 hover:bg-slate-100 text-slate-600 rounded text-xs font-bold cursor-pointer"
+                  type="button"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setSelectedTraiteToPrint(null);
+                  }}
+                  className="px-3 py-2 bg-slate-50 border border-slate-200 hover:bg-slate-100 text-slate-600 rounded text-xs font-bold cursor-pointer transition-colors"
                 >
                   Fermer
                 </button>

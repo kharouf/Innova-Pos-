@@ -13,7 +13,7 @@ service cloud.firestore {
     }
 
     function isAdmin() {
-      return isSignedIn() && request.auth.token.email == "walakharouf665@gmail.com";
+      return isSignedIn() && (request.auth.token.email == "kharoufwala24@gmail.com");
     }
 
     // Tenant Isolation match rule helper

@@ -1,7 +1,8 @@
-import React, { useRef, useState } from 'react';
+import React, { useRef, useState, useEffect } from 'react';
 import { DatabaseState, StoreSettings, Product } from '../types';
 import { SAMPLE_PRODUCTS } from '../utils/db';
 import { useLanguage } from '../utils/LanguageContext';
+import { showToast } from '../utils/toast';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   Database,
@@ -24,8 +25,26 @@ import {
   X,
   CheckCircle2,
   Eye,
-  EyeOff
+  EyeOff,
+  Cloud,
+  Mail,
+  RefreshCw,
+  Check,
+  Server,
+  AlertCircle
 } from 'lucide-react';
+import { storage, auth, googleSignInForWorkspace, getCachedAccessToken, setCachedAccessToken } from '../utils/firebase';
+import { ref, uploadString, getDownloadURL } from 'firebase/storage';
+import { seedUserDatabase } from '../utils/firebaseSync';
+import { 
+  getOrCreateDriveFolder, 
+  uploadBackupToDrive, 
+  listDriveBackups, 
+  downloadDriveBackupContent, 
+  deleteDriveFile, 
+  sendEmailViaGmailAPI,
+  DriveBackupFile 
+} from '../utils/workspace';
 
 interface DatabaseControlProps {
   db: DatabaseState;
@@ -40,6 +59,384 @@ export default function DatabaseControl({ db, onUpdateDb, license, user }: Datab
   const [importStatus, setImportStatus] = useState<'idle' | 'success' | 'failed'>('idle');
   const [errorMessage, setErrorMessage] = useState('');
   const logoUploadRef = useRef<HTMLInputElement>(null);
+
+  // States for Cloud Backup features
+  const [backupCloudStatus, setBackupCloudStatus] = useState<'idle' | 'uploading' | 'success' | 'failed'>('idle');
+  const [cloudBackupResult, setCloudBackupResult] = useState<{ url?: string; sizeKB?: number; timestamp?: string } | null>(null);
+  const [cloudBackupError, setCloudBackupError] = useState<string>('');
+
+  // Manual backup forced immediate upload to Firebase Storage
+  const handleManualCloudBackup = async () => {
+    if (!user || !user.uid) {
+      setBackupCloudStatus('failed');
+      setCloudBackupError(language === 'ar'
+        ? '⚠️ يجب تسجيل الدخول باستخدام حساب مفعل لمزامنة البيانات سحابياً!'
+        : '⚠️ Vous devez être connecté avec un compte actif pour sauvegarder en ligne !'
+      );
+      return;
+    }
+
+    setBackupCloudStatus('uploading');
+    setCloudBackupError('');
+
+    try {
+      // 1. Prepare JSON payload
+      const dataStr = JSON.stringify(db, null, 2);
+      
+      // 2. Define Storage ref destination path
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+      const fileName = `backup_${timestamp}.json`;
+      const storagePath = `users/${user.uid}/backups/${fileName}`;
+      
+      const backupRef = ref(storage, storagePath);
+
+      // 3. Perform immediate upload of JSON string contents
+      await uploadString(backupRef, dataStr, 'raw', {
+        contentType: 'application/json'
+      });
+
+      // 4. Retrieve download URL (optional but beautiful to show)
+      const downloadUrl = await getDownloadURL(backupRef);
+      const sizeKB = Math.round((dataStr.length / 1024) * 100) / 100;
+
+      setBackupCloudStatus('success');
+      setCloudBackupResult({
+        url: downloadUrl,
+        sizeKB,
+        timestamp: new Date().toLocaleTimeString()
+      });
+
+      showSuccessFeedback(
+        `🎉 تم نسخ قاعدة البيانات احتياطياً بنجاح إلى سحابة Firebase الآمنة! (${sizeKB} KB)`,
+        `🎉 Sauvegarde réussie sur le Cloud sécurisé Firebase ! Fichier sauvegardé avec succès. (${sizeKB} Ko)`
+      );
+    } catch (err: any) {
+      console.error('Failed to upload cloud backup:', err);
+      setBackupCloudStatus('failed');
+      setCloudBackupError(err.message || String(err));
+    }
+  };
+
+  // Google Workspace Integration states
+  const [googleConnected, setGoogleConnected] = useState(false);
+  const [googleProfileEmail, setGoogleProfileEmail] = useState<string | null>(null);
+  const [googleDriveBackups, setGoogleDriveBackups] = useState<DriveBackupFile[]>([]);
+  const [isBackupLoading, setIsBackupLoading] = useState(false);
+  
+  // Google Drive upload progress state
+  const [googleDriveStatus, setGoogleDriveStatus] = useState<'idle' | 'uploading' | 'success' | 'failed'>('idle');
+  const [googleDriveKB, setGoogleDriveKB] = useState<number | null>(null);
+  const [googleDriveFileId, setGoogleDriveFileId] = useState<string | null>(null);
+  const [googleDriveError, setGoogleDriveError] = useState<string | null>(null);
+
+  // Gmail API Test states
+  const [gmailRecipient, setGmailRecipient] = useState('');
+  const [gmailStatus, setGmailStatus] = useState<'idle' | 'sending' | 'success' | 'failed'>('idle');
+  const [gmailError, setGmailError] = useState<string | null>(null);
+
+  // Toggle state
+  const [useGmailApiToggle, setUseGmailApiToggle] = useState(db.settings?.useGmailApi || false);
+
+  // Check and run Google profile on mount/token change
+  const verifyAndLoadGoogleWorkspace = async () => {
+    const token = getCachedAccessToken();
+    if (token) {
+      setGoogleConnected(true);
+      try {
+        // Fetch user profile email
+        const res = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        if (res.ok) {
+          const profile = await res.json();
+          setGoogleProfileEmail(profile.email);
+        } else if (res.status === 401) {
+          // Token expired or invalid
+          setCachedAccessToken(null);
+          setGoogleConnected(false);
+          setGoogleProfileEmail(null);
+          return;
+        }
+        // Load backups from Drive
+        await handleFetchDriveBackups(token);
+      } catch (err) {
+        console.warn('Google Workspace automatic verification failed:', err);
+      }
+    } else {
+      setGoogleConnected(false);
+      setGoogleProfileEmail(null);
+      setGoogleDriveBackups([]);
+    }
+  };
+
+  useEffect(() => {
+    verifyAndLoadGoogleWorkspace();
+  }, []);
+
+  // Update toggle state when DB settings change
+  useEffect(() => {
+    if (db.settings?.useGmailApi !== undefined) {
+      setUseGmailApiToggle(db.settings.useGmailApi);
+    }
+  }, [db.settings?.useGmailApi]);
+
+  const handleConnectGoogle = async () => {
+    try {
+      const token = await googleSignInForWorkspace();
+      if (token) {
+        setGoogleConnected(true);
+        await verifyAndLoadGoogleWorkspace();
+        showSuccessFeedback(
+          "🎉 تم ربط حسابك بـ Google بنجاح وتم تفعيل خدمات السحاب!",
+          "🎉 Compte Google connecté avec succès ! Services Workspace activés."
+        );
+      }
+    } catch (err: any) {
+      console.error('Google Workspace connect error:', err);
+      alert(
+        language === 'ar'
+          ? "❌ فشل الاتصال بحساب Google. يرجى محاولة فتح التطبيق في نافذة مستقلة وقبول الصلاحيات."
+          : "❌ Échec de la connexion à Google. Veuillez ouvrir l'application dans un nouvel onglet et accepter les conditions."
+      );
+    }
+  };
+
+  const handleDisconnectGoogle = () => {
+    setCachedAccessToken(null);
+    setGoogleConnected(false);
+    setGoogleProfileEmail(null);
+    setGoogleDriveBackups([]);
+    showSuccessFeedback(
+      "🔓 تم إلغاء ربط حساب Google الخاص بك في هذه الجلسة.",
+      "🔓 Compte Google déconnecté avec succès."
+    );
+  };
+
+  const handleFetchDriveBackups = async (tokenOverride?: string) => {
+    const token = tokenOverride || getCachedAccessToken();
+    if (!token) return;
+    setIsBackupLoading(true);
+    try {
+      const folderId = await getOrCreateDriveFolder(token);
+      const files = await listDriveBackups(token, folderId);
+      setGoogleDriveBackups(files);
+    } catch (e) {
+      console.error('Fetch Google backups failed:', e);
+    } finally {
+      setIsBackupLoading(false);
+    }
+  };
+
+  const handleBackupToGoogleDrive = async () => {
+    const token = getCachedAccessToken();
+    if (!token) {
+      setGoogleDriveStatus('failed');
+      setGoogleDriveError(language === 'ar' ? '⚠️ يرجى ربط حساب Google أولاً.' : '⚠️ Veuillez connecter un compte Google d\'abord.');
+      return;
+    }
+    setGoogleDriveStatus('uploading');
+    setGoogleDriveError(null);
+    try {
+      const dbStr = JSON.stringify(db, null, 2);
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+      const fileName = `INNOVA_POS_Backup_${timestamp}.json`;
+      
+      const folderId = await getOrCreateDriveFolder(token);
+      const res = await uploadBackupToDrive(token, fileName, dbStr, folderId);
+      if (res.success) {
+        setGoogleDriveStatus('success');
+        setGoogleDriveKB(res.sizeKB || 0);
+        setGoogleDriveFileId(res.fileId || null);
+        
+        // Reload list
+        await handleFetchDriveBackups(token);
+        
+        showSuccessFeedback(
+          "🎉 تم نسخ قاعدة البيانات احتياطياً بنجاح إلى حسابك في Google Drive!",
+          "🎉 Base de données sauvegardée avec succès sur votre espace Google Drive !"
+        );
+      } else {
+        throw new Error(res.error || 'Upload failed');
+      }
+    } catch (err: any) {
+      console.error('Drive Backup failed:', err);
+      setGoogleDriveStatus('failed');
+      setGoogleDriveError(err.message || String(err));
+    }
+  };
+
+  const handleRestoreFromGoogleDrive = async (fileId: string, fileName: string) => {
+    const token = getCachedAccessToken();
+    if (!token) return;
+    
+    const confirmRestore = window.confirm(
+      language === 'ar'
+        ? `⚠️ هل أنت متأكد من استعادة النسخة الاحتياطية "${fileName}"؟ سيتم استبدال كامل مخازنك وبياناتك الحالية!`
+        : `⚠️ Êtes-vous sûr de vouloir restaurer "${fileName}" ? Toutes les données de caisse courantes seront écrasées !`
+    );
+    if (!confirmRestore) return;
+
+    try {
+      const content = await downloadDriveBackupContent(token, fileId);
+      const restoredDb = JSON.parse(content);
+      
+      if (restoredDb && (restoredDb.products || restoredDb.invoices)) {
+        onUpdateDb(restoredDb);
+        // Force sync with firebase if user is logged in
+        if (user && user.uid) {
+          await seedUserDatabase(user.uid, restoredDb);
+        }
+        showSuccessFeedback(
+          "🎉 تمت استعادة قاعدة البيانات بنجاح من Google Drive ومزامنته سحابياً!",
+          "🎉 Base de données restaurée avec succès de Google Drive !"
+        );
+      } else {
+        throw new Error('Format de fichier invalide ou vide');
+      }
+    } catch (err: any) {
+      console.error('Restore from Drive failed:', err);
+      alert(
+        language === 'ar'
+          ? `❌ فشل استعادة البيانات: ${err.message || String(err)}`
+          : `❌ Échec de la restauration : ${err.message || String(err)}`
+      );
+    }
+  };
+
+  const handleDeleteFromGoogleDrive = async (fileId: string, fileName: string) => {
+    const token = getCachedAccessToken();
+    if (!token) return;
+
+    const confirmDelete = window.confirm(
+      language === 'ar'
+        ? `❓ هل تريد حذف هذه النسخة الاحتياطية نهائياً من Google Drive؟`
+        : `❓ Supprimer définitivement cette sauvegarde de votre Google Drive ?`
+    );
+    if (!confirmDelete) return;
+
+    try {
+      const ok = await deleteDriveFile(token, fileId);
+      if (ok) {
+        await handleFetchDriveBackups(token);
+        showSuccessFeedback(
+          "🗑️ تم حذف النسخة بنجاح من Google Drive.",
+          "🗑️ Sauvegarde supprimée de Google Drive avec succès."
+        );
+      }
+    } catch (e) {
+      console.error('Delete Drive Backup failed:', e);
+    }
+  };
+
+  const handleSendGmailTest = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const token = getCachedAccessToken();
+    if (!token) {
+      setGmailStatus('failed');
+      setGmailError(language === 'ar' ? '⚠️ يرجى ربط حساب Google أولاً.' : '⚠️ Veuillez connecter un compte Google d\'abord.');
+      return;
+    }
+
+    if (!gmailRecipient) {
+      setGmailStatus('failed');
+      setGmailError(language === 'ar' ? '⚠️ يرجى إدخال البريد الإلكتروني للمستلم.' : '⚠️ Saisissez une adresse de destinataire.');
+      return;
+    }
+
+    setGmailStatus('sending');
+    setGmailError(null);
+
+    try {
+      const subject = language === 'ar' 
+        ? `🔎 اختبار إرسال بريد Gmail - نظام INNOVA POS`
+        : `🔎 Message de Test Gmail API - INNOVA POS`;
+
+      const storeNameValue = db.settings?.storeName || 'INNOVA POS';
+      const bodyHtml = language === 'ar'
+        ? `
+        <div style="direction: rtl; font-family: system-ui, sans-serif; padding: 25px; border: 1px solid #e2e8f0; border-radius: 12px; max-width: 600px; background-color: #ffffff;">
+          <h2 style="color: #4f46e5; margin-top: 0;">✅ اختبار الاتصال ناجح بالكامل!</h2>
+          <p style="font-size: 14px; color: #334155;">أهلاً بك، هذا البريد تم إرساله تلقائياً من نظام المبيعات <strong>${storeNameValue}</strong> عبر واجهة برمجة تطبيقات Gmail API الخاصة بك مباشرة.</p>
+          <hr style="border: 0; border-top: 1px solid #cbd5e1; margin: 15px 0;" />
+          <p style="font-size: 13px; color: #475569; font-weight: bold;">تفاصيل الفحص التخصيصي المنجزة:</p>
+          <ul style="padding: 0 20px 0 0; font-size: 13px; line-height: 1.8; color: #64748b;">
+            <li>🛡️ <strong>بروتوكول الإرسال:</strong> Gmail API Secure Client</li>
+            <li>📍 <strong>الحالة الأمنية للاشتراك:</strong> معتمد بالكامل (OAuth Checked)</li>
+            <li>⏰ <strong>وقت الفحص:</strong> ${new Date().toLocaleString()}</li>
+          </ul>
+          <hr style="border: 0; border-top: 1px solid #cbd5e1; margin: 15px 0;" />
+          <p style="font-size: 11px; color: #94a3b8; margin-bottom: 0;">الرسالة مرسلة بأمان تام بنسبة 100% لتفادي جميع مشاكل SPAM وحظر الخوادم SMTP التقليدية.</p>
+        </div>
+        `
+        : `
+        <div style="font-family: system-ui, sans-serif; padding: 25px; border: 1px solid #e2e8f0; border-radius: 12px; max-width: 600px; background-color: #ffffff;">
+          <h2 style="color: #4f46e5; margin-top: 0;">✅ Liaison Workspace Gmail Opérationnelle !</h2>
+          <p style="font-size: 14px; color: #334155;">Bonjour,</p>
+          <p style="font-size: 14px; color: #334155;">Ce courriel électronique a été déclenché par votre système <strong>${storeNameValue}</strong> et dispatché à l'aide de l'API Gmail sécurisée.</p>
+          <hr style="border: 0; border-top: 1px solid #cbd5e1; margin: 15px 0;" />
+          <p style="font-size: 13px; color: #475569; font-weight: bold;">Détails diagnostics :</p>
+          <ul style="padding: 0; list-style-type: none; font-size: 13px; line-height: 1.8; color: #64748b;">
+            <li>🛡️ <strong>Protocole sécurisé :</strong> Gmail API Secure OAuth CLIENT</li>
+            <li>📍 <strong>Liaison logicielle :</strong> Actif & Autorisé</li>
+            <li>⏰ <strong>Calcul du Timestamp :</strong> ${new Date().toLocaleString()}</li>
+          </ul>
+          <hr style="border: 0; border-top: 1px solid #cbd5e1; margin: 15px 0;" />
+          <p style="font-size: 11px; color: #94a3b8; margin-bottom: 0;">Ce courriel évite les problèmes de routage, de pare-feu et de blocages anti-spam habituels des serveurs SMTP.</p>
+        </div>
+        `;
+
+      const res = await sendEmailViaGmailAPI(
+        token,
+        gmailRecipient,
+        subject,
+        bodyHtml,
+        db.settings?.storeName || 'INNOVA POS'
+      );
+
+      if (res.success) {
+        setGmailStatus('success');
+        showSuccessFeedback(
+          "🎉 تم إرسال بريد الاختبار بنجاح عبر حساب Gmail الخاص بك!",
+          "🎉 E-mail de diagnostic expédié avec succès via l'API sécurisée Gmail !"
+        );
+      } else {
+        throw new Error(res.error || 'Gmail dispatch error');
+      }
+    } catch (err: any) {
+      console.error('Gmail Test Sending failed:', err);
+      setGmailStatus('failed');
+      setGmailError(err.message || String(err));
+    }
+  };
+
+  const handleToggleGmailApi = (enabled: boolean) => {
+    setUseGmailApiToggle(enabled);
+    
+    // Save setting directly into DatabaseState
+    const updatedSettings: StoreSettings = {
+      ...(db.settings || {
+        storeName: 'INNOVA POS',
+        storePhone: '',
+        storeAddress: '',
+        activitySector: 'general'
+      }),
+      useGmailApi: enabled
+    };
+    
+    onUpdateDb({
+      ...db,
+      settings: updatedSettings
+    });
+
+    showSuccessFeedback(
+      enabled 
+        ? "⚙️ تم توجيه جميع إرسالات البريد الآلي تلقائياً عبر Gmail API بدلاً من SMTP!" 
+        : "⚙️ تم تفعيل نظام الإرسال الافتراضي SMTP عبر الخادم المخصص.",
+      enabled 
+        ? "⚙️ Routage automatique de tous les emails via Gmail API configuré !" 
+        : "⚙️ Routage SMTP conventionnel défini par défaut."
+    );
+  };
 
   const [isUnlocked, setIsUnlocked] = useState<boolean>(false);
   const [pinEntry, setPinEntry] = useState('');
@@ -122,6 +519,7 @@ export default function DatabaseControl({ db, onUpdateDb, license, user }: Datab
   const [smtpPass, setSmtpPass] = useState<string>(initialSettings.smtpPass || '');
   const [smtpSecure, setSmtpSecure] = useState<boolean>(initialSettings.smtpSecure ?? false);
   const [smtpSenderName, setSmtpSenderName] = useState<string>(initialSettings.smtpSenderName || '');
+  const [themeMode, setThemeMode] = useState<'light' | 'dark'>(initialSettings.themeMode || 'light');
 
   const [manualExpensesOffset, setManualExpensesOffset] = useState<number>(initialSettings.manualExpensesOffset || 0);
   const [manualProfitsOffset, setManualProfitsOffset] = useState<number>(initialSettings.manualProfitsOffset || 0);
@@ -262,19 +660,36 @@ export default function DatabaseControl({ db, onUpdateDb, license, user }: Datab
           Array.isArray(parsedData.partners) && 
           Array.isArray(parsedData.invoices)
         ) {
-          onUpdateDb(parsedData as DatabaseState);
-          setImportStatus('success');
-          setErrorMessage('');
-          alert(language === 'ar' 
-            ? '🎉 تم استيراد واستعادة قاعدة البيانات بنجاح! جميع السلع والديون تم تحديثها.' 
-            : '🎉 Base de données importée et restaurée avec succès ! L\'ensemble de vos stocks et bilans sont désormais à jour.'
-          );
+          // Reset file input value immediately so that they can select files again even if cancelled
+          if (fileInputRef.current) {
+            fileInputRef.current.value = '';
+          }
+
+          requestConfirm({
+            titleAr: 'تأكيد استعادة قاعدة البيانات 📂',
+            titleFr: 'Confirmer la Restauration de la Base',
+            messageAr: '⚠️ تحذير شديد الأهمية: استيراد هذا الملف سيؤدي إلى حذف واستبدال جميع بيانات المتجر الحالية (السلع، الزبائن، الموردين، مقادير الديون، الفواتير، المصاريف والعمليات) نهائياً وبلا رجعة بالبيانات الموجودة في الملف المستورد! هل تريد بالتأكيد تدمير البيانات الحالية واستعادتها من هذا الملف؟',
+            messageFr: '⚠️ DANGER D\'ÉCRASEMENT DES DONNÉES : L\'importation de cette sauvegarde va écraser, effacer et remplacer DÉFINITIVEMENT l\'intégralité des données actuelles de votre boutique (produits, clients, fournisseurs, soldes, dettes, factures, encaissements et dépenses) par les informations du fichier sélectionné ! Confirmez-vous cette opération de restauration ?',
+            isDanger: true,
+            onConfirm: () => {
+              onUpdateDb(parsedData as DatabaseState);
+              setImportStatus('success');
+              setErrorMessage('');
+              showSuccessFeedback(
+                '🎉 تم استيراد واستعادة قاعدة البيانات بنجاح! جميع السلع والديون والعمليات تم تحديثها.',
+                '🎉 Base de données importée et restaurée avec succès ! L\'ensemble de vos stocks, dettes, factures et bilans sont désormais à jour.'
+              );
+            }
+          });
         } else {
           setImportStatus('failed');
           setErrorMessage(language === 'ar' 
             ? 'الملف المستورد لا يتطابق مع معايير البرنامج.' 
             : 'Le fichier importé ne respecte pas le schéma valide.'
           );
+          if (fileInputRef.current) {
+            fileInputRef.current.value = '';
+          }
         }
       } catch (parseError) {
         setImportStatus('failed');
@@ -282,6 +697,9 @@ export default function DatabaseControl({ db, onUpdateDb, license, user }: Datab
           ? 'تنسيق ملف غير صالح. لا يمكن قراءته.' 
           : 'Format JSON invalide.'
         );
+        if (fileInputRef.current) {
+          fileInputRef.current.value = '';
+        }
       }
     };
 
@@ -343,7 +761,8 @@ export default function DatabaseControl({ db, onUpdateDb, license, user }: Datab
       smtpUser,
       smtpPass,
       smtpSecure,
-      smtpSenderName
+      smtpSenderName,
+      themeMode
     };
 
     onUpdateDb({
@@ -353,6 +772,7 @@ export default function DatabaseControl({ db, onUpdateDb, license, user }: Datab
 
     setSaveStatus(true);
     setTimeout(() => setSaveStatus(false), 3000);
+    showToast(language === 'ar' ? 'تم حفظ الإعدادات بنجاح' : 'Paramètres sauvegardés avec succès', 'success');
   };
 
   // SMTP Configuration tester and live diagnostic runner
@@ -407,15 +827,13 @@ export default function DatabaseControl({ db, onUpdateDb, license, user }: Datab
           ? `✅ نجح الاتصال والإرسال بنجاح! تم تلقي الرسالة وإصدار معرف الرسالة: ${data.messageId || 'OK'}`
           : `✅ Connexion SMTP réussie ! Un courriel de test a été dispatché avec succès (Message ID: ${data.messageId || 'OK'}).`;
         
-        if (data.previewUrl) {
-          successStr += `\n\n🔗 (Trial Account) Preview link: ${data.previewUrl}`;
-        }
         setTestMessage(successStr);
       } else {
         setTestStatus('failed');
+        const errDetail = data.message || data.error || '';
         setTestMessage(language === 'ar'
-          ? `❌ فشل التوصيل: ${data.error || 'يرجى مراجعة إعدادات المنفذ وكلمة مرور التطبيق (App Password)'}`
-          : `❌ Échec SMTP : ${data.error || "Veuillez vérifier l'hôte, le port, et créer un mot de passe d'application (App Password)."}`);
+          ? `❌ فشل التوصيل: ${errDetail || 'يرجى مراجعة إعدادات المنفذ وكلمة مرور التطبيق (App Password)'}`
+          : `❌ Échec SMTP : ${errDetail || "Veuillez vérifier l'hôte, le port, et créer un mot de passe d'application (App Password)."}`);
       }
     } catch (err: any) {
       setTestStatus('failed');
@@ -552,6 +970,46 @@ export default function DatabaseControl({ db, onUpdateDb, license, user }: Datab
     });
   };
 
+  const [rebuildStatus, setRebuildStatus] = useState<'idle' | 'running' | 'success' | 'failed'>('idle');
+  const [rebuildError, setRebuildError] = useState<string>('');
+
+  const handleForceCloudRebuild = async () => {
+    if (!user || !user.uid) {
+      requestConfirm({
+        titleAr: '⚠️ حساب غير متصل سحابياً',
+        titleFr: '⚠️ Compte non connecté au Cloud',
+        messageAr: 'نظام الدعم: لم يتم تشغيل وضع الاتصال السحابي. يجب تسجيل الدخول باستخدام حساب Google أولاً لإمكانية التخزين وإعادة بناء السحابة.',
+        messageFr: 'Support : Mode Cloud inactif. Vous devez être connecté via Google Account pour pouvoir reconstruire la base de données distante.',
+        onConfirm: () => {}
+      });
+      return;
+    }
+
+    requestConfirm({
+      titleAr: '⚙️ مطابقة وإعادة بناء السحابة بالكامل',
+      titleFr: '⚙️ Réalignement & Reconstruction Cloud',
+      messageAr: '⚠️ خطوة متقدمة: هل أنت متأكد من رغبتك في فرض إعادة بناء وتطهير قاعدة البيانات الفورية على خادم السحاب بالكامل؟ سيقوم النظام بتعويض ومسح أية اختلافات سابقة ورفع كامل قائمتك ووقائعك الحالية فوراً لتطابق جهازك والحل الفوري لـ "مشاكل النشر والموارد" والمزامنة.',
+      messageFr: '⚠️ Opération avancée : Voulez-vous forcer la reconstruction et le réalignement de votre base Cloud ? Vos données locales écraseront l\'état distant du serveur de manière unifiée pour éliminer les problèmes de synchronisation ("published status").',
+      isDanger: true,
+      onConfirm: async () => {
+        setRebuildStatus('running');
+        setRebuildError('');
+        try {
+          await seedUserDatabase(user.uid, db);
+          setRebuildStatus('success');
+          showSuccessFeedback(
+            '🎉 تم إعادة بناء وتأمين مزامنة قاعدة البيانات السحابية بالكامل بنجاح تام!',
+            '🎉 La base de données Cloud a été reconstruite et réalignée avec succès !'
+          );
+        } catch (err: any) {
+          console.error('[CLOUD REBUILD FAILURE]', err);
+          setRebuildStatus('failed');
+          setRebuildError(err.message || String(err));
+        }
+      }
+    });
+  };
+
   const handleSetAllProductsToZero = () => {
     requestConfirm({
       titleAr: '⚙️ تصفير كميات وأسعار السلع الحالية',
@@ -603,8 +1061,8 @@ export default function DatabaseControl({ db, onUpdateDb, license, user }: Datab
             </h3>
             <p className="text-xs text-slate-500 font-medium leading-relaxed font-sans">
               {language === 'ar' 
-                ? 'يرجى إدخال الرمز السري فائق الأمان لفتح لوحة التهيئة والتحكم بكافة بارامترات النظام (يرجى مراجعة walakharouf665@gmail.com للحصول على الكود):'
-                : 'Veuillez saisir le code de sécurité fort pour débloquer et gérer tous les paramètres du système (veuillez contacter walakharouf665@gmail.com pour l’obtenir):'
+                ? 'يرجى إدخال الرمز السري فائق الأمان لفتح لوحة التهيئة والتحكم بكافة بارامترات النظام (يرجى مراجعة kharoufwala24@gmail.com للحصول على الكود):'
+                : 'Veuillez saisir le code de sécurité fort pour débloquer et gérer tous les paramètres du système (veuillez contacter kharoufwala24@gmail.com pour l’obtenir):'
               }
             </p>
           </div>
@@ -790,6 +1248,21 @@ export default function DatabaseControl({ db, onUpdateDb, license, user }: Datab
                 placeholder="Ex: 1234567/A/M/000"
                 className="w-full bg-slate-50 border border-slate-200 rounded py-2 px-3 text-xs font-bold text-slate-850 font-mono focus:outline-hidden focus:border-blue-500 focus:bg-white"
               />
+            </div>
+
+            {/* Theme Visual Selector */}
+            <div>
+              <label className="text-[11px] font-bold text-indigo-600 uppercase block mb-1">
+                {language === 'ar' ? '🎨 مظهر ووانجهة التطبيق (Mode Thème)' : '🎨 Thème de l\'Application (Mode)'}
+              </label>
+              <select
+                value={themeMode}
+                onChange={(e) => setThemeMode(e.target.value as 'light' | 'dark')}
+                className="w-full bg-indigo-50/50 border border-indigo-200 text-indigo-900 rounded py-2 px-3 text-xs font-bold focus:outline-hidden focus:border-indigo-500 focus:bg-white cursor-pointer"
+              >
+                <option value="light">☀️ {language === 'ar' ? 'الوضع المضيء الكلاسيكي (Standard Light)' : 'Mode Clair Classique (Standard Light)'}</option>
+                <option value="dark">🌙 {language === 'ar' ? 'الوضع المظلم الدائم (Permanent Dark Mode)' : 'Mode Sombre Permanent (Permanent Dark Mode)'}</option>
+              </select>
             </div>
 
             {/* Owner PIN Protection */}
@@ -1594,7 +2067,7 @@ export default function DatabaseControl({ db, onUpdateDb, license, user }: Datab
       </div>
 
       {/* SECTION 2: Import & Export Backups */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-3 md:grid-cols-2 gap-6">
         
         {/* Export Backup Panel */}
         <div className="bg-white p-6 rounded border border-slate-200 shadow-xs flex flex-col justify-between space-y-4">
@@ -1658,6 +2131,413 @@ export default function DatabaseControl({ db, onUpdateDb, license, user }: Datab
           </div>
         </div>
 
+        {/* Firebase Cloud Backup Panel */}
+        <div className="bg-white p-6 rounded border border-slate-200 shadow-xs flex flex-col justify-between space-y-4">
+          <div className="space-y-2">
+            <div className="p-3 bg-indigo-50 text-indigo-600 rounded w-max">
+              <Cloud className="w-6 h-6 animate-pulse" />
+            </div>
+            <h3 className="text-base font-bold text-slate-900 font-display">
+              {language === 'ar' ? '4. نسخ احتياطي سحابي يدوي' : '4. Sauvegarde Cloud Manuelle'}
+            </h3>
+            <p className="text-xs text-slate-500 leading-relaxed font-semibold font-sans">
+              {language === 'ar'
+                ? 'فرض نسخ احتياطي سحابي فوري لقاعدة بياناتك وتنزيلها لضمان بقائها آمنة في خوادم Google Firebase الحية والآمنة.'
+                : 'Forcez une sauvegarde instantanée de votre base locale sur le cloud Firebase sécurisé. Utile avant une réinstallation ou un changement de poste.'
+              }
+            </p>
+          </div>
+
+          <div className="space-y-3">
+            {backupCloudStatus === 'uploading' && (
+              <div className="bg-amber-50 border border-amber-200 p-3 rounded text-xs text-amber-850 flex items-center gap-2">
+                <span className="animate-spin text-sm">⏳</span>
+                <span>
+                  {language === 'ar' 
+                    ? 'جاري تشفير وضغط قاعدة البيانات ورفعها للسحاب...' 
+                    : 'Téléversement progressif vers le cloud sécurisé...'}
+                </span>
+              </div>
+            )}
+
+            {backupCloudStatus === 'success' && cloudBackupResult && (
+              <div className="bg-emerald-50 border border-emerald-250 p-3 rounded text-xs text-emerald-800 space-y-2">
+                <div className="flex items-center gap-1.5 font-bold">
+                  <span>✅</span>
+                  <span>{language === 'ar' ? 'تم الرفع والنسخ بنجاح!' : 'Sauvegarde réussie avec succès !'}</span>
+                </div>
+                <div className="font-mono text-[10px] space-y-1 block leading-tight">
+                  <div className="text-slate-500">
+                    {language === 'ar' ? 'الحجم:' : 'Taille:'} <span className="text-slate-800 font-bold">{cloudBackupResult.sizeKB} Ko</span>
+                  </div>
+                  <div className="text-slate-500">
+                    {language === 'ar' ? 'الوقت:' : 'Heure:'} <span className="text-slate-800 font-bold">{cloudBackupResult.timestamp}</span>
+                  </div>
+                </div>
+                {cloudBackupResult.url && (
+                  <a 
+                    href={cloudBackupResult.url} 
+                    target="_blank" 
+                    rel="noopener noreferrer" 
+                    className="mt-1 inline-flex items-center gap-1 text-indigo-150 hover:text-indigo-800 hover:underline text-[10.5px] font-bold font-mono"
+                  >
+                    🔗 {language === 'ar' ? 'تحميل ملف السحاب مباشرة' : 'Télécharger directement du Cloud'}
+                  </a>
+                )}
+              </div>
+            )}
+
+            {backupCloudStatus === 'failed' && cloudBackupError && (
+              <div className="bg-rose-50 border border-rose-200 p-3 rounded text-xs text-rose-800">
+                <div className="flex items-start gap-1.5 font-bold">
+                  <span className="shrink-0 text-sm">⚠️</span>
+                  <span>{language === 'ar' ? 'خطأ في عملية النسخ السحابي:' : 'Échec de la sauvegarde cloud :'}</span>
+                </div>
+                <p className="mt-1 font-mono text-[10px] bg-white/40 p-1.5 rounded border border-rose-150 overflow-x-auto select-all leading-relaxed whitespace-pre-wrap max-h-24">
+                  {cloudBackupError}
+                </p>
+              </div>
+            )}
+
+            <button
+              onClick={handleManualCloudBackup}
+              disabled={backupCloudStatus === 'uploading'}
+              className={`w-full font-bold text-xs py-3 px-4 rounded flex items-center justify-center gap-2 transition-all cursor-pointer font-mono shadow-sm ${
+                backupCloudStatus === 'uploading' 
+                  ? 'bg-slate-205 text-slate-500 cursor-not-allowed' 
+                  : 'bg-indigo-600 hover:bg-indigo-700 text-white shadow-indigo-600/10'
+              }`}
+            >
+              <UploadCloud className="w-4 h-4" />
+              <span>
+                {backupCloudStatus === 'uploading'
+                  ? (language === 'ar' ? 'جاري النسخ الاحتياطي...' : 'Sauvegarde en cours...')
+                  : (language === 'ar' ? 'بدء النسخ الاحتياطي السحابي الفوري' : 'Lancer la Sauvegarde Cloud')}
+              </span>
+            </button>
+          </div>
+        </div>
+
+      </div>
+
+      {/* SECTION 3.5: INTEGRATION GOOGLE WORKSPACE SERVICES (DRIVE & GMAIL API) */}
+      <div className="bg-white rounded border border-slate-200 shadow-xs overflow-hidden">
+        <div className="bg-gradient-to-r from-indigo-50 to-indigo-100/50 border-b border-indigo-100 p-4 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <div className="bg-indigo-600 text-white p-1 rounded-md">
+              <Cloud className="w-4 h-4 animate-pulse" />
+            </div>
+            <div>
+              <h2 className="text-sm font-bold text-slate-900">
+                {language === 'ar' 
+                  ? '3. خدمات السحاب Google Workspace (تكامل Google Drive و Gmail API)' 
+                  : '3. Services Google Workspace (Google Drive & Envois Gmail API)'}
+              </h2>
+              <p className="text-[10px] text-slate-500 font-medium">
+                {language === 'ar'
+                  ? 'قم بحفظ واسترجاع بياناتك على قرصك السحابي وإرسال التقارير البريدية عبر حسابك بأمان التام.'
+                  : 'Sauvegardez vos données sur votre propre Drive et expédiez vos alertes de stock depuis votre adresse Gmail.'}
+              </p>
+            </div>
+          </div>
+          {googleConnected && (
+            <span className="inline-flex items-center gap-1 bg-emerald-50 text-emerald-700 px-2.5 py-1 rounded-full text-[11px] font-bold border border-emerald-200 animate-fadeIn">
+              <Check className="w-3.5 h-3.5" />
+              <span>{language === 'ar' ? 'متصل بنجاح' : 'Liaison Active'}</span>
+            </span>
+          )}
+        </div>
+
+        <div className="p-5 grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* COLUMN 1: SERVICE CONNECTION & GENERAL CONFIG */}
+          <div className="bg-slate-50 p-4 rounded border border-slate-200/80 space-y-4 flex flex-col justify-between">
+            <div className="space-y-4">
+              <div className="flex items-center gap-2 border-b border-slate-200 pb-2.5">
+                <Server className="w-4 h-4 text-indigo-600 shrink-0" />
+                <h3 className="text-xs font-bold text-slate-800">
+                  {language === 'ar' ? 'الحالة والربط البرمجي' : 'État de la Liaison Google'}
+                </h3>
+              </div>
+
+              {!googleConnected ? (
+                <div className="text-center py-5 px-3 space-y-4 bg-white rounded border border-slate-200/60 shadow-inner">
+                  <p className="text-xs text-slate-500 leading-relaxed font-semibold">
+                    {language === 'ar'
+                      ? 'يرجى ربط حساب Google الخاص بك لتفعيل وسائط التخزين السحابي على Google Drive ومحرك الإرسال Gmail API.'
+                      : 'Connectez votre compte Google Workspace pour activer la sauvegarde automatisée Drive et l\'envoi sécurisé des ventes.'}
+                  </p>
+                  <button
+                    onClick={handleConnectGoogle}
+                    className="w-full inline-flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs py-2.5 px-4 rounded transition-all cursor-pointer shadow-md shadow-indigo-600/10 font-mono"
+                  >
+                    <svg className="w-4 h-4 shrink-0 fill-current" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                      <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
+                      <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
+                      <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z" />
+                      <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z" />
+                    </svg>
+                    <span>{language === 'ar' ? 'ربط حساب Google الآن' : 'Relier mon compte Google'}</span>
+                  </button>
+                </div>
+              ) : (
+                <div className="bg-white p-3.5 rounded border border-slate-200/60 shadow-xs space-y-3">
+                  <div className="flex items-center gap-2">
+                    <div className="w-8 h-8 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-700 font-bold text-xs select-none">
+                      {googleProfileEmail ? googleProfileEmail.charAt(0).toUpperCase() : 'G'}
+                    </div>
+                    <div className="truncate leading-tight min-w-0">
+                      <div className="text-[11px] font-bold text-slate-800 truncate">
+                        {googleProfileEmail || 'Google Account Linked'}
+                      </div>
+                      <div className="text-[9px] text-slate-400 font-semibold uppercase tracking-wider font-mono">
+                        {language === 'ar' ? 'وسائط سحابية نشطة' : 'Services Workspace Actifs'}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="border-t border-slate-100 pt-3">
+                    <button
+                      onClick={handleDisconnectGoogle}
+                      className="w-full py-1.5 px-3 border border-slate-250 hover:bg-slate-50 hover:border-slate-350 text-slate-600 font-semibold text-[10.5px] rounded transition-colors cursor-pointer text-center flex items-center justify-center gap-1 font-mono"
+                    >
+                      <span>{language === 'ar' ? 'قطع الاتصال السحابي' : 'Révoquer l\'accès Google'}</span>
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* TOGGLE GMAIL API INTEGRATION ACTIVE */}
+            <div className="bg-indigo-50/50 p-3 rounded-lg border border-indigo-100/80 space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-bold text-indigo-900 flex items-center gap-1">
+                  <Mail className="w-3.5 h-3.5 shrink-0" />
+                  <span>{language === 'ar' ? 'إرسال التقارير عبر Gmail API' : 'Préférer l\'envoi par Gmail API'}</span>
+                </span>
+                <button
+                  onClick={() => handleToggleGmailApi(!useGmailApiToggle)}
+                  className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-hidden ${
+                    useGmailApiToggle ? 'bg-indigo-600' : 'bg-slate-200'
+                  }`}
+                >
+                  <span
+                    className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow-sm ring-0 transition duration-200 ease-in-out ${
+                      useGmailApiToggle ? (language === 'ar' ? '-translate-x-4' : 'translate-x-4') : 'translate-x-0'
+                    }`}
+                  />
+                </button>
+              </div>
+              <p className="text-[10px] text-indigo-700/80 leading-relaxed font-semibold">
+                {language === 'ar'
+                  ? 'عند التفعيل، يعتمد نظام المخزون الحرج وتفاصيل الفترات على حساب Gmail الخاص بك لإرسال الرسائل بشكل مباشر وآمن.'
+                  : 'Si actif, l\'application délègue directement toutes les alertes critiques à votre compte Gmail, contournant les serveurs SMTP complexes.'}
+              </p>
+            </div>
+          </div>
+
+          {/* COLUMN 2: GOOGLE DRIVE BACKUPS (UPLOAD AND RESTORE) */}
+          <div className="bg-slate-50 p-4 rounded border border-slate-200/80 flex flex-col justify-between space-y-4">
+            <div className="space-y-3">
+              <div className="flex items-center gap-2 border-b border-slate-200 pb-2.5">
+                <UploadCloud className="w-4 h-4 text-emerald-600 shrink-0" />
+                <h3 className="text-xs font-bold text-slate-800">
+                  {language === 'ar' ? 'التخزين السحابي Google Drive' : 'Sauvegardes Google Drive'}
+                </h3>
+              </div>
+              <p className="text-[11px] text-slate-500 font-semibold leading-relaxed">
+                {language === 'ar'
+                  ? 'قم بحفظ أو استرجاع ملفات تهيئة قاعدة البيانات مباشرة في مجلد INNOVA_POS_PRO بمحرك قوقل درايف.'
+                  : 'Sauvegardez l\'état complet du point de vente dans votre propre espace de stockage privé Google Drive.'}
+              </p>
+
+              {/* ACTION COMPONENT FOR LIVE GOOGLE DRIVE BACKUP */}
+              <div className="space-y-2">
+                {googleDriveStatus === 'uploading' && (
+                  <div className="bg-amber-50 border border-amber-200 p-2.5 rounded text-[11px] text-amber-800 flex items-center gap-2 font-semibold">
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                    <span>{language === 'ar' ? 'جاري رفع الملف لـ Google Drive...' : 'Téléversement de l\'archive sur Drive...'}</span>
+                  </div>
+                )}
+                {googleDriveStatus === 'success' && googleDriveKB && (
+                  <div className="bg-emerald-50 border border-emerald-250 p-2.5 rounded text-[11px] text-emerald-800 font-semibold space-y-1">
+                    <div className="flex items-center gap-1.5 font-bold">
+                      <span className="text-sm">✓</span>
+                      <span>{language === 'ar' ? 'تم حفظ الملف السحابي بنجاح!' : 'Fichier enregistré sur Drive !'}</span>
+                    </div>
+                    <div className="text-[9.5px] text-slate-500 font-mono">
+                      {language === 'ar' ? 'الحجم:' : 'Taille:'} {googleDriveKB} Ko
+                    </div>
+                  </div>
+                )}
+                {googleDriveStatus === 'failed' && googleDriveError && (
+                  <div className="bg-rose-50 border border-rose-200 p-2.5 rounded text-[11px] text-rose-800 leading-normal font-semibold">
+                    <div className="flex items-start gap-1 font-bold">
+                      <span className="shrink-0 text-sm">⚠</span>
+                      <span>{language === 'ar' ? 'فشلت المزامنة:' : 'Échec de la sauvegarde Drive :'}</span>
+                    </div>
+                    <p className="text-[9.5px] mt-0.5 font-mono opacity-80 break-all">{googleDriveError}</p>
+                  </div>
+                )}
+
+                <button
+                  onClick={handleBackupToGoogleDrive}
+                  disabled={!googleConnected || googleDriveStatus === 'uploading'}
+                  className={`w-full py-2.5 px-4 font-bold text-xs rounded transition-all cursor-pointer font-mono flex items-center justify-center gap-1.5 shadow-xs ${
+                    !googleConnected
+                      ? 'bg-slate-200 text-slate-400 cursor-not-allowed border border-slate-300'
+                      : googleDriveStatus === 'uploading'
+                      ? 'bg-amber-100 text-amber-700 cursor-wait'
+                      : 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-700/10'
+                  }`}
+                >
+                  <UploadCloud className="w-4 h-4 shrink-0" />
+                  <span>{language === 'ar' ? 'رفع نسخة احتياطية لـ Google Drive' : 'Sauvegarder sur Google Drive'}</span>
+                </button>
+              </div>
+            </div>
+
+            {/* GRID OF ONLINE RESTORABLE FILES FROM GOOGLE DRIVE */}
+            <div className="border-t border-slate-200 pt-3 flex-1 flex flex-col justify-start">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-[11px] font-bold text-slate-700">
+                  {language === 'ar' ? 'النسخ المتاحة للاستعادة:' : 'Archives identifiées sur Drive :'}
+                </span>
+                {googleConnected && (
+                  <button
+                    onClick={() => handleFetchDriveBackups()}
+                    className="text-[10px] text-indigo-600 hover:underline flex items-center gap-0.5 font-bold cursor-pointer font-mono"
+                    disabled={isBackupLoading}
+                  >
+                    <RefreshCw className={`w-3 h-3 ${isBackupLoading ? 'animate-spin' : ''}`} />
+                    <span>{language === 'ar' ? 'تحديث' : 'Rafraîchir'}</span>
+                  </button>
+                )}
+              </div>
+
+              {!googleConnected ? (
+                <div className="bg-slate-100 rounded-md border border-dashed border-slate-250 py-4 px-2 text-center text-[10px] text-slate-400 font-semibold">
+                  {language === 'ar' ? 'قم بربط قوقل لعرض النسخ' : 'Connectez Google pour voir vos sauvegardes'}
+                </div>
+              ) : isBackupLoading ? (
+                <div className="py-4 text-center text-[10px] text-slate-500 font-mono flex items-center justify-center gap-1">
+                  <span className="animate-spin text-xs">⌛</span>
+                  <span>{language === 'ar' ? 'جاري فحص وتصفح ملفات القرص...' : 'Recherche des fichiers sur Google Drive...'}</span>
+                </div>
+              ) : googleDriveBackups.length === 0 ? (
+                <div className="bg-white rounded-md border border-slate-200 p-4 text-center text-[10.5px] text-slate-500 font-semibold shadow-xs">
+                  {language === 'ar' ? '📂 لم يتم العثور على أي نسخ احتياطية للمنظومة على جوجل درايف.' : '📂 Aucun fichier de sauvegarde POS trouvé sur votre Drive.'}
+                </div>
+              ) : (
+                <div className="max-h-36 overflow-y-auto space-y-1.5 pr-1 divide-y divide-slate-100">
+                  {googleDriveBackups.map((file) => (
+                    <div key={file.id} className="pt-1.5 first:pt-0 flex items-center justify-between gap-2">
+                      <div className="min-w-0 flex-1">
+                        <div className="text-[10.5px] font-bold text-slate-700 truncate leading-snug" title={file.name}>
+                          {file.name.replace('INNOVA_POS_Backup_', '')}
+                        </div>
+                        <div className="text-[9px] text-slate-400 font-semibold font-mono">
+                          {file.createdTime ? new Date(file.createdTime).toLocaleString() : 'N/A'} 
+                          {file.size && ` • ${Math.round((Number(file.size) / 1024) * 10) / 10} Ko`}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-1 shrink-0">
+                        <button
+                          onClick={() => handleRestoreFromGoogleDrive(file.id, file.name)}
+                          className="bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 py-1 px-2 rounded-md text-[9.5px] font-bold transition-all cursor-pointer font-mono"
+                          title="Restaurer cette sauvegarde"
+                        >
+                          {language === 'ar' ? 'استعادة' : 'Restaurer'}
+                        </button>
+                        <button
+                          onClick={() => handleDeleteFromGoogleDrive(file.id, file.name)}
+                          className="text-rose-600 hover:bg-rose-100 p-1 rounded transition-all cursor-pointer"
+                          title="Supprimer définitivement"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* COLUMN 3: GMAIL API INTEGRATION & TEST TOOL */}
+          <div className="bg-slate-50 p-4 rounded border border-slate-200/80 flex flex-col justify-between space-y-4">
+            <div className="space-y-3">
+              <div className="flex items-center gap-2 border-b border-slate-200 pb-2.5">
+                <Mail className="w-4 h-4 text-indigo-600 shrink-0" />
+                <h3 className="text-xs font-bold text-slate-800">
+                  {language === 'ar' ? 'فحص وتدقيق بريد Gmail API' : 'Diagnostic Envois Gmail API'}
+                </h3>
+              </div>
+              <p className="text-[11px] text-slate-500 font-semibold leading-relaxed">
+                {language === 'ar'
+                  ? 'بإمكانك تجربة إرسال رسالة بريدية اختبارية ومباشرة من صندوق بريدك Gmail المربوط للتأكد من فاعلية الإرسال وسرعته.'
+                  : 'Faites un test d\'envoi d\'e-mail immédiat via votre messagerie Gmail active pour valider les liaisons de notification.'}
+              </p>
+
+              <form onSubmit={handleSendGmailTest} className="space-y-3">
+                <div>
+                  <label className="block text-[10.5px] font-bold text-slate-700 mb-1">
+                    {language === 'ar' ? 'عنوان بريد المستلم:' : 'E-mail destinataire :'}
+                  </label>
+                  <input
+                    type="email"
+                    value={gmailRecipient}
+                    onChange={(e) => setGmailRecipient(e.target.value)}
+                    placeholder="ex: commercial@gmail.com"
+                    disabled={!googleConnected || gmailStatus === 'sending'}
+                    className="w-full text-xs bg-white border border-slate-250 p-2 rounded focus:ring-1 focus:ring-indigo-500 focus:outline-hidden font-mono"
+                  />
+                </div>
+
+                {gmailStatus === 'sending' && (
+                  <div className="bg-amber-50 border border-amber-200 p-2 rounded text-[11px] text-amber-800 flex items-center gap-2 font-semibold animate-pulse">
+                    <RefreshCw className="w-3 h-3 animate-spin" />
+                    <span>{language === 'ar' ? 'جاري تحضير الرسالة وإرسالها عبر قوقل...' : 'Envoi du message sécurisé...'}</span>
+                  </div>
+                )}
+                {gmailStatus === 'success' && (
+                  <div className="bg-emerald-50 border border-emerald-250 p-2 rounded text-[11px] text-emerald-800 font-semibold">
+                    ✅ {language === 'ar' ? 'تم إرسال بريد الاختبار بنجاح!' : 'Message expédié avec succès !'}
+                  </div>
+                )}
+                {gmailStatus === 'failed' && gmailError && (
+                  <div className="bg-rose-50 border border-rose-200 p-2 rounded text-[11px] text-rose-850 leading-relaxed font-semibold">
+                    <div className="font-bold">❌ {language === 'ar' ? 'لم يكتمل الإرسال:' : 'Erreur de transmission :'}</div>
+                    <p className="text-[9.5px] mt-0.5 font-mono opacity-85 break-all">{gmailError}</p>
+                  </div>
+                )}
+
+                <button
+                  type="submit"
+                  disabled={!googleConnected || gmailStatus === 'sending'}
+                  className={`w-full py-2.5 px-4 font-bold text-xs rounded transition-all cursor-pointer font-mono flex items-center justify-center gap-1.5 shadow-xs ${
+                    !googleConnected
+                      ? 'bg-slate-200 text-slate-400 cursor-not-allowed border border-slate-300'
+                      : gmailStatus === 'sending'
+                      ? 'bg-amber-100 text-amber-700 cursor-wait'
+                      : 'bg-indigo-600 hover:bg-indigo-700 text-white shadow-indigo-700/10'
+                  }`}
+                >
+                  <Mail className="w-4 h-4 shrink-0" />
+                  <span>{language === 'ar' ? 'إرسال رسالة تجريبية آمنة' : 'Envoyer un E-mail Test'}</span>
+                </button>
+              </form>
+            </div>
+
+            <div className="bg-slate-100 p-2.5 rounded border border-slate-200 text-[10px] text-slate-500 font-semibold leading-relaxed flex items-center gap-2">
+              <AlertCircle className="w-4 h-4 text-indigo-500 shrink-0" />
+              <span>
+                {language === 'ar'
+                  ? 'بريد Gmail أسرع بـ 10 مرات من خوادم SMTP العادية ويتفادى تماماً تصفية الرسائل كـ SPAM.'
+                  : 'L\'envoi par API Gmail est 10x plus stable, rapide et évite les pannes des adresses de routage SMTP ordinaires.'}
+              </span>
+            </div>
+          </div>
+        </div>
       </div>
 
       {/* SECTION 4: REMISE A ZERO & OPTIONS DE DEMARRAGE RAPIDE (DANGER ZONE) */}
@@ -1769,6 +2649,46 @@ export default function DatabaseControl({ db, onUpdateDb, license, user }: Datab
                 {language === 'ar' ? '💥 مسح وتصفير كافة بيانات النظام' : 'Purger Complètement la Base'}
               </button>
             </div>
+
+            {/* Button Option 5: Force Cloud Rebuild & Overwrite */}
+            <div className="p-4 border border-blue-200 rounded bg-blue-50/20 hover:bg-blue-50/40 transition-colors space-y-3 flex flex-col justify-between">
+              <div>
+                <h4 className="text-xs font-black text-blue-900 uppercase flex items-center gap-1.5">
+                  <span className="p-1 bg-blue-100 text-blue-700 rounded-sm">05</span>
+                  {language === 'ar' ? '⚙️ مطابقة السحاب وإعادة البناء بالكامل' : 'Reconstruction & Réalignement Cloud'}
+                </h4>
+                <p className="text-[11px] text-slate-500 mt-1.5 leading-relaxed">
+                  {language === 'ar'
+                    ? 'إصلاح متقدم لقواعد البيانات السحابية: يطابق ويفرز ويرفع قائمتك وبياناتك الحالية لتمسح أية فجوات تزامنية أو صلاحيات على السيرفر في وضع النشر ("published").'
+                    : 'Force l\'écrasement et la ré-écriture globale de votre base de données distante Firestore pour corriger les bugs d\'état synchronisé ou de permissions.'
+                  }
+                </p>
+                {rebuildStatus === 'running' && (
+                  <p className="text-[10px] text-blue-600 font-bold mt-2 animate-pulse">
+                    {language === 'ar' ? '⚡ جاري تصفية ورفع قاعدة البيانات السحابية...' : '⚡ Réalignement du Cloud en cours...'}
+                  </p>
+                )}
+                {rebuildStatus === 'success' && (
+                  <p className="text-[10px] text-green-600 font-bold mt-2">
+                    {language === 'ar' ? '🌿 تم التزامن القهري وإعادة البناء بنجاح!' : '🌿 Cloud réaligné avec succès !'}
+                  </p>
+                )}
+                {rebuildStatus === 'failed' && (
+                  <p className="text-[10px] text-red-600 font-bold mt-2">
+                    ⚠️ {rebuildError}
+                  </p>
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={handleForceCloudRebuild}
+                disabled={rebuildStatus === 'running'}
+                className="w-full bg-blue-700 hover:bg-blue-800 disabled:bg-slate-400 text-white font-bold text-[11px] uppercase tracking-wider py-2.5 px-3 rounded cursor-pointer shrink-0 shadow-3xs transition-all active:scale-98 flex items-center justify-center gap-1.5"
+              >
+                <Cloud className="w-3.5 h-3.5" />
+                {language === 'ar' ? 'إعادة بناء ومزامنة السحاب' : 'Reconstruire la Base Cloud'}
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -1811,8 +2731,8 @@ export default function DatabaseControl({ db, onUpdateDb, license, user }: Datab
               </h4>
               <p className="text-[11px] text-slate-500 leading-relaxed pr-6">
                 {language === 'ar'
-                  ? 'للحصول على معالج تنزيل .EXE أصلي يمكن تثبيته وتعديله لكل زبائنك وحوانيتك، يمكنك استخدام حزمة (Electron) أو (Tauri) حيث يتم تجميع ملفات build الناتجة وتصدير setup Windows مستقل وجاهز للتشغيل بأمر بسيط، أو الاتصال بالدعم الفني المباشر walakharouf665@gmail.com لمساعدتكم.'
-                  : 'Pour distribuer un installateur d\'installation Windows (.EXE) hors-ligne officiel pour chaque magasin, vous pouvez coupler les fichiers de build statiques avec Electron ou Tauri (via electron-builder) pour générer des fichiers d\'installation autonome. Support dédié disponible à walakharouf665@gmail.com.'
+                  ? 'للحصول على معالج تنزيل .EXE أصلي يمكن تثبيته وتعديله لكل زبائنك وحوانيتك، يمكنك استخدام حزمة (Electron) أو (Tauri) حيث يتم تجميع ملفات build الناتجة وتصدير setup Windows مستقل وجاهز للتشغيل بأمر بسيط، أو الاتصال بالدعم الفني المباشر kharoufwala24@gmail.com لمساعدتكم.'
+                  : 'Pour distribuer un installateur d\'installation Windows (.EXE) hors-ligne officiel pour chaque magasin, vous pouvez coupler les fichiers de build statiques avec Electron ou Tauri (via electron-builder) pour générer des fichiers d\'installation autonome. Support dédié disponible à kharoufwala24@gmail.com.'
                 }
               </p>
             </div>

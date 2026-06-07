@@ -118,22 +118,37 @@ export default function InvoicesList({ db, onUpdateDb }: InvoicesListProps) {
       const printFormatToUse = printFormat;
       const printContent = document.getElementById('print-area');
       const portal = document.getElementById('print-portal');
+      const isIframe = window.self !== window.top;
+
       if (printContent && portal) {
         portal.innerHTML = `
           <div class="${printFormatToUse === 'ticket' ? 'ticket-print-layout' : 'a4-print-layout'}" dir="${language === 'ar' ? 'rtl' : 'ltr'}">
             ${printContent.innerHTML}
           </div>
         `;
-        window.print();
+        if (!isIframe) {
+          try {
+            window.print();
+          } catch (printErr) {
+            console.warn("window.print failed", printErr);
+          }
+        } else {
+          console.log("[INNOVA PRINT] Invoice print triggered inside sandboxed preview.");
+        }
         setTimeout(() => {
           portal.innerHTML = '';
         }, 1000);
       } else {
-        window.print();
+        if (!isIframe) {
+          try {
+            window.print();
+          } catch (printErr) {
+            console.error(printErr);
+          }
+        }
       }
     } catch (err) {
-      console.warn("Robust print failed, falling back to window.print", err);
-      window.print();
+      console.warn("Robust print failed", err);
     }
   };
 
@@ -267,9 +282,17 @@ export default function InvoicesList({ db, onUpdateDb }: InvoicesListProps) {
                           {isPaid ? 'Réglement Total' : inv.paidAmount > 0 ? 'Partiel (Encours)' : 'Impayé'}
                         </span>
                       </td>
-                      <td className="p-4 text-right">
+                      <td className="p-4 text-right flex items-center justify-end gap-2">
                         <button
-                          onClick={() => { setSelectedInvoice(inv); setPaymentInput(inv.balance.toString()); }}
+                          onClick={() => { setSelectedInvoice(inv); setPaymentInput(inv.balance.toString()); setPrintFormat('ticket'); }}
+                          title="Preview Thermal Receipt"
+                          className="p-1.5 bg-blue-50 text-blue-600 hover:bg-blue-100 rounded-lg cursor-pointer"
+                        >
+                          <Printer className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          onClick={() => { setSelectedInvoice(inv); setPaymentInput(inv.balance.toString()); setPrintFormat('a4'); }}
+                          title="View Document Details"
                           className="p-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg cursor-pointer"
                         >
                           <Eye className="w-3.5 h-3.5" />

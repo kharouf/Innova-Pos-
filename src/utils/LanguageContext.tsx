@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
+import { safeLocalStorage } from './storage';
 
 type Language = 'fr' | 'ar';
 
@@ -323,11 +324,11 @@ const LanguageContext = createContext<LanguageContextType | undefined>(undefined
 
 export function LanguageProvider({ children }: { children: React.ReactNode }) {
   const [language, setLanguage] = useState<Language>(() => {
-    return (localStorage.getItem('gp_app_lang') as Language) || 'fr';
+    return (safeLocalStorage.getItem('gp_app_lang') as Language) || 'fr';
   });
 
   useEffect(() => {
-    localStorage.setItem('gp_app_lang', language);
+    safeLocalStorage.setItem('gp_app_lang', language);
     // Add direction rules to document element automatically
     if (language === 'ar') {
       document.documentElement.dir = 'rtl';

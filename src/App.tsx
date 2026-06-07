@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { DatabaseState, SystemUpdate, Product, StoreSettings } from './types';
 import { getDatabase, saveDatabase } from './utils/db';
 import { LanguageProvider, useLanguage } from './utils/LanguageContext';
+import { safeLocalStorage } from './utils/storage';
 import { auth } from './utils/firebase';
 import { loadUserDatabase, seedUserDatabase, syncDatabaseDiff, loadUserLicense, loadSystemUpdates } from './utils/firebaseSync';
 import { UserLicenseData, verifyLicenseKey } from './utils/licensing';
@@ -17,6 +18,7 @@ import Finance from './components/Finance';
 import DatabaseControl from './components/DatabaseControl';
 import SaaSDeveloperConsole from './components/SaaSDeveloperConsole';
 import SaaSLicenseLockedScreen from './components/SaaSLicenseLockedScreen';
+import ToastContainer from './components/ToastContainer';
 
 import { 
   LayoutDashboard, 
@@ -43,7 +45,9 @@ import {
   Battery,
   Bell,
   Eye,
-  EyeOff
+  EyeOff,
+  Sun,
+  Moon
 } from 'lucide-react';
 
 function AppContent() {
@@ -65,28 +69,47 @@ function AppContent() {
   
   // Worker-Only Restricted Mode state
   const [isWorkerMode, setIsWorkerMode] = useState<boolean>(() => {
-    return localStorage.getItem('isWorkerMode') === 'true';
+    return safeLocalStorage.getItem('isWorkerMode') === 'true';
   });
   const [showCashierDetailsModal, setShowCashierDetailsModal] = useState<boolean>(false);
   const [cashierName, setCashierName] = useState<string>(() => {
-    return localStorage.getItem('activeCashierName') || 'Caissier Principal';
+    return safeLocalStorage.getItem('activeCashierName') || 'Caissier Principal';
   });
 
   const handleSaveCashierName = (name: string) => {
     setCashierName(name);
-    localStorage.setItem('activeCashierName', name);
+    safeLocalStorage.setItem('activeCashierName', name);
   };
 
   const [activeTab, setActiveTab] = useState<string>(() => {
-    const forced = localStorage.getItem('isWorkerMode') === 'true';
-    return forced ? 'pos' : 'dashboard';
+    const forced = safeLocalStorage.getItem('isWorkerMode') === 'true';
+    if (forced) return 'pos';
+    return safeLocalStorage.getItem('pos_active_tab') || 'dashboard';
   });
+
+  useEffect(() => {
+    safeLocalStorage.setItem('pos_active_tab', activeTab);
+  }, [activeTab]);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   const [showPinModal, setShowPinModal] = useState(false);
   const [pinInput, setPinInput] = useState('');
   const [pinError, setPinError] = useState(false);
   const [showPinInputPass, setShowPinInputPass] = useState(false);
+
+  // Forced theme override independent of the remote database settings
+  const [forcedThemeMode, setForcedThemeMode] = useState<'light' | 'dark' | null>(() => {
+    const saved = safeLocalStorage.getItem('pos_forced_theme_mode');
+    return (saved === 'light' || saved === 'dark') ? (saved as 'light' | 'dark') : null;
+  });
+
+  const handleToggleForcedTheme = () => {
+    const defaultTheme = db?.settings?.themeMode || 'light';
+    const activeTheme = forcedThemeMode || defaultTheme;
+    const nextTheme = activeTheme === 'dark' ? 'light' : 'dark';
+    setForcedThemeMode(nextTheme);
+    safeLocalStorage.setItem('pos_forced_theme_mode', nextTheme);
+  };
 
   // States for low stock levels prompt & banner
   const [showStockAlertBanner, setShowStockAlertBanner] = useState<boolean>(false);
@@ -111,7 +134,7 @@ function AppContent() {
   const [systemUpdates, setSystemUpdates] = useState<SystemUpdate[]>([]);
   const [isPerformingUpdate, setIsPerformingUpdate] = useState(false);
   const [updateStepMessage, setUpdateStepMessage] = useState('');
-  const [isSystemFullyUpdated, setIsSystemFullyUpdated] = useState(() => localStorage.getItem('last_acknowledged_update') === '24/05/2026 - 15:40');
+  const [isSystemFullyUpdated, setIsSystemFullyUpdated] = useState(() => safeLocalStorage.getItem('last_acknowledged_update') === '24/05/2026 - 15:40');
   const [isUpdateSuccess, setIsUpdateSuccess] = useState(false);
 
   const handlePerformSystemUpdate = async () => {
@@ -163,7 +186,7 @@ function AppContent() {
 
       await new Promise(resolve => setTimeout(resolve, 600));
       
-      localStorage.setItem('last_acknowledged_update', '24/05/2026 - 15:40');
+      safeLocalStorage.setItem('last_acknowledged_update', '24/05/2026 - 15:40');
       
       const freshUpdates = await loadSystemUpdates();
       if (freshUpdates && freshUpdates.length > 0) {
@@ -174,7 +197,7 @@ function AppContent() {
       setIsUpdateSuccess(true);
       setIsSystemFullyUpdated(true);
     } catch (err) {
-      console.error(err);
+      console.log("[INNOVA POS UPDATES] System update checking failed or cancelled offline:", err);
       setIsPerformingUpdate(false);
     }
   };
@@ -185,7 +208,7 @@ function AppContent() {
         const data = await loadSystemUpdates();
         setSystemUpdates(data);
       } catch (err) {
-        console.error("Error loading system updates list in App main:", err);
+        console.log("[INNOVA POS UPDATES] Error loading system updates list in App main, using cached client defaults:", err);
       }
     };
     fetchSystemUpdatesData();
@@ -198,7 +221,7 @@ function AppContent() {
       setPinError(false);
     } else {
       setIsWorkerMode(true);
-      localStorage.setItem('isWorkerMode', 'true');
+      safeLocalStorage.setItem('isWorkerMode', 'true');
       setActiveTab('pos');
       setShowCashierDetailsModal(true);
     }
@@ -206,21 +229,22 @@ function AppContent() {
 
   const handleStartShiftService = async () => {
     const startTimeStamp = new Date().toISOString();
-    localStorage.setItem('shift_open_time', startTimeStamp);
-    localStorage.setItem('shift_active_cashier', cashierName);
+    safeLocalStorage.setItem('shift_open_time', startTimeStamp);
+    safeLocalStorage.setItem('shift_active_cashier', cashierName);
     
     setShowCashierDetailsModal(false);
 
     // Prepare SMTP details if available in db.settings
     const storeName = db?.settings?.storeName || 'Boutique POS';
-    const adminEmail = db?.settings?.adminEmail || 'walakharouf665@gmail.com';
+    const adminEmail = db?.settings?.adminEmail || 'kharoufwala24@gmail.com';
     const smtpSettings = db?.settings ? {
       smtpHost: db.settings.smtpHost,
       smtpPort: db.settings.smtpPort,
       smtpUser: db.settings.smtpUser,
       smtpPass: db.settings.smtpPass,
       smtpSecure: db.settings.smtpSecure,
-      smtpSenderName: db.settings.smtpSenderName
+      smtpSenderName: db.settings.smtpSenderName,
+      useGmailApi: db.settings.useGmailApi
     } : undefined;
 
     // Send the beautiful Shift Opening Email
@@ -234,7 +258,7 @@ function AppContent() {
         smtpSettings
       );
     } catch (err) {
-      console.error("Failed to automatically dispatch session opening email:", err);
+      console.log("[SMTP CLIENT INFO] Gracefully skipped/handled session opening email dispatch:", err);
     }
   };
 
@@ -243,7 +267,7 @@ function AppContent() {
     const correctPin = db?.settings?.ownerPin || '0000';
     if (pinInput === correctPin) {
       // Get shift parameters
-      const startTime = localStorage.getItem('shift_open_time') || new Date().toISOString();
+      const startTime = safeLocalStorage.getItem('shift_open_time') || new Date().toISOString();
       const endTime = new Date().toISOString();
       
       // Calculate shifts metrics!
@@ -265,19 +289,20 @@ function AppContent() {
       const expensesTotal = shiftExpenses.reduce((sum, exp) => sum + exp.amount, 0);
 
       const storeName = db?.settings?.storeName || 'Boutique POS';
-      const adminEmail = db?.settings?.adminEmail || 'walakharouf665@gmail.com';
+      const adminEmail = db?.settings?.adminEmail || 'kharoufwala24@gmail.com';
       const smtpSettings = db?.settings ? {
         smtpHost: db.settings.smtpHost,
         smtpPort: db.settings.smtpPort,
         smtpUser: db.settings.smtpUser,
         smtpPass: db.settings.smtpPass,
         smtpSecure: db.settings.smtpSecure,
-        smtpSenderName: db.settings.smtpSenderName
+        smtpSenderName: db.settings.smtpSenderName,
+        useGmailApi: db.settings.useGmailApi
       } : undefined;
 
       // Close shift state
       setIsWorkerMode(false);
-      localStorage.setItem('isWorkerMode', 'false');
+      safeLocalStorage.setItem('isWorkerMode', 'false');
       setShowPinModal(false);
       setPinInput('');
       setPinError(false);
@@ -301,7 +326,7 @@ function AppContent() {
           smtpSettings
         );
       } catch (err) {
-        console.error("Failed to automatically dispatch session closing email:", err);
+        console.log("[SMTP CLIENT INFO] Gracefully skipped/handled session closing email dispatch:", err);
       }
     } else {
       setPinError(true);
@@ -342,8 +367,8 @@ function AppContent() {
           const isTrialValid = userLicense.licenseStatus === 'trial' && new Date() <= new Date(userLicense.licenseExpiry);
           const isActiveValid = userLicense.licenseStatus === 'active' && isVerified;
 
-          // Bypass checks if developer is logged in (walakharouf665@gmail.com)
-          const isDeveloper = currentUser.email === 'walakharouf665@gmail.com';
+          // Bypass checks if developer is logged in (kharoufwala24@gmail.com)
+          const isDeveloper = currentUser.email === 'kharoufwala24@gmail.com';
 
           if (!isDeveloper && (userLicense.licenseStatus === 'suspended' || (!isTrialValid && !isActiveValid))) {
             setIsLicenseLocked(true);
@@ -351,7 +376,7 @@ function AppContent() {
             setIsLicenseLocked(false);
           }
         } catch (err) {
-          console.error("Failed to load user cloud data, falling back to local storage.", err);
+          console.log("[FIRESTORE SYSTEM INFO] Failed to load user cloud data, falling back to local storage.", err);
           setDb(getDatabase());
         } finally {
           setSyncingCloud(false);
@@ -412,38 +437,46 @@ function AppContent() {
         }
 
         // Native Browser HTML5 Notification request & send
-        if (typeof window !== 'undefined' && 'Notification' in window) {
-          const sendDesktopNotification = () => {
-            const title = language === 'ar' ? 'تنبيه مستويات المخزون' : 'Alerte de Stock Bas';
-            const body = language === 'ar'
-              ? `يوجد ${criticalCount} من السلع الهامة تحت حد الإنذار! يرجى مراجعة المخزون حينه.`
-              : `Alerte : ${criticalCount} articles de vente critiques ont atteint leur seuil minimal de sécurité !`;
-            
-            try {
-              new Notification(title, {
-                body,
-                icon: db.settings?.storeLogo || 'https://images.unsplash.com/photo-1542838132-92c53300491e?auto=format&fit=crop&w=120&q=80'
-              });
-            } catch (err) {
-              console.warn("Desktop notification direct invocation failed", err);
-            }
-          };
-
-          if (Notification.permission === 'granted') {
-            sendDesktopNotification();
-          } else if (Notification.permission !== 'denied') {
-            Notification.requestPermission().then(permission => {
-              if (permission === 'granted') {
-                sendDesktopNotification();
+        try {
+          if (typeof window !== 'undefined' && 'Notification' in window) {
+            const sendDesktopNotification = () => {
+              const title = language === 'ar' ? 'تنبيه مستويات المخزون' : 'Alerte de Stock Bas';
+              const body = language === 'ar'
+                ? `يوجد ${criticalCount} من السلع الهامة تحت حد الإنذار! يرجى مراجعة المخزون حينه.`
+                : `Alerte : ${criticalCount} articles de vente critiques ont atteint leur seuil minimal de sécurité !`;
+              
+              try {
+                new Notification(title, {
+                  body,
+                  icon: db.settings?.storeLogo || 'https://images.unsplash.com/photo-1542838132-92c53300491e?auto=format&fit=crop&w=120&q=80'
+                });
+              } catch (err) {
+                console.warn("[INNOVA POS INFO] Desktop notification direct invocation failed:", err);
               }
-            });
+            };
+
+            // Safely check permission and request if needed inside sandbox-resilient wrapper
+            const currentPermission = Notification.permission;
+            if (currentPermission === 'granted') {
+              sendDesktopNotification();
+            } else if (currentPermission !== 'denied') {
+              Notification.requestPermission().then(permission => {
+                if (permission === 'granted') {
+                  sendDesktopNotification();
+                }
+              }).catch(err => {
+                console.warn("[INNOVA POS INFO] Notification.requestPermission was blocked inside sandbox iframe:", err);
+              });
+            }
           }
+        } catch (err) {
+          console.log("[INNOVA POS INFO] Native HTML5 browser notifications skipped gracefully inside sandboxed preview iframe:", err);
         }
 
         // 📬 Automatically send daily low stock email if enabled and not already sent today
         if (db.settings?.enableDailyLowStockEmail && db.settings?.adminEmail && db.settings?.adminEmail.includes('@')) {
           const todayStr = new Date().toISOString().split('T')[0];
-          const lastSentDate = localStorage.getItem('lastDailyLowStockEmailDate');
+          const lastSentDate = safeLocalStorage.getItem('lastDailyLowStockEmailDate');
           
           if (lastSentDate !== todayStr) {
             // Identify low-stock products (stock <= minAlertQty)
@@ -455,7 +488,8 @@ function AppContent() {
               smtpUser: license?.remoteSmtpUser !== undefined ? license.remoteSmtpUser : db.settings?.smtpUser,
               smtpPass: license?.remoteSmtpPass !== undefined ? license.remoteSmtpPass : db.settings?.smtpPass,
               smtpSecure: license?.remoteSmtpSecure !== undefined ? license.remoteSmtpSecure : db.settings?.smtpSecure,
-              smtpSenderName: license?.remoteSmtpSenderName !== undefined ? license.remoteSmtpSenderName : db.settings?.smtpSenderName
+              smtpSenderName: license?.remoteSmtpSenderName !== undefined ? license.remoteSmtpSenderName : db.settings?.smtpSenderName,
+              useGmailApi: db.settings?.useGmailApi
             };
 
             const storeName = db.settings?.storeName || 'INNOVA POS';
@@ -469,12 +503,12 @@ function AppContent() {
             ).then(res => {
               if (res.success) {
                 console.log('[AUTO-DAILY EMAIL] Successfully dispatched daily stock report to:', db.settings?.adminEmail);
-                localStorage.setItem('lastDailyLowStockEmailDate', todayStr);
+                safeLocalStorage.setItem('lastDailyLowStockEmailDate', todayStr);
               } else {
                 console.warn('[AUTO-DAILY EMAIL] Failed during background schedule dispatch:', res.error);
               }
             }).catch(err => {
-              console.error('[AUTO-DAILY EMAIL] Exception during automatic delivery:', err);
+              console.log('[AUTO-DAILY EMAIL] Gracefully skipped/handled exception during automatic delivery:', err);
             });
           }
         }
@@ -497,6 +531,16 @@ function AppContent() {
     }
   }, [db]);
 
+  // Apply visual theme mode dynamically on document element
+  useEffect(() => {
+    const activeTheme = forcedThemeMode || db?.settings?.themeMode || 'light';
+    if (activeTheme === 'dark') {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
+  }, [forcedThemeMode, db?.settings?.themeMode]);
+
   // 3. Keep database states synchronized
   const handleUpdateDb = async (updatedDb: DatabaseState) => {
     const oldDb = db;
@@ -508,7 +552,7 @@ function AppContent() {
       try {
         await syncDatabaseDiff(user.uid, oldDb, updatedDb);
       } catch (err) {
-        console.error("Incremental background cloud synchronization failed", err);
+        console.log("[FIRESTORE SYSTEM INFO] Incremental background cloud synchronization failed or offline", err);
       }
     }
 
@@ -547,7 +591,8 @@ function AppContent() {
                 smtpUser: license?.remoteSmtpUser !== undefined ? license.remoteSmtpUser : updatedDb.settings?.smtpUser,
                 smtpPass: license?.remoteSmtpPass !== undefined ? license.remoteSmtpPass : updatedDb.settings?.smtpPass,
                 smtpSecure: license?.remoteSmtpSecure !== undefined ? license.remoteSmtpSecure : updatedDb.settings?.smtpSecure,
-                smtpSenderName: license?.remoteSmtpSenderName !== undefined ? license.remoteSmtpSenderName : updatedDb.settings?.smtpSenderName
+                smtpSenderName: license?.remoteSmtpSenderName !== undefined ? license.remoteSmtpSenderName : updatedDb.settings?.smtpSenderName,
+                useGmailApi: updatedDb.settings?.useGmailApi
               };
 
               const res = await sendCriticalStockEmail(
@@ -571,7 +616,7 @@ function AppContent() {
                 });
               }
             } catch (alertError) {
-              console.error("Critical Stock Alert Notification Dispatch Error:", alertError);
+              console.log("[SMTP CLIENT INFO] Gracefully skipped/handled critical stock alert notification dispatch:", alertError);
             }
           }
         }
@@ -654,8 +699,8 @@ function AppContent() {
     );
   }
 
-  // Determine if the logged-in user is the super-administrator (walakharouf665@gmail.com or walakharouf6665@gmail.com)
-  const isSuperAdmin = user && (user.email === 'walakharouf665@gmail.com' || user.email === 'walakharouf6665@gmail.com');
+  // Determine if the logged-in user is the super-administrator (kharoufwala24@gmail.com)
+  const isSuperAdmin = user && (user.email === 'kharoufwala24@gmail.com');
 
   // Count items below safety stocks alert threshold
   const criticalProductsCount = db?.products ? db.products.filter(p => p.stock <= p.minAlertQty).length : 0;
@@ -791,6 +836,25 @@ function AppContent() {
               <>
                 <Unlock className="w-3.5 h-3.5 text-slate-500" />
                 <span>{language === 'ar' ? '🔒 تفعيل وضع قفل العامل' : '🔒 Activer Mode Caissier'}</span>
+              </>
+            )}
+          </button>
+
+          {/* Forced Theme Toggle Button */}
+          <button
+            onClick={handleToggleForcedTheme}
+            className="w-full flex items-center justify-center gap-2 p-2 rounded text-[10px] font-bold bg-slate-900 border border-slate-800 text-slate-300 hover:text-white hover:bg-slate-800/60 transition-all cursor-pointer select-none"
+            title={language === 'ar' ? 'تغيير المظهر' : 'Changer thème'}
+          >
+            {(forcedThemeMode || db?.settings?.themeMode || 'light') === 'dark' ? (
+              <>
+                <Sun className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                <span>{language === 'ar' ? '☀️ مظهر فاتح' : '☀️ Mode Clair'}</span>
+              </>
+            ) : (
+              <>
+                <Moon className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
+                <span>{language === 'ar' ? '🌙 مظهر داكن' : '🌙 Mode Sombre'}</span>
               </>
             )}
           </button>
@@ -938,6 +1002,27 @@ function AppContent() {
                   <>
                     <Unlock className="w-3.5 h-3.5 text-slate-500" />
                     <span>{language === 'ar' ? '🔒 تفعيل قفل العمال' : '🔒 Activer Mode Caissier'}</span>
+                  </>
+                )}
+              </button>
+
+              {/* Mobile Forced Theme Toggle */}
+              <button
+                onClick={() => {
+                  setMobileMenuOpen(false);
+                  handleToggleForcedTheme();
+                }}
+                className="w-full flex items-center justify-center gap-2 py-2 px-3 rounded text-[11px] font-bold bg-slate-900 border border-slate-800 text-slate-300 hover:text-white hover:bg-slate-800/60 transition-all cursor-pointer select-none"
+              >
+                {(forcedThemeMode || db?.settings?.themeMode || 'light') === 'dark' ? (
+                  <>
+                    <Sun className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                    <span>{language === 'ar' ? '☀️ مظهر فاتح' : '☀️ Mode Clair'}</span>
+                  </>
+                ) : (
+                  <>
+                    <Moon className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
+                    <span>{language === 'ar' ? '🌙 مظهر داكن' : '🌙 Mode Sombre'}</span>
                   </>
                 )}
               </button>
@@ -1142,8 +1227,30 @@ function AppContent() {
 
       {/* 🔐 PIN Validation Modal for Owner Status */}
       {showPinModal && (
-        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-md flex items-center justify-center z-50 p-3 md:p-4 overflow-y-auto" dir={language === 'ar' ? 'rtl' : 'ltr'}>
-          <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-sm w-full p-5 md:p-6 space-y-4 text-center my-auto">
+        <div 
+          onClick={(e) => {
+            if (e.target === e.currentTarget) {
+              setShowPinModal(false);
+              setPinInput('');
+              setPinError(false);
+            }
+          }}
+          className="fixed inset-0 bg-slate-950/80 backdrop-blur-md flex items-center justify-center z-50 p-3 md:p-4 overflow-y-auto" 
+          dir={language === 'ar' ? 'rtl' : 'ltr'}
+        >
+          <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-sm w-full p-5 md:p-6 space-y-4 text-center my-auto relative">
+            <button
+              type="button"
+              onClick={() => {
+                setShowPinModal(false);
+                setPinInput('');
+                setPinError(false);
+              }}
+              className="absolute top-4 right-4 rtl:left-4 rtl:right-auto text-slate-400 hover:text-slate-650 transition-colors cursor-pointer text-lg p-1.5 rounded-full hover:bg-slate-50"
+              title={language === 'ar' ? 'إغلاق' : 'Fermer'}
+            >
+              ✕
+            </button>
             <div className="mx-auto w-12 h-12 bg-rose-50 text-rose-600 rounded-full flex items-center justify-center text-xl shadow-xs">
               🔐
             </div>
@@ -1228,22 +1335,40 @@ function AppContent() {
 
       {/* 👤 Cashier Session Info Modal Alert */}
       {showCashierDetailsModal && (
-        <div className="fixed inset-0 bg-slate-950/85 backdrop-blur-md flex items-center justify-center z-55 p-3 md:p-4 overflow-y-auto animate-fade-in" dir={language === 'ar' ? 'rtl' : 'ltr'}>
-          <div className="bg-white rounded-2xl shadow-2xl border-2 border-amber-500/30 max-w-md w-full overflow-hidden shrink-0 my-auto">
+        <div 
+          onClick={(e) => {
+            if (e.target === e.currentTarget) {
+              setShowCashierDetailsModal(false);
+            }
+          }}
+          className="fixed inset-0 bg-slate-950/85 backdrop-blur-md flex items-center justify-center z-55 p-3 md:p-4 overflow-y-auto animate-fade-in" 
+          dir={language === 'ar' ? 'rtl' : 'ltr'}
+        >
+          <div className="bg-white rounded-2xl shadow-2xl border-2 border-amber-500/30 max-w-md w-full overflow-hidden shrink-0 my-auto relative">
             
             {/* Header with Amber accent */}
-            <div className="bg-amber-500/10 border-b border-amber-500/20 p-5 flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-amber-500 text-white flex items-center justify-center text-xl shadow-md">
-                👤
+            <div className="bg-amber-500/10 border-b border-amber-500/20 p-5 flex items-center justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-amber-500 text-white flex items-center justify-center text-xl shadow-md">
+                  👤
+                </div>
+                <div className="text-start">
+                  <h3 className="text-base font-bold text-slate-900">
+                    {language === 'ar' ? 'جلسة الكاشير مفعّلة الآن' : 'Session Caissier Activée'}
+                  </h3>
+                  <p className="text-[10px] text-amber-600 font-bold uppercase tracking-wider font-mono">
+                    {language === 'ar' ? 'رمز الوضع: caissier-restrict-prod' : 'ID MODE: CAISSIER-RESTRICT-PROD'}
+                  </p>
+                </div>
               </div>
-              <div className="text-start">
-                <h3 className="text-base font-bold text-slate-900">
-                  {language === 'ar' ? 'جلسة الكاشير مفعّلة الآن' : 'Session Caissier Activée'}
-                </h3>
-                <p className="text-[10px] text-amber-600 font-bold uppercase tracking-wider font-mono">
-                  {language === 'ar' ? 'رمز الوضع: caissier-restrict-prod' : 'ID MODE: CAISSIER-RESTRICT-PROD'}
-                </p>
-              </div>
+              <button
+                type="button"
+                onClick={() => setShowCashierDetailsModal(false)}
+                className="text-slate-400 hover:text-slate-650 transition-colors p-1.5 rounded-full hover:bg-slate-100/50 cursor-pointer text-lg font-bold"
+                title={language === 'ar' ? 'إغلاق' : 'Fermer'}
+              >
+                ✕
+              </button>
             </div>
 
             {/* Credential coordinates */}
@@ -1328,7 +1453,15 @@ function AppContent() {
 
       {/* 🚀 Interactive System Update & Release Logs Modal */}
       {showUpdateHistoryModal && (
-        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-md flex items-center justify-center z-50 p-3 md:p-4 font-sans overflow-y-auto" dir={language === 'ar' ? 'rtl' : 'ltr'}>
+        <div 
+          onClick={(e) => {
+            if (e.target === e.currentTarget && !isPerformingUpdate) {
+              setShowUpdateHistoryModal(false);
+            }
+          }}
+          className="fixed inset-0 bg-slate-950/80 backdrop-blur-md flex items-center justify-center z-50 p-3 md:p-4 font-sans overflow-y-auto" 
+          dir={language === 'ar' ? 'rtl' : 'ltr'}
+        >
           <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-lg w-full flex flex-col max-h-[90vh] overflow-hidden animate-fadeIn my-auto">
             
             {/* Header Area */}
@@ -1662,18 +1795,6 @@ function AppContent() {
                   <div className="truncate text-[8.5px] mt-1 text-slate-500">Sujet: {emailAlertToast.subject}</div>
                 </div>
 
-                {emailAlertToast.previewUrl && (
-                  <div className="pt-1">
-                    <a
-                      href={emailAlertToast.previewUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex items-center gap-1 text-[11px] font-black text-blue-400 hover:text-blue-300 underline cursor-pointer hover:scale-101 transition-all bg-blue-500/10 px-2 py-1 rounded"
-                    >
-                      <span>🔗 {language === 'ar' ? 'افتح معاينة البريد الإلكتروني ↗️' : 'Ouvrir l\'aperçu réel du mail ↗️'}</span>
-                    </a>
-                  </div>
-                )}
               </div>
             </div>
             
@@ -1681,7 +1802,7 @@ function AppContent() {
             <motion.div
               initial={{ width: '100%' }}
               animate={{ width: '0%' }}
-              transition={{ duration: emailAlertToast.previewUrl ? 15 : 8, ease: 'linear' }}
+              transition={{ duration: 8, ease: 'linear' }}
               onAnimationComplete={() => setEmailAlertToast(null)}
               className="absolute bottom-0 left-0 h-0.5 bg-emerald-500"
             />
@@ -1689,6 +1810,8 @@ function AppContent() {
         )}
       </AnimatePresence>
 
+      {/* Global generic CRUD operations toast container */}
+      <ToastContainer />
     </div>
   );
 }

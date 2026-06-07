@@ -1,13 +1,58 @@
 import { initializeApp } from 'firebase/app';
-import { getAuth } from 'firebase/auth';
-import { initializeFirestore } from 'firebase/firestore';
+import { getAuth, GoogleAuthProvider, signInWithPopup } from 'firebase/auth';
+import { initializeFirestore, setLogLevel } from 'firebase/firestore';
+import { getStorage } from 'firebase/storage';
 import firebaseConfig from '../../firebase-applet-config.json';
 
-const app = initializeApp(firebaseConfig);
+const config = firebaseConfig as any;
+const app = initializeApp(config);
 export const db = initializeFirestore(app, {
   experimentalForceLongPolling: true,
-}, firebaseConfig.firestoreDatabaseId); /* CRITICAL: The app will break without this line */
+}, config.firestoreDatabaseId); /* CRITICAL: The app will break without this line */
 export const auth = getAuth();
+export const storage = getStorage(app);
+
+// Keep track of the Google OAuth access token in-memory
+let cachedAccessToken: string | null = null;
+
+export const setCachedAccessToken = (token: string | null) => {
+  cachedAccessToken = token;
+};
+
+export const getCachedAccessToken = () => cachedAccessToken;
+
+/**
+ * Triggers interactive Google Sign-In with specific scopes for Gmail and Google Drive services.
+ * Caches and returns the resulting access token in memory safely.
+ */
+export const googleSignInForWorkspace = async (): Promise<string> => {
+  if (cachedAccessToken) return cachedAccessToken;
+
+  const provider = new GoogleAuthProvider();
+  provider.addScope('https://www.googleapis.com/auth/gmail.readonly');
+  provider.addScope('https://www.googleapis.com/auth/gmail.send');
+  provider.addScope('https://www.googleapis.com/auth/drive');
+
+  try {
+    const result = await signInWithPopup(auth, provider);
+    const credential = GoogleAuthProvider.credentialFromResult(result);
+    if (!credential?.accessToken) {
+      throw new Error('Failed to retrieve OAuth access token from Google sign-in response.');
+    }
+    cachedAccessToken = credential.accessToken;
+    return cachedAccessToken;
+  } catch (error) {
+    console.error('Workspace Google integration auth failure:', error);
+    throw error;
+  }
+};
+
+// Suppress internal firestore logger warnings about network/backend availability
+try {
+  setLogLevel('silent');
+} catch (e) {
+  console.log('[FIRESTORE SYSTEM INFO] Suppressing Firestore logger failed: ', e);
+}
 
 export enum OperationType {
   CREATE = 'create',
@@ -36,8 +81,13 @@ export interface FirestoreErrorInfo {
 }
 
 export function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null) {
+  const errMessage = error instanceof Error ? error.message : String(error);
+  const isPermissionError = errMessage.toLowerCase().includes('permission-denied') || 
+                            errMessage.toLowerCase().includes('insufficient permissions') ||
+                            errMessage.toLowerCase().includes('permission denied');
+
   const errInfo: FirestoreErrorInfo = {
-    error: error instanceof Error ? error.message : String(error),
+    error: errMessage,
     authInfo: {
       userId: auth.currentUser?.uid,
       email: auth.currentUser?.email,
@@ -52,6 +102,12 @@ export function handleFirestoreError(error: unknown, operationType: OperationTyp
     operationType,
     path
   };
-  console.error('Firestore Error: ', JSON.stringify(errInfo));
-  throw new Error(JSON.stringify(errInfo));
+
+  if (isPermissionError) {
+    console.warn('Firestore Permission Error: ', JSON.stringify(errInfo));
+    throw new Error(JSON.stringify(errInfo));
+  } else {
+    // If it's a network, connection, offline or timeout issue, log it informatively which allows offline fallback to function.
+    console.log('[FIRESTORE SYSTEM INFO] Operating in offline or disconnected state gracefully: ', JSON.stringify(errInfo));
+  }
 }

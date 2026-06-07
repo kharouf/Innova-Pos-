@@ -219,7 +219,7 @@ export default function SaaSLicenseLockedScreen({
               </button>
             </div>
             <p className="text-[10px] text-amber-500 font-bold mt-1 max-w-sm leading-tight text-center sm:text-start" dir="ltr">
-              💡 {language === 'ar' ? 'انسخ هذا المعرف وأرسله للمطور walakharouf للحصول على مفتاح التنشيط' : 'Envoyez cet identifiant à walakharouf665@gmail.com pour activation'}
+              💡 {language === 'ar' ? 'انسخ هذا المعرف وأرسله للمطور kharoufwala24 للحصول على مفتاح التنشيط' : 'Envoyez cet identifiant à kharoufwala24@gmail.com pour activation'}
             </p>
           </div>
 
@@ -295,7 +295,7 @@ export default function SaaSLicenseLockedScreen({
         <div className="flex items-center gap-4 text-slate-500 font-medium">
           <span className="flex items-center gap-1">
             <Mail className="w-3 h-3 text-slate-500" />
-            <span>Mél: walakharouf665@gmail.com</span>
+            <span>Mél: kharoufwala24@gmail.com</span>
           </span>
           <span>•</span>
           <span>Support Technique Tunisie</span>

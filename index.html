@@ -9,12 +9,20 @@
     <link rel="icon" type="image/svg+xml" href="/app-icon.svg" />
     <title>INNOVA POS - Logiciel de Gestion Commerciale / نظام نقاط البيع</title>
     <script>
-      if ('serviceWorker' in navigator) {
-        window.addEventListener('load', () => {
-          navigator.serviceWorker.register('/sw.js')
-            .then((reg) => console.log('Service Worker auto registered successfully:', reg.scope))
-            .catch((err) => console.error('Service Worker registration failed:', err));
-        });
+      try {
+        if ('serviceWorker' in navigator) {
+          window.addEventListener('load', () => {
+            try {
+              navigator.serviceWorker.register('/sw.js')
+                .then((reg) => console.log('[INNOVA POS INFO] Service Worker registered:', reg.scope))
+                .catch((err) => console.log('[INNOVA POS INFO] Service Worker registration skipped gracefully:', err.message));
+            } catch (innerErr) {
+              console.log('[INNOVA POS INFO] Service Worker inner registration failed:', innerErr);
+            }
+          });
+        }
+      } catch (err) {
+        console.log('[INNOVA POS INFO] Service Worker feature not supported/allowed in this browser context:', err);
       }
     </script>
   </head>

@@ -2,8 +2,10 @@ import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { DatabaseState, Product } from '../types';
 import { getProductVisual } from '../utils/db';
 import { useLanguage } from '../utils/LanguageContext';
+import { safeLocalStorage } from '../utils/storage';
 import { Html5Qrcode } from 'html5-qrcode';
 import { jsPDF } from 'jspdf';
+import { showToast } from '../utils/toast';
 import { 
   Search, 
   Plus, 
@@ -24,7 +26,8 @@ import {
   Download,
   Barcode,
   Printer,
-  FileText
+  FileText,
+  DollarSign
 } from 'lucide-react';
 
 const COMMON_FOODS = [
@@ -77,6 +80,11 @@ export default function Products({ db, onUpdateDb }: ProductsProps) {
   const [tvaRate, setTvaRate] = useState<number>(19); // 0%, 7%, 19%
   const [isNewCategory, setIsNewCategory] = useState(false);
 
+  // Rapid price update states
+  const [editPriceProductId, setEditPriceProductId] = useState<string | null>(null);
+  const [editPurchasePrice, setEditPurchasePrice] = useState<number>(0);
+  const [editSellingPrice, setEditSellingPrice] = useState<number>(0);
+
   // 🏷️ Barcode Print states
   const [showBarcodeModal, setShowBarcodeModal] = useState(false);
   const [selectedBarcodeProduct, setSelectedBarcodeProduct] = useState<Product | null>(null);
@@ -91,7 +99,7 @@ export default function Products({ db, onUpdateDb }: ProductsProps) {
   const [cameraError, setCameraError] = useState<string | null>(null);
   const [isFlashActive, setIsFlashActive] = useState(false);
   const [isBeepEnabled, setIsBeepEnabled] = useState<boolean>(() => {
-    return localStorage.getItem('product_scan_beep') !== 'false';
+    return safeLocalStorage.getItem('product_scan_beep') !== 'false';
   });
   
   const html5QrCodeRef = useRef<Html5Qrcode | null>(null);
@@ -223,6 +231,31 @@ export default function Products({ db, onUpdateDb }: ProductsProps) {
     onUpdateDb({ ...db, products: updatedProducts });
   };
 
+  // Handle fast price adjustments from simple modal
+  const handleQuickPriceUpdate = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editPriceProductId) return;
+
+    const updatedProducts = db.products.map(p => {
+      if (p.id === editPriceProductId) {
+        return {
+          ...p,
+          purchasePrice: Number(editPurchasePrice),
+          sellingPrice: Number(editSellingPrice)
+        };
+      }
+      return p;
+    });
+
+    onUpdateDb({ ...db, products: updatedProducts });
+    setEditPriceProductId(null);
+    showToast(
+      language === 'ar' 
+        ? 'تم تحديث السعر بنجاح' 
+        : 'Prix de l\'article mis à jour avec succès'
+    );
+  };
+
   const filteredProducts = useMemo(() => {
     return db.products.filter(p => {
       const matchSearch = p.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
@@ -335,6 +368,10 @@ export default function Products({ db, onUpdateDb }: ProductsProps) {
 
     onUpdateDb({ ...db, products: updatedProducts });
     setShowFormModal(false);
+    showToast(editingProduct 
+      ? (language === 'ar' ? 'تم التعديل بنجاح' : 'Produit modifié avec succès') 
+      : (language === 'ar' ? 'تمت الإضافة بنجاح' : 'Produit ajouté avec succès')
+    );
   };
 
   // Export current list to CSV format with Excel UTF-8 BOM protection
@@ -678,6 +715,7 @@ export default function Products({ db, onUpdateDb }: ProductsProps) {
       const updatedProducts = db.products.filter(p => p.id !== deleteProductId);
       onUpdateDb({ ...db, products: updatedProducts });
       setDeleteProductId(null);
+      showToast(language === 'ar' ? 'تم حذف المنتج' : 'Produit supprimé', 'info');
     }
   };
 
@@ -774,6 +812,8 @@ export default function Products({ db, onUpdateDb }: ProductsProps) {
               placeholder="Chercher par nom ou code-barres..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
+              onClick={(e) => { e.currentTarget.focus(); }}
+              onTouchStart={(e) => { e.currentTarget.focus(); }}
               className="w-full pl-9 pr-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded focus:outline-hidden focus:border-blue-500 focus:bg-white transition-all font-mono"
             />
           </div>
@@ -970,6 +1010,17 @@ export default function Products({ db, onUpdateDb }: ProductsProps) {
                             <Barcode className="w-3.5 h-3.5" />
                           </button>
                           <button
+                            onClick={() => {
+                              setEditPriceProductId(prod.id);
+                              setEditPurchasePrice(prod.purchasePrice);
+                              setEditSellingPrice(prod.sellingPrice);
+                            }}
+                            className="p-1.5 bg-slate-100 hover:bg-amber-50 hover:text-amber-600 rounded text-slate-500 transition-colors cursor-pointer flex items-center justify-center"
+                            title={language === 'ar' ? 'تعديل سريع للأسعار' : 'Modifier prix rapidement'}
+                          >
+                            <DollarSign className="w-3.5 h-3.5" />
+                          </button>
+                          <button
                             onClick={() => handleOpenEdit(prod)}
                             className="p-1.5 bg-slate-100 hover:bg-blue-50 hover:text-blue-600 rounded text-slate-500 transition-colors cursor-pointer flex items-center justify-center"
                             title="Modifier Fiche"
@@ -1077,7 +1128,7 @@ export default function Products({ db, onUpdateDb }: ProductsProps) {
                           onChange={(e) => {
                             const nextVal = e.target.checked;
                             setIsBeepEnabled(nextVal);
-                            localStorage.setItem('product_scan_beep', String(nextVal));
+                            safeLocalStorage.setItem('product_scan_beep', String(nextVal));
                           }}
                           className="rounded-sm border-slate-300 text-indigo-600 focus:ring-indigo-500 w-3 h-3 cursor-pointer"
                         />
@@ -1515,6 +1566,90 @@ export default function Products({ db, onUpdateDb }: ProductsProps) {
         </div>
       )}
 
+      {/* RAPID PRICE UPDATE MODAL */}
+      {editPriceProductId && (() => {
+        const product = db.products.find(p => p.id === editPriceProductId);
+        if (!product) return null;
+
+        return (
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md flex items-center justify-center p-3 md:p-4 z-50 overflow-y-auto">
+            <div className="bg-white rounded-2xl max-w-sm w-full p-5 md:p-6 shadow-2xl border border-slate-200 text-start my-auto space-y-4">
+              <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                <h3 className="text-base font-bold text-slate-900 flex items-center gap-1.5">
+                  <DollarSign className="w-5 h-5 text-amber-500" />
+                  <span>{language === 'ar' ? 'تعديل سريع للأسعار' : 'Modification rapide des prix'}</span>
+                </h3>
+                <button type="button" onClick={() => setEditPriceProductId(null)} className="text-slate-400 hover:text-slate-600 cursor-pointer">
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <div className="p-3 bg-slate-50 border border-slate-100 rounded-lg text-xs space-y-1">
+                <div className="flex justify-between items-center gap-2">
+                  <span className="text-slate-500">{language === 'ar' ? 'اسم المنتج:' : 'Désignation :'}</span>
+                  <span className="font-bold text-slate-900 truncate max-w-[180px]">{product.name}</span>
+                </div>
+                {product.code && (
+                  <div className="flex justify-between items-center gap-2">
+                    <span className="text-slate-500">{language === 'ar' ? 'رمز الباركود:' : 'Code-barres :'}</span>
+                    <span className="font-mono text-slate-800 font-semibold">{product.code}</span>
+                  </div>
+                )}
+              </div>
+
+              <form onSubmit={handleQuickPriceUpdate} className="space-y-4 font-sans text-xs">
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <label className="text-xs font-bold text-slate-700 block">
+                      {language === 'ar' ? 'سعر الشراء' : "Prix d'Achat"}
+                    </label>
+                    <input
+                      type="number"
+                      step="any"
+                      min="0"
+                      required
+                      value={editPurchasePrice}
+                      onChange={(e) => setEditPurchasePrice(Number(e.target.value))}
+                      className="w-full bg-slate-50 border border-slate-200 rounded py-2 px-3 focus:outline-hidden text-slate-800 font-semibold text-center font-mono"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-xs font-bold text-slate-700 block">
+                      {language === 'ar' ? 'سعر البيع' : 'Prix de Vente'}
+                    </label>
+                    <input
+                      type="number"
+                      step="any"
+                      min="0"
+                      required
+                      value={editSellingPrice}
+                      onChange={(e) => setEditSellingPrice(Number(e.target.value))}
+                      className="w-full bg-slate-50 border border-slate-200 rounded py-2 px-3 focus:outline-hidden text-slate-800 font-semibold text-center font-mono"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex justify-end space-x-3 pt-3 border-t border-slate-100">
+                  <button
+                    type="button"
+                    onClick={() => setEditPriceProductId(null)}
+                    className="px-4 py-2 bg-slate-50 border border-slate-200 text-slate-600 rounded text-xs font-bold cursor-pointer hover:bg-slate-100"
+                  >
+                    {language === 'ar' ? 'إلغاء' : 'Annuler'}
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded text-xs font-bold cursor-pointer transition-all shadow-xs"
+                  >
+                    {language === 'ar' ? 'تحديث السعر' : 'Mettre à jour'}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        );
+      })()}
+
       {/* DETAILED DELETE CONFIRMATION MODAL */}
       {deleteProductId && (() => {
         const product = db.products.find(p => p.id === deleteProductId);
@@ -1650,22 +1785,37 @@ export default function Products({ db, onUpdateDb }: ProductsProps) {
           try {
             const printContent = document.getElementById('print-barcode-area');
             const portal = document.getElementById('print-portal');
+            const isIframe = window.self !== window.top;
+
             if (printContent && portal) {
               portal.innerHTML = `
                 <div id="print-barcode-area" style="display: block !important; background: #ffffff !important; padding: 10px;">
                   ${printContent.innerHTML}
                 </div>
               `;
-              window.print();
+              if (!isIframe) {
+                try {
+                  window.print();
+                } catch (printErr) {
+                  console.warn("window.print failed", printErr);
+                }
+              } else {
+                console.log("[INNOVA PRINT] Barcode print triggered inside sandbox preview.");
+              }
               setTimeout(() => {
                 portal.innerHTML = '';
               }, 1000);
             } else {
-              window.print();
+              if (!isIframe) {
+                try {
+                  window.print();
+                } catch (printErr) {
+                  console.error(printErr);
+                }
+              }
             }
           } catch (err) {
-            console.warn("Robust print failed, fallback to native window.print", err);
-            window.print();
+            console.warn("Robust print failed", err);
           }
         };
 

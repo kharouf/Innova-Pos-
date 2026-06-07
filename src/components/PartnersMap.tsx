@@ -5,7 +5,7 @@ import { useLanguage } from '../utils/LanguageContext';
 import { MapPin, Phone, User, Store, ExternalLink, RefreshCw, ZoomIn } from 'lucide-react';
 
 const API_KEY =
-  process.env.GOOGLE_MAPS_PLATFORM_KEY ||
+  (typeof process !== 'undefined' ? process.env?.GOOGLE_MAPS_PLATFORM_KEY : null) ||
   (import.meta as any).env?.VITE_GOOGLE_MAPS_PLATFORM_KEY ||
   (globalThis as any).GOOGLE_MAPS_PLATFORM_KEY ||
   '';

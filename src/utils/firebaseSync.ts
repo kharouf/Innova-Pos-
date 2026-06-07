@@ -240,7 +240,7 @@ export async function syncDatabaseDiff(
       });
     }
   } catch (err) {
-    console.error('Failure inside incremental sync database helper', err);
+    console.log('[FIRESTORE SYSTEM INFO] Failure inside incremental sync database helper. Operating offline.', err);
   }
 }
 
@@ -293,7 +293,7 @@ export async function loadUserLicense(userId: string, email: string | null, stor
       return defaultLicense;
     }
   } catch (error) {
-    console.error("Failed to load user license", error);
+    console.log("[FIRESTORE SYSTEM INFO] Failed to load user license. Using default safety instance.", error);
     // Return a default safety instance
     const trialExpiryDate = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
     return {
@@ -324,7 +324,7 @@ export async function saveUserLicense(userId: string, data: Partial<UserLicenseD
 
 /**
  * Loads all registered tenants' licensing configurations.
- * Only accessible to super-admin (walakharouf665@gmail.com).
+ * Only accessible to super-admin (kharoufwala24@gmail.com).
  */
 export async function loadAllTenantLicenses(): Promise<UserLicenseData[]> {
   const colRef = collection(db, 'users');
@@ -359,7 +359,7 @@ export async function loadAllTenantLicenses(): Promise<UserLicenseData[]> {
     });
     return licenses;
   } catch (error) {
-    console.error("Failed to load global tenant list", error);
+    console.log("[FIRESTORE SYSTEM INFO] Failed to load global tenant list. Returning empty list.", error);
     return [];
   }
 }

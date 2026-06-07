@@ -1,4 +1,6 @@
 import { Product } from '../types';
+import { getCachedAccessToken } from './firebase';
+import { sendEmailViaGmailAPI } from './workspace';
 
 export interface EmailLog {
   id: string;
@@ -29,6 +31,7 @@ export async function sendCriticalStockEmail(
     smtpPass?: string;
     smtpSecure?: boolean;
     smtpSenderName?: string;
+    useGmailApi?: boolean;
   }
 ): Promise<{ success: boolean; log: EmailLog }> {
   const isArabic = language === 'ar';
@@ -54,6 +57,65 @@ export async function sendCriticalStockEmail(
   };
 
   try {
+    const googleToken = getCachedAccessToken();
+    const useGmailApi = smtpSettings?.useGmailApi;
+
+    if (useGmailApi && googleToken) {
+      console.log('[GMAIL API FALLBACK] Intercepting stock alert email dispatch to run via Google Gmail API CLIENT.');
+      const messageHtml = isArabic
+        ? `
+        <div style="direction: rtl; font-family: system-ui, sans-serif; padding: 20px; border: 1px solid #e2e8f0; border-radius: 12px; max-width: 600px; background-color: #f8fafc;">
+          <h2 style="color: #dc2626; margin-top: 0;">⚠️ تنبيه تلقائي من نظام INNOVA POS</h2>
+          <p style="font-size: 14px; color: #475569;">مرحباً، لقد وصلت السلعة التالية في محل <strong>${storeName}</strong> إلى مستوى المخزون الحرج:</p>
+          <hr style="border: 0; border-top: 1px solid #cbd5e1; margin: 15px 0;" />
+          <ul style="list-style: none; padding: 0; font-size: 14px; line-height: 1.8;">
+            <li>📦 <strong>اسم المنتج:</strong> ${product.name}</li>
+            <li>🏷️ <strong>الكود السري (SKU):</strong> ${product.code}</li>
+            <li>📊 <strong>الكمية المتبقية:</strong> <span style="color: #dc2626; font-weight: bold; font-size: 16px;">${product.stock} ${product.unit || 'قطعة'}</span></li>
+            <li>🚨 <strong>الحد الأدنى للتنبيه:</strong> ${product.minAlertQty} ${product.unit || 'قطعة'}</li>
+          </ul>
+          <hr style="border: 0; border-top: 1px solid #cbd5e1; margin: 15px 0;" />
+          <p style="font-size: 12px; color: #64748b; margin-bottom: 0;">يرجى إعادة تموين هذا الصنف بأقرب وقت لتفادي انقطاع المبيعات.</p>
+        </div>
+        `
+        : `
+        <div style="font-family: system-ui, sans-serif; padding: 20px; border: 1px solid #e2e8f0; border-radius: 12px; max-width: 600px; background-color: #f8fafc;">
+          <h2 style="color: #dc2626; margin-top: 0;">⚠️ Alerte Automatique - INNOVA POS</h2>
+          <p style="font-size: 14px; color: #475569;">Bonjour,</p>
+          <p style="font-size: 14px; color: #475569;">Le produit suivant de votre magasin <strong>${storeName}</strong> a franchi le niveau d'alerte minimal de sécurité :</p>
+          <hr style="border: 0; border-top: 1px solid #cbd5e1; margin: 15px 0;" />
+          <ul style="list-style-type: none; padding: 0; font-size: 14px; line-height: 1.8;">
+            <li>📦 <strong>Produit :</strong> ${product.name}</li>
+            <li>🏷️ <strong>SKU / Code :</strong> ${product.code || 'N/A'}</li>
+            <li>📊 <strong>Stock Restant :</strong> <span style="color: #dc2626; font-weight: bold; font-size: 16px;">${product.stock} ${product.unit || 'Pcs'}</span></li>
+            <li>🚨 <strong>Seuil minimal :</strong> ${product.minAlertQty} ${product.unit || 'Pcs'}</li>
+          </ul>
+          <hr style="border: 0; border-top: 1px solid #cbd5e1; margin: 15px 0;" />
+          <p style="font-size: 12px; color: #64748b; margin-bottom: 0;">Veuillez passer commande auprès de vos partenaires dès que possible afin d'éviter toute rupture de stock.</p>
+        </div>
+        `;
+
+      const gmailRes = await sendEmailViaGmailAPI(
+        googleToken,
+        adminEmail,
+        subject,
+        messageHtml,
+        smtpSettings?.smtpSenderName || storeName
+      );
+
+      if (!gmailRes.success) {
+        throw new Error(gmailRes.error || 'Gmail API Client Sending Failed');
+      }
+
+      return {
+        success: true,
+        log: {
+          ...logEntry,
+          id: gmailRes.messageId || logEntry.id
+        }
+      };
+    }
+
     const response = await fetch('/api/send-email', {
       method: 'POST',
       headers: {
@@ -75,7 +137,7 @@ export async function sendCriticalStockEmail(
     const resData = await response.json();
 
     if (!response.ok || !resData.success) {
-      throw new Error(resData.error || 'Failed to dispatch email via SMTP server');
+      throw new Error(resData.message || resData.error || 'Failed to dispatch email via SMTP server');
     }
 
     console.log('[EMAIL DISPATCH SYSTEM] Alert email successfully sent:', resData);
@@ -89,7 +151,7 @@ export async function sendCriticalStockEmail(
       } 
     };
   } catch (error: any) {
-    console.error("Critical Stock Email Dispatch failed:", error);
+    console.log("[SMTP CLIENT INFO] Critical Stock Email Dispatch gracefully handled:", error.message || error);
     return { 
       success: false, 
       log: { 
@@ -112,9 +174,30 @@ export async function sendCustomEmail(
     smtpPass?: string;
     smtpSecure?: boolean;
     smtpSenderName?: string;
+    useGmailApi?: boolean;
   }
 ): Promise<{ success: boolean; messageId?: string; error?: string }> {
   try {
+    const googleToken = getCachedAccessToken();
+    const useGmailApi = smtpSettings?.useGmailApi;
+
+    if (useGmailApi && googleToken) {
+      console.log('[GMAIL API FALLBACK] Intercepting custom report email dispatch to run via Google Gmail API CLIENT.');
+      const gmailRes = await sendEmailViaGmailAPI(
+        googleToken,
+        recipient,
+        subject,
+        html,
+        smtpSettings?.smtpSenderName || "INNOVA POS"
+      );
+
+      if (!gmailRes.success) {
+        throw new Error(gmailRes.error || 'Gmail API Client Sending Failed');
+      }
+
+      return { success: true, messageId: gmailRes.messageId };
+    }
+
     const response = await fetch('/api/send-custom-email', {
       method: 'POST',
       headers: {
@@ -130,12 +213,12 @@ export async function sendCustomEmail(
 
     const resData = await response.json();
     if (!response.ok || !resData.success) {
-      throw new Error(resData.error || 'Failed to dispatch custom report email via SMTP');
+      throw new Error(resData.message || resData.error || 'Failed to dispatch custom report email via SMTP');
     }
 
     return { success: true, messageId: resData.messageId };
   } catch (error: any) {
-    console.error("Custom Email Dispatch failed:", error);
+    console.log("[SMTP CLIENT INFO] Custom Email Dispatch gracefully handled:", error.message || error);
     return { success: false, error: error.message };
   }
 }

@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { DatabaseState, Partner, StoreSettings } from '../types';
 import { useLanguage } from '../utils/LanguageContext';
+import { showToast } from '../utils/toast';
 import { 
   PlusCircle, 
   Search, 
@@ -23,7 +24,7 @@ interface PartnersProps {
 
 export default function Partners({ db, onUpdateDb }: PartnersProps) {
   const { language, t, formatCurrency } = useLanguage();
-  const [activeTab, setActiveTab] = useState<'client' | 'fournisseur' | 'map'>('client');
+  const [activeTab, setActiveTab] = useState<'all' | 'client' | 'fournisseur' | 'map'>('all');
   const [searchQuery, setSearchQuery] = useState('');
   
   // Settle balance modals
@@ -35,6 +36,7 @@ export default function Partners({ db, onUpdateDb }: PartnersProps) {
   // Register state
   const [showPartnerModal, setShowPartnerModal] = useState(false);
   const [editingPartner, setEditingPartner] = useState<Partner | null>(null);
+  const [partnerTypeToCreate, setPartnerTypeToCreate] = useState<'client' | 'fournisseur'>('client');
 
   // Form inputs
   const [name, setName] = useState('');
@@ -79,7 +81,7 @@ export default function Partners({ db, onUpdateDb }: PartnersProps) {
 
   const filteredPartners = useMemo(() => {
     return db.partners.filter(p => {
-      const matchType = activeTab === 'map' ? true : p.type === activeTab;
+      const matchType = activeTab === 'all' || activeTab === 'map' ? true : p.type === activeTab;
       const matchSearch = p.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
                           (p.phone && p.phone.includes(searchQuery)) ||
                           (p.email && p.email.toLowerCase().includes(searchQuery.toLowerCase()));
@@ -101,6 +103,7 @@ export default function Partners({ db, onUpdateDb }: PartnersProps) {
     setLocation('');
     setDiscountRate('');
     setLoyaltyPoints('0');
+    setPartnerTypeToCreate(activeTab === 'fournisseur' ? 'fournisseur' : 'client');
     setShowPartnerModal(true);
   };
 
@@ -117,6 +120,7 @@ export default function Partners({ db, onUpdateDb }: PartnersProps) {
     setLocation(partner.location || '');
     setDiscountRate(partner.discountRate !== undefined ? String(partner.discountRate) : '');
     setLoyaltyPoints(partner.loyaltyPoints !== undefined ? String(partner.loyaltyPoints) : '0');
+    setPartnerTypeToCreate(partner.type);
     setShowPartnerModal(true);
   };
 
@@ -151,7 +155,7 @@ export default function Partners({ db, onUpdateDb }: PartnersProps) {
     } else {
       const newPartner: Partner = {
         id: `part-${Date.now()}`,
-        type: activeTab === 'map' ? 'client' : activeTab,
+        type: partnerTypeToCreate,
         name: name.trim(),
         phone: phone.trim(),
         address: address.trim(),
@@ -169,6 +173,10 @@ export default function Partners({ db, onUpdateDb }: PartnersProps) {
 
     onUpdateDb({ ...db, partners: updatedPartners });
     setShowPartnerModal(false);
+    showToast(editingPartner 
+      ? (language === 'ar' ? 'تم تعديل ملف الشريك' : 'Partenaire modifié avec succès') 
+      : (language === 'ar' ? 'تم إضافة الشريك بنجاح' : 'Partenaire ajouté avec succès')
+    );
   };
 
   // Balance settlement actions (Enregistrer versement / règlement)
@@ -227,10 +235,10 @@ export default function Partners({ db, onUpdateDb }: PartnersProps) {
     setSelectedPartner(null);
     setPaymentAmount('');
     setPaymentNotes('');
-    alert("✅ Versement enregistré et validé avec succès ! Le solde a été mis à jour.");
+    showToast("Versement enregistré et validé avec succès !", 'success');
   };
 
-  const selectedTabIsClient = activeTab !== 'fournisseur';
+  const selectedTabIsClient = partnerTypeToCreate === 'client';
 
   // Compute loyalty program states
   const clientLoyaltyPointsTotal = useMemo(() => {
@@ -267,12 +275,12 @@ export default function Partners({ db, onUpdateDb }: PartnersProps) {
           className="px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded text-xs font-bold transition-all shadow-xs flex items-center justify-center gap-1.5 cursor-pointer self-start md:self-auto"
         >
           <PlusCircle className="w-4 h-4" />
-          <span>Fiche {selectedTabIsClient ? 'Client' : 'Fournisseur'} (Nouveau)</span>
+          <span>Fiche Partenaire (Nouveau)</span>
         </button>
       </div>
 
       {/* Credit summaries cards */}
-      <div className={`grid grid-cols-1 ${selectedTabIsClient ? 'md:grid-cols-3' : 'sm:grid-cols-2'} gap-4`}>
+      <div className={`grid grid-cols-1 ${activeTab === 'all' || activeTab === 'client' ? 'md:grid-cols-3' : 'sm:grid-cols-2'} gap-4`}>
         <div className="bg-white p-5 border border-slate-200 flex items-center justify-between">
           <div className="space-y-1">
             <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block">Total Créances Clients (Dettes à recouvrer)</span>
@@ -295,7 +303,7 @@ export default function Partners({ db, onUpdateDb }: PartnersProps) {
           </div>
         </div>
 
-        {selectedTabIsClient && (
+        {(activeTab === 'all' || activeTab === 'client') && (
           <div className="bg-white p-5 border border-slate-200 flex items-center justify-between">
             <div className="space-y-1">
               <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block">Fidélité Clients (Encours des Points)</span>
@@ -310,7 +318,7 @@ export default function Partners({ db, onUpdateDb }: PartnersProps) {
       </div>
 
       {/* loyalty settings toggler */}
-      {selectedTabIsClient && (
+      {(activeTab === 'all' || activeTab === 'client') && (
         <div className="bg-white border border-slate-200 rounded-lg overflow-hidden shadow-3xs">
           <button 
             type="button"
@@ -435,6 +443,14 @@ export default function Partners({ db, onUpdateDb }: PartnersProps) {
         {/* Toggle options */}
         <div className="flex bg-slate-100 p-1 rounded self-stretch sm:self-auto overflow-x-auto gap-1">
           <button
+            onClick={() => { setActiveTab('all'); setSearchQuery(''); }}
+            className={`px-4 py-2 rounded text-xs font-bold transition-all shrink-0 cursor-pointer ${
+              activeTab === 'all' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-500 hover:text-slate-800'
+            }`}
+          >
+            🗂️ {language === 'ar' ? 'الكل' : 'Tous'} ({db.partners.length})
+          </button>
+          <button
             onClick={() => { setActiveTab('client'); setSearchQuery(''); }}
             className={`px-4 py-2 rounded text-xs font-bold transition-all shrink-0 cursor-pointer ${
               activeTab === 'client' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-500 hover:text-slate-800'
@@ -489,7 +505,8 @@ export default function Partners({ db, onUpdateDb }: PartnersProps) {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
           {filteredPartners.map(p => {
-            const hasDebt = selectedTabIsClient ? p.currentBalance > 0 : p.currentBalance < 0;
+            const isClient = p.type === 'client';
+            const hasDebt = isClient ? p.currentBalance > 0 : p.currentBalance < 0;
             const absBalance = Math.abs(p.currentBalance);
             const associatedLogs = db.payments.filter(l => l.partnerId === p.id);
 
@@ -572,7 +589,7 @@ export default function Partners({ db, onUpdateDb }: PartnersProps) {
                   <div className="text-right">
                     <p className="text-[10px] uppercase font-bold text-slate-400">Solde de Compte</p>
                     <p className={`text-base font-black font-mono mt-0.5 ${
-                      selectedTabIsClient 
+                      isClient 
                         ? p.currentBalance > 0 
                           ? 'text-amber-600' 
                           : 'text-emerald-600'
@@ -583,15 +600,15 @@ export default function Partners({ db, onUpdateDb }: PartnersProps) {
                       {formatCurrency(absBalance)}
                     </p>
                     <span className={`text-[9px] font-bold px-1 rounded block mt-0.5 ${
-                      selectedTabIsClient 
+                      isClient 
                         ? p.currentBalance > 0 
                           ? 'bg-amber-50 text-amber-800' 
                           : 'bg-emerald-50 text-emerald-800'
                         : p.currentBalance < 0 
                           ? 'bg-rose-50 text-rose-800' 
-                          : 'bg-slate-105 text-slate-705 font-mono'
+                          : 'bg-slate-100/80 text-slate-700 font-bold'
                     }`}>
-                      {selectedTabIsClient 
+                      {isClient 
                         ? p.currentBalance > 0 
                           ? 'Créance (Il nous doit)' 
                           : 'À jour'
@@ -739,7 +756,7 @@ export default function Partners({ db, onUpdateDb }: PartnersProps) {
           <div className="bg-white rounded-2xl max-w-md w-full p-5 md:p-6 shadow-2xl space-y-4 my-auto">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <h3 className="text-base font-bold text-slate-900">
-                {editingPartner ? 'Modifier Profil' : `Créer une fiche ${selectedTabIsClient ? 'Client' : 'Fournisseur'}`}
+                {editingPartner ? `Modifier Fiche : ${editingPartner.name}` : 'Nouveau Partenaire'}
               </h3>
               <button onClick={() => setShowPartnerModal(false)} className="text-slate-400 hover:text-slate-600">
                 <X className="w-4 h-4" />
@@ -747,6 +764,19 @@ export default function Partners({ db, onUpdateDb }: PartnersProps) {
             </div>
 
             <form onSubmit={handlePartnerSubmit} className="space-y-4 text-xs font-sans">
+              <div>
+                <label className="text-xs font-bold text-slate-700 block mb-1">Type de Partenaire *</label>
+                <select
+                  disabled={!!editingPartner}
+                  value={partnerTypeToCreate}
+                  onChange={(e) => setPartnerTypeToCreate(e.target.value as 'client' | 'fournisseur')}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl py-2 px-3 focus:outline-hidden text-slate-800 font-bold disabled:opacity-60"
+                >
+                  <option value="client">👥 Client (Co-auxiliaire débiteur)</option>
+                  <option value="fournisseur">🏭 Fournisseur (Créditeur)</option>
+                </select>
+              </div>
+
               <div>
                 <label className="text-xs font-bold text-slate-700 block mb-1">Nom Complet / Raison Sociale *</label>
                 <input
@@ -1016,22 +1046,37 @@ export default function Partners({ db, onUpdateDb }: PartnersProps) {
           try {
             const printContent = document.getElementById('print-credit-statement');
             const portal = document.getElementById('print-portal');
+            const isIframe = window.self !== window.top;
+
             if (printContent && portal) {
               portal.innerHTML = `
                 <div class="a4-print-layout" dir="${language === 'ar' ? 'rtl' : 'ltr'}">
                   ${printContent.innerHTML}
                 </div>
               `;
-              window.print();
+              if (!isIframe) {
+                try {
+                  window.print();
+                } catch (printErr) {
+                  console.warn("window.print failed", printErr);
+                }
+              } else {
+                console.log("[INNOVA PRINT] Statement print triggered in sandboxed preview.");
+              }
               setTimeout(() => {
                 portal.innerHTML = '';
               }, 1000);
             } else {
-              window.print();
+              if (!isIframe) {
+                try {
+                  window.print();
+                } catch (printErr) {
+                  console.error(printErr);
+                }
+              }
             }
           } catch (err) {
-            console.warn("Robust statement print failed, fallback used", err);
-            window.print();
+            console.warn("Robust statement print failed", err);
           }
         };
 

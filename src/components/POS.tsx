@@ -4,7 +4,9 @@ import { motion, AnimatePresence } from 'motion/react';
 import { DatabaseState, Product, Partner, Invoice, InvoiceItem } from '../types';
 import { getProductVisual } from '../utils/db';
 import { useLanguage } from '../utils/LanguageContext';
+import { safeLocalStorage } from '../utils/storage';
 import { Html5Qrcode } from 'html5-qrcode';
+import { showToast } from '../utils/toast';
 import { 
   Search, 
   ShoppingCart, 
@@ -29,7 +31,9 @@ import {
   AlertCircle,
   Phone,
   RefreshCw,
-  Download
+  Download,
+  Maximize,
+  Minimize
 } from 'lucide-react';
 import { downloadInvoicePDF } from '../utils/pdfGenerator';
 
@@ -43,6 +47,31 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
   const { language, t, formatCurrency } = useLanguage();
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('Tous');
+  const [isFullscreen, setIsFullscreen] = useState(false);
+
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      setIsFullscreen(!!document.fullscreenElement);
+    };
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    return () => {
+      document.removeEventListener('fullscreenchange', handleFullscreenChange);
+    };
+  }, []);
+
+  const toggleFullscreen = () => {
+    if (!document.fullscreenElement) {
+      document.documentElement.requestFullscreen().catch((err) => {
+        console.warn(`Error enabling fullscreen: ${err.message}`);
+      });
+    } else {
+      if (document.exitFullscreen) {
+        document.exitFullscreen().catch((err) => {
+          console.warn(`Error exiting fullscreen: ${err.message}`);
+        });
+      }
+    }
+  };
   const [cart, setCart] = useState<{ product: Product; qty: number; customPrice: number }[]>([]);
   const [selectedPartnerId, setSelectedPartnerId] = useState<string>('');
   const [isReturnMode, setIsReturnMode] = useState<boolean>(false);
@@ -98,23 +127,59 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
   // Active Checkout Printable Preview
   const [printedInvoice, setPrintedInvoice] = useState<Invoice | null>(null);
   const [printFormat, setPrintFormat] = useState<'a4' | 'ticket'>(() => {
-    const saved = localStorage.getItem('pos_print_format');
+    const saved = safeLocalStorage.getItem('pos_print_format');
     if (saved === 'a4' || saved === 'ticket') return saved;
     return db.settings?.activitySector === 'superette' ? 'ticket' : 'a4';
   });
   const [autoPrint, setAutoPrint] = useState<boolean>(() => {
-    return localStorage.getItem('pos_auto_print') === 'true';
+    const saved = safeLocalStorage.getItem('pos_auto_print');
+    return saved === null ? true : saved === 'true';
   });
 
-  // Trigger auto print if active when printedInvoice loads
+  // Trigger robust clean auto print on print portal when printedInvoice is generated (ONLY if autoPrint is enabled)
   useEffect(() => {
     if (printedInvoice && autoPrint) {
       const timer = setTimeout(() => {
-        window.print();
-      }, 500);
+        try {
+          const printFormatToUse = printFormat;
+          const printContent = document.getElementById('print-area');
+          const portal = document.getElementById('print-portal');
+          const isIframe = window.self !== window.top;
+
+          if (printContent && portal) {
+            portal.innerHTML = `
+              <div class="${printFormatToUse === 'ticket' ? 'ticket-print-layout' : 'a4-print-layout'}" dir="${language === 'ar' ? 'rtl' : 'ltr'}">
+                ${printContent.innerHTML}
+              </div>
+            `;
+            if (!isIframe) {
+              try {
+                window.print();
+              } catch (printErr) {
+                console.warn("window.print call was blocked or failed, continuing gracefully", printErr);
+              }
+            } else {
+              console.log("[INNOVA PRINT] Direct print bypassed inside sandboxed iframe preview.");
+            }
+            setTimeout(() => {
+              portal.innerHTML = '';
+            }, 1000);
+          } else {
+            if (!isIframe) {
+              try {
+                window.print();
+              } catch (printErr) {
+                console.warn("window.print call was blocked or failed, continuing gracefully", printErr);
+              }
+            }
+          }
+        } catch (err) {
+          console.warn("Robust auto print failed", err);
+        }
+      }, 600);
       return () => clearTimeout(timer);
     }
-  }, [printedInvoice, autoPrint]);
+  }, [printedInvoice, printFormat, language, autoPrint]);
 
   // Ensure print-portal div exists in document.body
   useEffect(() => {
@@ -138,7 +203,7 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
   const [lastScannedText, setLastScannedText] = useState<string>('');
   const [scanToast, setScanToast] = useState<{ id: string; nameAr: string; nameFr: string; qty: number } | null>(null);
   const [isBeepEnabled, setIsBeepEnabled] = useState<boolean>(() => {
-    return localStorage.getItem('pos_scan_beep') !== 'false';
+    return safeLocalStorage.getItem('pos_scan_beep') !== 'false';
   });
   
   const html5QrCodeRef = useRef<Html5Qrcode | null>(null);
@@ -148,7 +213,7 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
 
   const [isScanHistoryOpen, setIsScanHistoryOpen] = useState(false);
   const [scanHistory, setScanHistory] = useState<{ code: string; timestamp: string; productName?: string; success: boolean }[]>(() => {
-    const saved = localStorage.getItem('pos_scan_history');
+    const saved = safeLocalStorage.getItem('pos_scan_history');
     return saved ? JSON.parse(saved) : [];
   });
   const [isFlashActive, setIsFlashActive] = useState(false);
@@ -165,7 +230,7 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
 
   // Sync scan history to localStorage to survive page reloads
   useEffect(() => {
-    localStorage.setItem('pos_scan_history', JSON.stringify(scanHistory));
+    safeLocalStorage.setItem('pos_scan_history', JSON.stringify(scanHistory));
   }, [scanHistory]);
 
   // Clean Web Audio API scanner beep indicator sound generator
@@ -808,6 +873,7 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
     setNewClientAddress('');
     setNewClientDiscountRate('');
     setShowNewClientModal(false);
+    showToast(language === 'ar' ? 'تم إنشاء العميل بنجاح' : 'Client créé avec succès');
   };
 
   // Final confirmation of POS Sale
@@ -950,6 +1016,7 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
     setGlobalDiscount(0);
     setRedeemedPoints(0); // Reset points state
     setIsReturnMode(false); // Reset Return Mode to normal on successful checkout
+    showToast(language === 'ar' ? `تم إنشاء الوثيقة ${invoiceNumber}` : `Document ${invoiceNumber} créé avec succès`);
   };
 
   const handleCheckoutClick = () => {
@@ -988,22 +1055,37 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
       const printFormatToUse = printFormat;
       const printContent = document.getElementById('print-area');
       const portal = document.getElementById('print-portal');
+      const isIframe = window.self !== window.top;
+
       if (printContent && portal) {
         portal.innerHTML = `
           <div class="${printFormatToUse === 'ticket' ? 'ticket-print-layout' : 'a4-print-layout'}" dir="${language === 'ar' ? 'rtl' : 'ltr'}">
             ${printContent.innerHTML}
           </div>
         `;
-        window.print();
+        if (!isIframe) {
+          try {
+            window.print();
+          } catch (printErr) {
+            console.warn("window.print failed", printErr);
+          }
+        } else {
+          console.log("[INNOVA PRINT] Manual print triggered inside sandboxed preview.");
+        }
         setTimeout(() => {
           portal.innerHTML = '';
         }, 1000);
       } else {
-        window.print();
+        if (!isIframe) {
+          try {
+            window.print();
+          } catch (printErr) {
+            console.error(printErr);
+          }
+        }
       }
     } catch (err) {
-      console.warn("Robust print failed, falling back to window.print", err);
-      window.print();
+      console.warn("Robust print failed", err);
     }
   };
 
@@ -1140,6 +1222,30 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
             <span className="bg-slate-100 text-slate-800 font-mono text-[9px] px-1.5 py-0.2 rounded font-black border border-slate-200">
               {scanHistory.length}
             </span>
+          </button>
+
+          {/* Toggle Fullscreen Button */}
+          <button
+            type="button"
+            onClick={toggleFullscreen}
+            className={`px-3 py-1.5 rounded text-xs font-bold transition-all shadow-3xs flex items-center gap-2 cursor-pointer border ${
+              isFullscreen
+                ? 'bg-zinc-800 hover:bg-zinc-900 text-white border-zinc-750'
+                : 'bg-white hover:bg-slate-50 text-slate-700 border-slate-250'
+            }`}
+            title={language === 'ar' ? 'تغيير وضع ملء الشاشة' : 'Basculer le mode plein écran'}
+          >
+            {isFullscreen ? (
+              <>
+                <Minimize className="w-3.5 h-3.5 shrink-0" />
+                <span>{language === 'ar' ? 'مخرج 🖥️' : 'Quitter Plein Écran 🖥️'}</span>
+              </>
+            ) : (
+              <>
+                <Maximize className="w-3.5 h-3.5 shrink-0 text-slate-500" />
+                <span>{language === 'ar' ? 'ملء الشاشة 🖥️' : 'Plein Écran 🖥️'}</span>
+              </>
+            )}
           </button>
         </div>
       </div>
@@ -1364,6 +1470,8 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
                   onChange={(e) => setRapidScanValue(e.target.value)}
                   onFocus={() => setIsRapidScanFocused(true)}
                   onBlur={() => setIsRapidScanFocused(false)}
+                  onClick={(e) => { e.currentTarget.focus(); }}
+                  onTouchStart={(e) => { e.currentTarget.focus(); }}
                   className={`w-full pl-9 pr-4 py-2.5 text-xs font-semibold font-mono bg-white border rounded-lg shadow-inner focus:outline-hidden transition-all placeholder:text-slate-400 ${
                     isRapidScanFocused
                       ? 'border-emerald-500 ring-2 ring-emerald-500/10 text-emerald-950'
@@ -1398,6 +1506,8 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 onKeyDown={handleSearchKeyDown}
+                onClick={(e) => { e.currentTarget.focus(); }}
+                onTouchStart={(e) => { e.currentTarget.focus(); }}
                 className="w-full pl-9 pr-24 py-2 text-xs bg-slate-55 border border-slate-205 rounded-lg focus:outline-hidden focus:border-indigo-600 focus:bg-white transition-colors"
                 autoComplete="off"
               />
@@ -1453,6 +1563,8 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
                 placeholder={language === 'ar' ? 'اسم السلعة المباشرة (اختياري)...' : "Nom de l'article libre (Optionnel)..."}
                 value={customItemName}
                 onChange={(e) => setCustomItemName(e.target.value)}
+                onClick={(e) => { e.currentTarget.focus(); }}
+                onTouchStart={(e) => { e.currentTarget.focus(); }}
                 className="w-full px-3 py-1.5 text-xs bg-white border border-slate-200 rounded-md focus:outline-hidden focus:border-sky-500 transition-colors"
                 autoComplete="off"
               />
@@ -1464,6 +1576,8 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
                   placeholder={language === 'ar' ? 'السعر (د.ت)*' : 'Prix libre (DT)*'}
                   value={customItemPrice}
                   onChange={(e) => setCustomItemPrice(e.target.value)}
+                  onClick={(e) => { e.currentTarget.focus(); }}
+                  onTouchStart={(e) => { e.currentTarget.focus(); }}
                   className="w-full px-3 py-1.5 text-xs bg-white border border-slate-200 rounded-md focus:outline-hidden focus:border-sky-500 font-mono font-bold text-slate-850"
                   required
                 />
@@ -1534,7 +1648,7 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
                       onClick={() => {
                         const nextVal = !isBeepEnabled;
                         setIsBeepEnabled(nextVal);
-                        localStorage.setItem('pos_scan_beep', String(nextVal));
+                        safeLocalStorage.setItem('pos_scan_beep', String(nextVal));
                       }}
                       className={`p-1.5 rounded transition-colors cursor-pointer border ${
                         isBeepEnabled 
@@ -1609,7 +1723,7 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
                         onChange={(e) => {
                           const nextVal = e.target.checked;
                           setIsBeepEnabled(nextVal);
-                          localStorage.setItem('pos_scan_beep', String(nextVal));
+                          safeLocalStorage.setItem('pos_scan_beep', String(nextVal));
                         }}
                         className="rounded-sm border-slate-300 text-indigo-600 focus:ring-indigo-500 w-3.5 h-3.5 cursor-pointer transition-all"
                       />
@@ -1883,109 +1997,127 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
                   if (cart.length > 0) {
                     const confirmClear = window.confirm(
                       language === 'ar' 
-                        ? 'تنبيه: تغيير الوضع سيقوم بتفريغ السلة الحالية. هل ترغب في الاستمرار؟' 
-                        : 'Attention : changer de mode va réinitialiser le panier actuel. Continuer ?'
+                        ? 'تنبيه: تغيير الوضع سيقوم بإفراغ السلة الحالية. هل أنت متأكد؟' 
+                        : 'Attention: Changer de mode videra le panier actuel. Continuer ?'
                     );
                     if (!confirmClear) return;
                     setCart([]);
                   }
                   setIsReturnMode(!isReturnMode);
                 }}
-                className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-hidden ${
-                  isReturnMode ? 'bg-rose-605 bg-rose-600' : 'bg-slate-300'
+                className={`px-3 py-1 text-[10px] font-extrabold rounded-md uppercase tracking-wider cursor-pointer ${
+                  isReturnMode 
+                    ? 'bg-rose-600 hover:bg-rose-700 text-white shadow-xs' 
+                    : 'bg-white border border-slate-250 hover:bg-slate-100 text-slate-700'
                 }`}
               >
-                <span
-                  className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow-xs ring-0 transition duration-200 ease-in-out ${
-                    isReturnMode ? 'translate-x-4' : 'translate-x-0'
-                  }`}
-                />
+                {language === 'ar' ? (isReturnMode ? 'عادي 🛒' : 'إرجاع ↩') : (isReturnMode ? 'NORMAL 🛒' : 'RETOUR ↩')}
               </button>
             </div>
 
-            {cart.length === 0 ? (
-              <div className="text-center py-12 bg-slate-50/50 rounded-xl border border-dashed border-slate-200">
-                <ShoppingCart className="w-8 h-8 text-slate-350 mx-auto mb-2 stroke-1" />
-                <p className="text-xs text-slate-500 font-black">{language === 'ar' ? 'السلة فارغة حالياً' : 'Le panier est encore vide.'}</p>
-                <p className="text-[10px] text-slate-400 mt-1">{language === 'ar' ? 'انقر على المنتجات على اليسار لإضافتها' : 'Sélectionnez des produits à gauche.'}</p>
-              </div>
-            ) : (
-              <div className="space-y-3 max-h-56 overflow-y-auto custom-scrollbar pr-1 divide-y divide-slate-150/75">
+            <div className="space-y-3 max-h-56 overflow-y-auto custom-scrollbar pr-1 divide-y divide-slate-150/75">
+              <AnimatePresence initial={false}>
                 {cart.map((item, idx) => {
-                  const isItemReturn = item.qty < 0;
-                  return (
-                    <div key={item.product.id} className={`pt-2.5 flex items-start justify-between gap-3 ${idx === 0 ? '!pt-0' : ''}`}>
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-1.5 flex-wrap">
-                          <p className="text-xs font-bold text-slate-800 truncate leading-snug">{item.product.name}</p>
-                          {isItemReturn && (
-                            <span className="p-0.5 px-1.5 text-[8.5px] font-extrabold font-mono bg-rose-100 text-rose-700 rounded select-none uppercase tracking-wider animate-pulse">
-                              {language === 'ar' ? 'إرجاع ↩' : 'RETOUR ↩'}
-                            </span>
-                          )}
-                        </div>
-                        
-                        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 mt-1">
-                          <div className="flex items-center gap-1">
-                            <span className="text-[10px] text-slate-400">P.U:</span>
-                            <input
-                              type="number"
-                              value={item.customPrice}
-                              onChange={(e) => handleUpdatePrice(item.product.id, Number(e.target.value))}
-                              className="w-16 bg-slate-50 border border-slate-200 hover:border-slate-350 rounded px-1.5 py-0.5 text-[10px] font-black font-mono text-blue-600 focus:bg-white focus:outline-hidden"
-                            />
-                          </div>
-                          <span className="text-[10px] text-slate-400">x</span>
-                          <span className={`${isItemReturn ? 'text-rose-600' : 'text-slate-700'} text-[10px] font-black font-mono`}>
-                            {isItemReturn ? Math.abs(item.qty) : item.qty}
-                          </span>
-                          <span className="text-[10px] text-slate-400">=</span>
-                          <span className={`${isItemReturn ? 'text-rose-600' : 'text-slate-700'} text-[10px] font-black font-mono`}>
-                            {formatCurrency(item.qty * item.customPrice)}
-                          </span>
-                          
-                          <span className="text-[9px] bg-slate-100 text-slate-500 px-1 py-0.2 rounded font-medium select-none">
-                            TVA {item.product.tvaRate !== undefined ? item.product.tvaRate : 19}%
-                          </span>
-                        </div>
-                      </div>
-
-                      {/* Compact elegant Qty and Action block */}
-                      <div className="flex items-center gap-1 shrink-0 mt-0.5">
-                        <button
-                          type="button"
-                          onClick={() => handleUpdateQty(item.product.id, item.qty - 1)}
-                          className="w-5.5 h-5.5 bg-slate-50 border border-slate-200 hover:bg-slate-100 text-slate-750 rounded-md flex items-center justify-center cursor-pointer transition-colors"
-                        >
-                          <Minus className="w-2.5 h-2.5" />
-                        </button>
-                        
-                        <span className="text-xs font-bold font-mono w-5 text-center text-slate-800">
-                          {isItemReturn ? Math.abs(item.qty) : item.qty}
-                        </span>
-                        
-                        <button
-                          type="button"
-                          onClick={() => handleUpdateQty(item.product.id, item.qty + 1)}
-                          className="w-5.5 h-5.5 bg-slate-50 border border-slate-200 hover:bg-slate-100 text-slate-750 rounded-md flex items-center justify-center cursor-pointer transition-colors"
-                        >
-                          <Plus className="w-2.5 h-2.5" />
-                        </button>
-                      </div>
-
-                      <button
-                        type="button"
-                        onClick={() => handleRemoveFromCart(item.product.id)}
-                        className="w-5.5 h-5.5 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-md flex items-center justify-center cursor-pointer transition-colors ml-1.5"
-                        title={language === 'ar' ? 'حذف السلعة' : 'Retirer l\'article'}
+                    const isItemReturn = item.qty < 0;
+                    return (
+                      <motion.div
+                        key={item.product.id}
+                        layout
+                        initial={{ opacity: 0, height: 0, y: -10, scale: 0.95 }}
+                        animate={{ opacity: 1, height: "auto", y: 0, scale: 1 }}
+                        exit={{ opacity: 0, height: 0, y: 15, scale: 0.9, transition: { duration: 0.15 } }}
+                        transition={{ type: "spring", stiffness: 450, damping: 25 }}
+                        className={`pt-2.5 flex items-start justify-between gap-3 ${idx === 0 ? '!pt-0' : ''}`}
                       >
-                        <Trash2 className="w-2.5 h-2.5" />
-                      </button>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <p className="text-xs font-bold text-slate-800 truncate leading-snug">{item.product.name}</p>
+                            {isItemReturn && (
+                              <span className="p-0.5 px-1.5 text-[8.5px] font-extrabold font-mono bg-rose-100 text-rose-700 rounded select-none uppercase tracking-wider animate-pulse">
+                                {language === 'ar' ? 'إرجاع ↩' : 'RETOUR ↩'}
+                              </span>
+                            )}
+                          </div>
+                          
+                          <div className="flex flex-wrap items-center gap-x-2 gap-y-1 mt-1">
+                            <div className="flex items-center gap-1">
+                              <span className="text-[10px] text-slate-400">P.U:</span>
+                              <input
+                                type="number"
+                                value={item.customPrice}
+                                onChange={(e) => handleUpdatePrice(item.product.id, Number(e.target.value))}
+                                className="w-16 bg-slate-50 border border-slate-200 hover:border-slate-350 rounded px-1.5 py-0.5 text-[10px] font-black font-mono text-blue-600 focus:bg-white focus:outline-hidden"
+                              />
+                            </div>
+                            <span className="text-[10px] text-slate-400">x</span>
+                            <motion.span
+                              key={item.qty}
+                              initial={{ scale: 0.75, opacity: 0.7 }}
+                              animate={{ scale: 1, opacity: 1 }}
+                              transition={{ type: "spring", stiffness: 450, damping: 15 }}
+                              className={`${isItemReturn ? 'text-rose-600' : 'text-slate-700'} text-[10px] font-black font-mono inline-block`}
+                            >
+                              {isItemReturn ? Math.abs(item.qty) : item.qty}
+                            </motion.span>
+                            <span className="text-[10px] text-slate-400">=</span>
+                            <motion.span
+                              key={`${item.qty}-${item.customPrice}`}
+                              initial={{ scale: 0.85 }}
+                              animate={{ scale: 1 }}
+                              transition={{ type: "spring", stiffness: 450, damping: 15 }}
+                              className={`${isItemReturn ? 'text-rose-600' : 'text-slate-700'} text-[10px] font-black font-mono inline-block`}
+                            >
+                              {formatCurrency(item.qty * item.customPrice)}
+                            </motion.span>
+                            
+                            <span className="text-[9px] bg-slate-100 text-slate-500 px-1 py-0.2 rounded font-medium select-none">
+                              TVA {item.product.tvaRate !== undefined ? item.product.tvaRate : 19}%
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Compact elegant Qty and Action block */}
+                        <div className="flex items-center gap-1 shrink-0 mt-0.5">
+                          <button
+                            type="button"
+                            onClick={() => handleUpdateQty(item.product.id, item.qty - 1)}
+                            className="w-5.5 h-5.5 bg-slate-50 border border-slate-200 hover:bg-slate-100 text-slate-750 rounded-md flex items-center justify-center cursor-pointer transition-colors"
+                          >
+                            <Minus className="w-2.5 h-2.5" />
+                          </button>
+                          
+                          <motion.span
+                            key={item.qty}
+                            initial={{ scale: 0.65 }}
+                            animate={{ scale: 1 }}
+                            transition={{ type: "spring", stiffness: 500, damping: 15 }}
+                            className="text-xs font-bold font-mono w-5 text-center text-slate-800 inline-block"
+                          >
+                            {isItemReturn ? Math.abs(item.qty) : item.qty}
+                          </motion.span>
+                          
+                          <button
+                            type="button"
+                            onClick={() => handleUpdateQty(item.product.id, item.qty + 1)}
+                            className="w-5.5 h-5.5 bg-slate-50 border border-slate-200 hover:bg-slate-100 text-slate-750 rounded-md flex items-center justify-center cursor-pointer transition-colors"
+                          >
+                            <Plus className="w-2.5 h-2.5" />
+                          </button>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveFromCart(item.product.id)}
+                          className="w-5.5 h-5.5 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-md flex items-center justify-center cursor-pointer transition-colors ml-1.5"
+                          title={language === 'ar' ? 'حذف السلعة' : 'Retirer l\'article'}
+                        >
+                          <Trash2 className="w-2.5 h-2.5" />
+                        </button>
+                      </motion.div>
+                    );
+                  })}
+                </AnimatePresence>
+            </div>
           </div>
 
           {/* Checkout & Bill Configurations Card */}
@@ -2131,6 +2263,8 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
                     placeholder={language === 'ar' ? "أدخل المبلغ المستلم..." : "Saisir montant reçu..."}
                     onChange={(e) => setPaidAmount(e.target.value)}
                     onKeyDown={handlePaidAmountKeyDown}
+                    onClick={(e) => { e.currentTarget.focus(); }}
+                    onTouchStart={(e) => { e.currentTarget.focus(); }}
                     className="w-full bg-slate-50 border border-slate-205 rounded-lg py-2.5 pl-3 pr-10 text-xs font-black font-mono focus:bg-white focus:outline-none transition-colors text-slate-850"
                   />
                   <span className="font-black text-[10px] text-slate-400 absolute right-3.5 top-3">
@@ -2223,7 +2357,7 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
                         onChange={(e) => {
                           const val = e.target.checked;
                           setAutoPrint(val);
-                          localStorage.setItem('pos_auto_print', String(val));
+                          safeLocalStorage.setItem('pos_auto_print', String(val));
                         }}
                         className="rounded border-slate-300 text-slate-700 w-3 h-3 cursor-pointer"
                       />
@@ -2240,7 +2374,7 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
                         type="button"
                         onClick={() => {
                           setPrintFormat('ticket');
-                          localStorage.setItem('pos_print_format', 'ticket');
+                          safeLocalStorage.setItem('pos_print_format', 'ticket');
                         }}
                         className={`px-1.5 py-0.5 rounded text-[8.5px] font-extrabold transition-all ${
                           printFormat === 'ticket' ? 'bg-white text-slate-950 font-black shadow-3xs' : 'text-slate-500'
@@ -2252,7 +2386,7 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
                         type="button"
                         onClick={() => {
                           setPrintFormat('a4');
-                          localStorage.setItem('pos_print_format', 'a4');
+                          safeLocalStorage.setItem('pos_print_format', 'a4');
                         }}
                         className={`px-1.5 py-0.5 rounded text-[8.5px] font-extrabold transition-all ${
                           printFormat === 'a4' ? 'bg-white text-slate-950 font-black shadow-3xs' : 'text-slate-500'
@@ -2399,13 +2533,45 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
                       📠 {language === 'ar' ? 'طباعة / حفظ PDF' : 'Imprimer / Garder PDF'}
                     </button>
                     <button
-                      onClick={() => setPrintedInvoice(null)}
-                      className="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded text-xs font-bold cursor-pointer"
+                      type="button"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        
+                        // Clear active states instantly without any annoying confirmation pop-ups
+                        setPrintedInvoice(null);
+                        setSelectedPartnerId('');
+                        setSearchQuery('');
+                        setCart([]);
+                        setPaidAmount('');
+                        setGlobalDiscount(0);
+                        setRedeemedPoints(0);
+                        setIsReturnMode(false);
+                        
+                        // Explicitly navigate/return user to POS (caisse) tab to prevent exit or tab-reset
+                        onNavigate('pos');
+                      }}
+                      className="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded text-xs font-bold cursor-pointer transition-colors"
                     >
                       {language === 'ar' ? 'إغلاق' : 'Fermer'}
                     </button>
                   </div>
                 </div>
+
+                {/* High quality iframe sandboxing notification banner */}
+                {window.self !== window.top && (
+                  <div className="bg-amber-50 border border-amber-200 text-amber-950 p-3 rounded-xl text-xs flex items-start gap-2 mb-4 leading-normal no-print">
+                    <span className="text-sm shrink-0">⚠️</span>
+                    <div>
+                      <p className="font-bold">{language === 'ar' ? 'وضع المعاينة (الإطار المضمن)' : 'Mode Aperçu (iFrame)'}</p>
+                      <p className="text-[11px] text-amber-800 mt-0.5">
+                        {language === 'ar'
+                          ? 'الطباعة المباشرة معطلة بواسطة بيئة المعاينة الآمنة. لحفظ كـ PDF أو استخدام الطابعة، يرجى فتح التطبيق في علامة تبويب جديدة أو استخدام زر تحميل PDF المباشر.'
+                          : "L'impression physique directe est bloquée par l'environnement bac à sable d'AI Studio. Pour imprimer vos tickets, veuillez ouvrir l'application dans un nouvel onglet, ou utilisez le téléchargement PDF direct."}
+                      </p>
+                    </div>
+                  </div>
+                )}
 
                 {/* Helpful dynamic PDF tip */}
                 <div className="bg-blue-50/70 p-3 rounded text-[11px] text-blue-900 border border-blue-100 mb-4 leading-normal flex items-start gap-2 no-print">

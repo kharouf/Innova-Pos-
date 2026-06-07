@@ -1,4 +1,5 @@
 import { DatabaseState, Product, Partner, Invoice, PaymentTransaction, Traite, DailyExpense, StoreSettings } from '../types';
+import { safeLocalStorage } from './storage';
 
 // Default sample data of a Tunisian Superette (Grocery / مواد غذائية)
 const INITIAL_DATABASE: DatabaseState = {
@@ -530,10 +531,10 @@ export const SAMPLE_PRODUCTS: Record<'superette' | 'pharmacie' | 'materiaux' | '
 
 export function getDatabase(): DatabaseState {
   if (typeof window === 'undefined') return INITIAL_DATABASE;
-  const data = localStorage.getItem(STORAGE_KEY);
+  const data = safeLocalStorage.getItem(STORAGE_KEY);
   if (!data) {
     const initialWithSettings = { ...INITIAL_DATABASE, settings: DEFAULT_SETTINGS };
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(initialWithSettings));
+    safeLocalStorage.setItem(STORAGE_KEY, JSON.stringify(initialWithSettings));
     return initialWithSettings;
   }
   try {
@@ -550,14 +551,14 @@ export function getDatabase(): DatabaseState {
         matriculeFiscal: settings.matriculeFiscal || DEFAULT_SETTINGS.matriculeFiscal,
         storeLogo: DEFAULT_SETTINGS.storeLogo
       };
-      // Defer-save the migrated DB back into localStorage safely
+      // Defer-save the migrated DB back into safeLocalStorage safely
       setTimeout(() => {
         try {
-          const currentDBStr = localStorage.getItem(STORAGE_KEY);
+          const currentDBStr = safeLocalStorage.getItem(STORAGE_KEY);
           if (currentDBStr) {
             const currentDB = JSON.parse(currentDBStr);
             currentDB.settings = settings;
-            localStorage.setItem(STORAGE_KEY, JSON.stringify(currentDB));
+            safeLocalStorage.setItem(STORAGE_KEY, JSON.stringify(currentDB));
           }
         } catch (err) {
           console.warn('Deferred auto-migration save failed', err);
@@ -582,7 +583,7 @@ export function getDatabase(): DatabaseState {
 
 export function saveDatabase(db: DatabaseState): void {
   if (typeof window === 'undefined') return;
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(db));
+  safeLocalStorage.setItem(STORAGE_KEY, JSON.stringify(db));
 }
 
 // Utility functions for calculation and reports

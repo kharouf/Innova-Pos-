@@ -164,3 +164,209 @@
   display: none;
 }
 
+/* =========================================
+   🌙 PERMANENT DARK MODE HIGH-POLISH STYLES
+   ========================================= */
+
+/* Register custom variant for Tailwind v4 selector mode */
+@custom-variant dark (&:where(.dark, .dark *));
+
+html.dark, .dark {
+  color-scheme: dark;
+  background-color: #0d121f !important;
+  color: #f1f5f9 !important;
+}
+
+/* Page background overrides */
+.dark body,
+.dark #root,
+.dark .bg-slate-100 {
+  background-color: #0b0f19 !important;
+  color: #f1f5f9 !important;
+}
+
+/* Card background overrides */
+.dark .bg-white {
+  background-color: #151c2c !important;
+  border-color: #242f47 !important;
+}
+
+/* Nested containers, table, and list header overrides */
+.dark .bg-slate-50,
+.dark .bg-slate-100\/80 {
+  background-color: #172033 !important;
+  color: #f1f5f9 !important;
+}
+
+.dark .bg-slate-150,
+.dark .bg-slate-200,
+.dark .bg-slate-250 {
+  background-color: #202b42 !important;
+  color: #f8fafc !important;
+}
+
+/* Scrollbar adjustment for dark mode */
+.dark .custom-scrollbar::-webkit-scrollbar-thumb {
+  background: #334155 !important;
+}
+.dark .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: #47556a !important;
+}
+
+/* Alert/Badge background overrides under dark theme to avoid blazing light colors */
+.dark .bg-indigo-50,
+.dark .bg-blue-50,
+.dark .bg-indigo-50\/50,
+.dark .bg-blue-600\/20 {
+  background-color: rgba(30, 41, 59, 0.95) !important;
+  border-color: rgba(59, 130, 246, 0.3) !important;
+}
+.dark .bg-emerald-50,
+.dark .bg-emerald-50\/10,
+.dark .bg-emerald-100,
+.dark .bg-emerald-500\/10 {
+  background-color: rgba(6, 78, 59, 0.4) !important;
+  border-color: rgba(16, 185, 129, 0.3) !important;
+}
+.dark .bg-rose-50,
+.dark .bg-rose-50\/10,
+.dark .bg-rose-100,
+.dark .bg-rose-500\/10 {
+  background-color: rgba(153, 27, 27, 0.35) !important;
+  border-color: rgba(239, 68, 68, 0.3) !important;
+}
+.dark .bg-amber-50,
+.dark .bg-amber-50\/75,
+.dark .bg-amber-100,
+.dark .bg-amber-500\/10 {
+  background-color: rgba(120, 53, 4, 0.35) !important;
+  border-color: rgba(245, 158, 11, 0.3) !important;
+}
+
+/* Alert/Badge text highlights contrast adjustments */
+.dark .text-indigo-900,
+.dark .text-indigo-800,
+.dark .text-blue-900,
+.dark .text-blue-800 {
+  color: #93c5fd !important;
+}
+.dark .text-emerald-900,
+.dark .text-emerald-800,
+.dark .text-emerald-600 {
+  color: #34d399 !important;
+}
+.dark .text-rose-900,
+.dark .text-rose-800,
+.dark .text-rose-600 {
+  color: #f87171 !important;
+}
+.dark .text-amber-900,
+.dark .text-amber-850,
+.dark .text-amber-700,
+.dark .text-amber-800 {
+  color: #fbbf24 !important;
+}
+
+/* Text color contrast adjustments */
+.dark .text-slate-950,
+.dark .text-slate-900,
+.dark .text-slate-850,
+.dark .text-slate-800,
+.dark .text-slate-705,
+.dark .text-slate-700 {
+  color: #f8fafc !important;
+}
+
+.dark .text-slate-650,
+.dark .text-slate-600,
+.dark .text-slate-505,
+.dark .text-slate-500,
+.dark .text-slate-450,
+.dark .text-slate-400 {
+  color: #94a3b8 !important;
+}
+
+/* Borders and separators */
+.dark .border-slate-100,
+.dark .border-slate-150,
+.dark .border-slate-200,
+.dark .border-slate-250,
+.dark .border-slate-300 {
+  border-color: #242f47 !important;
+}
+
+.dark .divide-slate-200 > * + * {
+  border-color: #242f47 !important;
+}
+
+.dark hr {
+  border-color: #242f47 !important;
+}
+
+/* Global Form Elements and Inputs */
+.dark input[type="text"],
+.dark input[type="password"],
+.dark input[type="number"],
+.dark input[type="date"],
+.dark input[type="search"],
+.dark select,
+.dark textarea {
+  background-color: #1a2333 !important;
+  color: #ffffff !important;
+  border-color: #2e3c56 !important;
+}
+
+.dark input:focus,
+.dark select:focus,
+.dark textarea:focus {
+  border-color: #3b82f6 !important;
+  background-color: #1f2a3f !important;
+}
+
+.dark input::placeholder,
+.dark textarea::placeholder {
+  color: #64748b !important;
+}
+
+/* Modal containers */
+.dark .backdrop-blur-sm,
+.dark .bg-slate-900\/60 {
+  background-color: rgba(3, 7, 18, 0.8) !important;
+}
+
+/* Chart axis/grid text colors */
+.dark .recharts-text {
+  fill: #94a3b8 !important;
+}
+.dark .recharts-cartesian-grid-horizontal line,
+.dark .recharts-cartesian-grid-vertical line {
+  stroke: #242f47 !important;
+}
+
+/* Overrides for specific POS elements, list items, and interactive zones */
+.dark .divide-y > * {
+  border-color: #242f47 !important;
+}
+
+.dark .shadow-xs,
+.dark .shadow-sm,
+.dark .shadow-md,
+.dark .shadow-lg,
+.dark .shadow-xl {
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.4), 0 2px 4px -1px rgba(0, 0, 0, 0.2) !important;
+}
+
+/* Retain white background for printouts only */
+@media print {
+  .dark {
+    background-color: #ffffff !important;
+    color: #000000 !important;
+  }
+  .dark .bg-white,
+  .dark .bg-slate-50,
+  .dark .bg-slate-100 {
+    background-color: #ffffff !important;
+    color: #000000 !important;
+  }
+}
+
