@@ -32,6 +32,10 @@ export interface Partner {
   location?: string; // GPS Coordinates or Google Maps URL
   discountRate?: number; // Custom discount percentage specifically for this partner (client)
   loyaltyPoints?: number; // Client loyalty score accumulator
+  contactPerson?: string; // Contact person for supply chain
+  creditLimit?: number; // Maximum allowed credit with this partner
+  supplyChainType?: string; // Wholesaler, direct producer, importer, logistics partner
+  paymentTerms?: string; // e.g. Net 30, Cash, Bank Transfer
 }
 
 export interface InvoiceItem {

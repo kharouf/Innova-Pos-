@@ -51,6 +51,12 @@ export default function Partners({ db, onUpdateDb }: PartnersProps) {
   const [discountRate, setDiscountRate] = useState<string>('');
   const [loyaltyPoints, setLoyaltyPoints] = useState<string>('0');
 
+  // Supply chain custom properties
+  const [contactPerson, setContactPerson] = useState('');
+  const [creditLimit, setCreditLimit] = useState<string>('');
+  const [supplyChainType, setSupplyChainType] = useState('');
+  const [paymentTerms, setPaymentTerms] = useState('');
+
   // Loyalty Settings Editing State
   const [showLoyaltySettings, setShowLoyaltySettings] = useState(false);
   const [loyaltyEnabled, setLoyaltyEnabled] = useState(db.settings?.enableLoyaltyPoints ?? false);
@@ -103,6 +109,10 @@ export default function Partners({ db, onUpdateDb }: PartnersProps) {
     setLocation('');
     setDiscountRate('');
     setLoyaltyPoints('0');
+    setContactPerson('');
+    setCreditLimit('');
+    setSupplyChainType('');
+    setPaymentTerms('');
     setPartnerTypeToCreate(activeTab === 'fournisseur' ? 'fournisseur' : 'client');
     setShowPartnerModal(true);
   };
@@ -120,6 +130,10 @@ export default function Partners({ db, onUpdateDb }: PartnersProps) {
     setLocation(partner.location || '');
     setDiscountRate(partner.discountRate !== undefined ? String(partner.discountRate) : '');
     setLoyaltyPoints(partner.loyaltyPoints !== undefined ? String(partner.loyaltyPoints) : '0');
+    setContactPerson(partner.contactPerson || '');
+    setCreditLimit(partner.creditLimit !== undefined ? String(partner.creditLimit) : '');
+    setSupplyChainType(partner.supplyChainType || '');
+    setPaymentTerms(partner.paymentTerms || '');
     setPartnerTypeToCreate(partner.type);
     setShowPartnerModal(true);
   };
@@ -147,7 +161,11 @@ export default function Partners({ db, onUpdateDb }: PartnersProps) {
             currentBalance: Number(initialBalance),
             location: location.trim() || undefined,
             discountRate: selectedTabIsClient ? rateNum : undefined,
-            loyaltyPoints: ptsNum
+            loyaltyPoints: ptsNum,
+            contactPerson: !selectedTabIsClient && contactPerson.trim() ? contactPerson.trim() : undefined,
+            creditLimit: !selectedTabIsClient && creditLimit.trim() ? Number(creditLimit) : undefined,
+            supplyChainType: !selectedTabIsClient && supplyChainType.trim() ? supplyChainType.trim() : undefined,
+            paymentTerms: !selectedTabIsClient && paymentTerms.trim() ? paymentTerms.trim() : undefined
           };
         }
         return p;
@@ -166,7 +184,11 @@ export default function Partners({ db, onUpdateDb }: PartnersProps) {
         currentBalance: Number(initialBalance),
         location: location.trim() || undefined,
         discountRate: selectedTabIsClient ? rateNum : undefined,
-        loyaltyPoints: ptsNum
+        loyaltyPoints: ptsNum,
+        contactPerson: !selectedTabIsClient && contactPerson.trim() ? contactPerson.trim() : undefined,
+        creditLimit: !selectedTabIsClient && creditLimit.trim() ? Number(creditLimit) : undefined,
+        supplyChainType: !selectedTabIsClient && supplyChainType.trim() ? supplyChainType.trim() : undefined,
+        paymentTerms: !selectedTabIsClient && paymentTerms.trim() ? paymentTerms.trim() : undefined
       };
       updatedPartners.unshift(newPartner);
     }
@@ -620,6 +642,44 @@ export default function Partners({ db, onUpdateDb }: PartnersProps) {
                   </div>
                 </div>
 
+                {/* Supply Chain Details */}
+                {!isClient && (p.contactPerson || p.supplyChainType || p.paymentTerms || p.creditLimit) && (
+                  <div className="grid grid-cols-2 gap-3.5 py-2.5 border-t border-b border-dashed border-slate-200 text-[11px] bg-sky-50/20 p-3 rounded-lg font-sans">
+                    {p.contactPerson && (
+                      <div className="flex flex-col">
+                        <span className="text-[9px] text-slate-400 font-extrabold uppercase tracking-wide">
+                          {language === 'ar' ? 'المسؤول المباشر' : 'Contact Principal'}
+                        </span>
+                        <span className="text-slate-800 font-bold mt-0.5">👤 {p.contactPerson}</span>
+                      </div>
+                    )}
+                    {p.supplyChainType && (
+                      <div className="flex flex-col">
+                        <span className="text-[9px] text-slate-400 font-extrabold uppercase tracking-wide">
+                          {language === 'ar' ? 'فئة سلسلة التوريد' : 'Catégorie de la Chaîne'}
+                        </span>
+                        <span className="text-blue-600 font-bold mt-0.5">🏭 {p.supplyChainType}</span>
+                      </div>
+                    )}
+                    {p.paymentTerms && (
+                      <div className="flex flex-col">
+                        <span className="text-[9px] text-slate-400 font-extrabold uppercase tracking-wide">
+                          {language === 'ar' ? 'شروط وقنوات الدفع' : 'Conditions de Paiement'}
+                        </span>
+                        <span className="text-slate-705 font-bold mt-0.5">💳 {p.paymentTerms}</span>
+                      </div>
+                    )}
+                    {p.creditLimit ? (
+                      <div className="flex flex-col">
+                        <span className="text-[9px] text-slate-400 font-extrabold uppercase tracking-wide">
+                          {language === 'ar' ? 'سقف الائتمان الأقصى' : 'Limite d\'Crédit Autorisé'}
+                        </span>
+                        <span className="text-rose-600 font-mono font-extrabold mt-0.5">⚠️ {formatCurrency(p.creditLimit)}</span>
+                      </div>
+                    ) : null}
+                  </div>
+                )}
+
                 {/* Fiscal parameters details list */}
                 {(p.nif || p.rc || p.ai) && (
                   <div className="grid grid-cols-3 gap-2 py-2 border-y border-slate-150 text-[10px] font-mono text-slate-400 bg-slate-50/50 p-2 rounded">
@@ -910,6 +970,79 @@ export default function Partners({ db, onUpdateDb }: PartnersProps) {
                   <span className="text-[10px] text-slate-400 block mt-0.5">
                     {language === 'ar' ? 'يمكن تعديل رصيد نقاط العميل يدوياً هنا.' : 'Vous pouvez ajuster ou initialiser le solde de points de fidélité de ce client.'}
                   </span>
+                </div>
+              )}
+
+              {!selectedTabIsClient && (
+                <div className="p-3 bg-blue-50/50 rounded-xl border border-blue-150 space-y-3">
+                  <p className="text-[10px] uppercase font-bold text-blue-600 font-sans tracking-wide">
+                    {language === 'ar' ? 'سلسلة التوريد والخدمات اللوجستية' : 'Chaîne d\'Approvisionnement & Logistique'}
+                  </p>
+                  
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-[10px] font-bold text-slate-600 block mb-1">
+                        {language === 'ar' ? 'المسؤول المباشر' : 'Personne de Contact'}
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="Ex: M. Ahmed"
+                        value={contactPerson}
+                        onChange={(e) => setContactPerson(e.target.value)}
+                        className="w-full bg-white border border-slate-200 rounded-lg py-1.5 px-2 font-sans"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-bold text-slate-600 block mb-1">
+                        {language === 'ar' ? 'شروط الدفع' : 'Conditions de Paiement'}
+                      </label>
+                      <select
+                        value={paymentTerms}
+                        onChange={(e) => setPaymentTerms(e.target.value)}
+                        className="w-full bg-white border border-slate-200 rounded-lg py-1.5 px-2 font-sans text-[11px]"
+                      >
+                        <option value="">{language === 'ar' ? '-- اختر Option --' : '-- Choisir Option --'}</option>
+                        <option value="Net 30">Net 30 jours</option>
+                        <option value="Net 60">Net 60 jours</option>
+                        <option value="Comptant">Au comptant (Cash)</option>
+                        <option value="Virement">Virement Bancaire</option>
+                        <option value="Traite">Traite / Chèque</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-[10px] font-bold text-slate-600 block mb-1">
+                        {language === 'ar' ? 'فئة سلسلة التوريد' : 'Catégorie Supply Chain'}
+                      </label>
+                      <select
+                        value={supplyChainType}
+                        onChange={(e) => setSupplyChainType(e.target.value)}
+                        className="w-full bg-white border border-slate-200 rounded-lg py-1.5 px-2 font-sans text-[11px]"
+                      >
+                        <option value="">{language === 'ar' ? '-- اختر Option --' : '-- Choisir Option --'}</option>
+                        <option value="Grossiste">{language === 'ar' ? 'مورد جملة (Wholesaler)' : 'Grossiste (Wholesaler)'}</option>
+                        <option value="Direct">{language === 'ar' ? 'منتج مباشر (Direct Producer)' : 'Producteur Direct (Direct Producer)'}</option>
+                        <option value="Importateur">{language === 'ar' ? 'مستورد (Importer)' : 'Importateur (Importer)'}</option>
+                        <option value="Distributeur">{language === 'ar' ? 'موزع محلي (Local Distributor)' : 'Distributeur Local (Local Distributor)'}</option>
+                        <option value="Logistique">{language === 'ar' ? 'حلول لوجستية (Logistics)' : 'Logistique & Transport (Logistics)'}</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-bold text-slate-600 block mb-1">
+                        {language === 'ar' ? 'سقف الائتمان (د.ت)' : 'Limite d\'Crédit (DT)'}
+                      </label>
+                      <input
+                        type="number"
+                        min="0"
+                        placeholder="Ex: 50000"
+                        value={creditLimit}
+                        onChange={(e) => setCreditLimit(e.target.value)}
+                        className="w-full bg-white border border-slate-200 rounded-lg py-1.5 px-2 font-mono"
+                      />
+                    </div>
+                  </div>
                 </div>
               )}
 

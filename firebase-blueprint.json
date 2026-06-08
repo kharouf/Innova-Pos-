@@ -31,7 +31,11 @@
         "email": { "type": "string" },
         "nif": { "type": "string" },
         "rc": { "type": "string" },
-        "ai": { "type": "string" }
+        "ai": { "type": "string" },
+        "contactPerson": { "type": "string" },
+        "creditLimit": { "type": "number" },
+        "supplyChainType": { "type": "string" },
+        "paymentTerms": { "type": "string" }
       },
       "required": ["id", "type", "name", "phone", "address", "currentBalance"]
     },
