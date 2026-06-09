@@ -168,6 +168,21 @@ export default function InvoicesList({ db, onUpdateDb }: InvoicesListProps) {
     }
   };
 
+  const handleDirectDownloadPDF = (inv: Invoice, format: 'a4' | 'ticket' = 'a4') => {
+    try {
+      downloadInvoicePDF({
+        invoice: inv,
+        settings: db.settings,
+        language,
+        formatCurrency,
+        format
+      });
+    } catch (error) {
+      console.error("Direct PDF generation error: ", error);
+      alert(language === 'ar' ? "⚠️ حدث خطأ أثناء تحميل ملف الـ PDF" : "⚠️ Échec du téléchargement du fichier PDF.");
+    }
+  };
+
   return (
     <div className="space-y-6">
       
@@ -283,6 +298,13 @@ export default function InvoicesList({ db, onUpdateDb }: InvoicesListProps) {
                         </span>
                       </td>
                       <td className="p-4 text-right flex items-center justify-end gap-2">
+                        <button
+                          onClick={() => handleDirectDownloadPDF(inv, db.settings?.activitySector === 'superette' ? 'ticket' : 'a4')}
+                          title={language === 'ar' ? 'تحميل مباشر PDF 📥' : 'Télécharger directement en PDF 📥'}
+                          className="p-1.5 bg-emerald-50 text-emerald-600 hover:bg-emerald-100 rounded-lg cursor-pointer transition-colors"
+                        >
+                          <Download className="w-3.5 h-3.5" />
+                        </button>
                         <button
                           onClick={() => { setSelectedInvoice(inv); setPaymentInput(inv.balance.toString()); setPrintFormat('ticket'); }}
                           title="Preview Thermal Receipt"

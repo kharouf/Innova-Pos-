@@ -116,6 +116,93 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
   const [globalDiscount, setGlobalDiscount] = useState<number>(0);
   const [taxRate, setTaxRate] = useState<number>(-1); // -1: Itemized TVA par article, >=0: Global flat taxrate
   const [paidAmount, setPaidAmount] = useState<string>('');
+
+  // Virtual keypad configuration states
+  const [activeNumpadTarget, setActiveNumpadTarget] = useState<'rapidScan' | 'search' | 'paidAmount' | 'discount' | 'customPrice' | 'lastItemQty'>('rapidScan');
+  const [keyboardLayout, setKeyboardLayout] = useState<'numeric' | 'alphabetic'>('numeric');
+  const [alphabeticType, setAlphabeticType] = useState<'azerty' | 'qwerty'>('azerty');
+  const [isNumpadExpanded, setIsNumpadExpanded] = useState<boolean>(() => {
+    const saved = safeLocalStorage.getItem('pos_numpad_expanded');
+    return saved !== 'false';
+  });
+
+  const toggleNumpadExpanded = () => {
+    setIsNumpadExpanded(prev => {
+      const next = !prev;
+      safeLocalStorage.setItem('pos_numpad_expanded', String(next));
+      return next;
+    });
+  };
+
+  const handleNumpadKeyPress = (key: string) => {
+    // Play scan tone
+    playScanBeep();
+
+    if (activeNumpadTarget === 'lastItemQty') {
+      if (cart.length === 0) {
+        alert(language === 'ar' ? 'السلة فارغة' : 'Le panier est vide');
+        return;
+      }
+      const lastItemIndex = cart.length - 1;
+      const lastItem = cart[lastItemIndex];
+      let currentValStr = String(Math.abs(lastItem.qty));
+
+      if (key === 'C') {
+        handleUpdateQty(lastItem.product.id, 0);
+      } else if (key === '⌫') {
+        const newValStr = currentValStr.slice(0, -1);
+        const val = newValStr ? Number(newValStr) : 1;
+        handleUpdateQty(lastItem.product.id, lastItem.qty < 0 ? -val : val);
+      } else if (key === ' ') {
+        // Space doesn't affect qty
+        return;
+      } else {
+        const newValStr = currentValStr === '0' || currentValStr === '1' && currentValStr.length === 1 ? key : currentValStr + key;
+        const val = Number(newValStr);
+        handleUpdateQty(lastItem.product.id, lastItem.qty < 0 ? -val : val);
+      }
+      return;
+    }
+
+    let currentVal = '';
+    let setter: (val: string) => void = () => {};
+
+    if (activeNumpadTarget === 'search') {
+      currentVal = searchQuery;
+      setter = setSearchQuery;
+    } else if (activeNumpadTarget === 'rapidScan') {
+      currentVal = rapidScanValue;
+      setter = setRapidScanValue;
+    } else if (activeNumpadTarget === 'paidAmount') {
+      currentVal = paidAmount;
+      setter = setPaidAmount;
+    } else if (activeNumpadTarget === 'customPrice') {
+      currentVal = customItemPrice;
+      setter = setCustomItemPrice;
+    } else if (activeNumpadTarget === 'discount') {
+      currentVal = String(globalDiscount || '');
+      setter = (val) => setGlobalDiscount(Math.max(0, Number(val) || 0));
+    }
+
+    if (key === 'C') {
+      setter('');
+    } else if (key === '⌫') {
+      setter(currentVal.slice(0, -1));
+    } else if (key === ' ') {
+      setter(currentVal + ' ');
+    } else if (key === '.') {
+      if (!currentVal.includes('.')) {
+        setter((currentVal || '0') + '.');
+      }
+    } else {
+      const isNumericTarget = ['paidAmount', 'discount', 'customPrice'].includes(activeNumpadTarget);
+      if (isNumericTarget && currentVal === '0') {
+        setter(key);
+      } else {
+        setter(currentVal + key);
+      }
+    }
+  };
   
   // Quick Client Creation
   const [showNewClientModal, setShowNewClientModal] = useState(false);
@@ -514,6 +601,12 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
   // Global keyboard shortcuts: F2 (clear/empty cart), F3 (focus search input), F4 (initiate checkout)
   useEffect(() => {
     const handleGlobalKeyDown = (e: KeyboardEvent) => {
+      const activeEl = document.activeElement;
+      const typingInInput = activeEl && (
+        activeEl.tagName.toLowerCase() === 'input' ||
+        activeEl.tagName.toLowerCase() === 'textarea'
+      );
+
       if (e.key === 'F2') {
         e.preventDefault();
         setCart([]);
@@ -521,12 +614,59 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
         e.preventDefault();
         searchInputRef.current?.focus();
         searchInputRef.current?.select();
+        setActiveNumpadTarget('search');
+        setKeyboardLayout('alphabetic');
       } else if (e.key === 'F4') {
         e.preventDefault();
         if (cart.length > 0) {
           paidAmountInputRef.current?.focus();
           paidAmountInputRef.current?.select();
+          setActiveNumpadTarget('paidAmount');
+          setKeyboardLayout('numeric');
         }
+      } else if (e.key === 'F7') {
+        e.preventDefault();
+        setIsReturnMode(prev => !prev);
+      } else if (e.key === 'F8') {
+        e.preventDefault();
+        setShowNewClientModal(true);
+      } else if (e.key === '+') {
+        if (!typingInInput && cart.length > 0) {
+          e.preventDefault();
+          const lastItem = cart[cart.length - 1];
+          handleUpdateQty(lastItem.product.id, lastItem.qty + 1);
+          playScanBeep();
+        }
+      } else if (e.key === '-') {
+        if (!typingInInput && cart.length > 0) {
+          e.preventDefault();
+          const lastItem = cart[cart.length - 1];
+          handleUpdateQty(lastItem.product.id, lastItem.qty - 1);
+          playScanBeep();
+        }
+      } else if (e.key === '*') {
+        if (!typingInInput) {
+          e.preventDefault();
+          const el = document.querySelector('input[placeholder*="Prix libre"]');
+          if (el) {
+            (el as HTMLInputElement).focus();
+            (el as HTMLInputElement).select();
+            setActiveNumpadTarget('customPrice');
+            setKeyboardLayout('numeric');
+          }
+        }
+      } else if (e.key === '/') {
+        if (!typingInInput) {
+          e.preventDefault();
+          rapidScanInputRef.current?.focus();
+          rapidScanInputRef.current?.select();
+          setActiveNumpadTarget('rapidScan');
+          setKeyboardLayout('numeric');
+        }
+      } else if (e.key === 'Escape') {
+        setPrintedInvoice(null);
+        setShowNewClientModal(false);
+        setShowOtpModal(false);
       }
     };
 
@@ -1468,7 +1608,11 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
                   }
                   value={rapidScanValue}
                   onChange={(e) => setRapidScanValue(e.target.value)}
-                  onFocus={() => setIsRapidScanFocused(true)}
+                  onFocus={() => {
+                    setIsRapidScanFocused(true);
+                    setActiveNumpadTarget('rapidScan');
+                    setKeyboardLayout('numeric');
+                  }}
                   onBlur={() => setIsRapidScanFocused(false)}
                   onClick={(e) => { e.currentTarget.focus(); }}
                   onTouchStart={(e) => { e.currentTarget.focus(); }}
@@ -1506,6 +1650,10 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 onKeyDown={handleSearchKeyDown}
+                onFocus={() => {
+                  setActiveNumpadTarget('search');
+                  setKeyboardLayout('alphabetic');
+                }}
                 onClick={(e) => { e.currentTarget.focus(); }}
                 onTouchStart={(e) => { e.currentTarget.focus(); }}
                 className="w-full pl-9 pr-24 py-2 text-xs bg-slate-55 border border-slate-205 rounded-lg focus:outline-hidden focus:border-indigo-600 focus:bg-white transition-colors"
@@ -1576,6 +1724,10 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
                   placeholder={language === 'ar' ? 'السعر (د.ت)*' : 'Prix libre (DT)*'}
                   value={customItemPrice}
                   onChange={(e) => setCustomItemPrice(e.target.value)}
+                  onFocus={() => {
+                    setActiveNumpadTarget('customPrice');
+                    setKeyboardLayout('numeric');
+                  }}
                   onClick={(e) => { e.currentTarget.focus(); }}
                   onTouchStart={(e) => { e.currentTarget.focus(); }}
                   className="w-full px-3 py-1.5 text-xs bg-white border border-slate-200 rounded-md focus:outline-hidden focus:border-sky-500 font-mono font-bold text-slate-850"
@@ -2169,6 +2321,10 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
                     value={globalDiscount || ''}
                     placeholder="0 DT"
                     onChange={(e) => setGlobalDiscount(Math.max(0, Number(e.target.value)))}
+                    onFocus={() => {
+                      setActiveNumpadTarget('discount');
+                      setKeyboardLayout('numeric');
+                    }}
                     className="w-full bg-slate-50 border border-slate-200 rounded-lg py-1.5 px-3 text-xs text-slate-800 font-mono font-bold focus:bg-white focus:outline-none transition-colors"
                   />
                 </div>
@@ -2263,6 +2419,10 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
                     placeholder={language === 'ar' ? "أدخل المبلغ المستلم..." : "Saisir montant reçu..."}
                     onChange={(e) => setPaidAmount(e.target.value)}
                     onKeyDown={handlePaidAmountKeyDown}
+                    onFocus={() => {
+                      setActiveNumpadTarget('paidAmount');
+                      setKeyboardLayout('numeric');
+                    }}
                     onClick={(e) => { e.currentTarget.focus(); }}
                     onTouchStart={(e) => { e.currentTarget.focus(); }}
                     className="w-full bg-slate-50 border border-slate-205 rounded-lg py-2.5 pl-3 pr-10 text-xs font-black font-mono focus:bg-white focus:outline-none transition-colors text-slate-850"
@@ -2401,6 +2561,368 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
               </div>
             </div>
           )}
+
+          {/* VIRTUAL KEYBOARD & ON-SCREEN NUMPAD DRAWER */}
+          <div className="bg-slate-900 text-white rounded-2xl border border-slate-800 p-4.5 space-y-3.5 shadow-xl select-none no-print mt-4">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-2.5">
+              <div className="flex items-center gap-2">
+                <span className="text-sm">📟</span>
+                <span className="text-[10.5px] font-black tracking-wider uppercase font-mono text-slate-200">
+                  {language === 'ar' ? 'لوحة المدخلات والمفاتيح الذكية' : 'Contrôles Tactiles & Shortcuts'}
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={toggleNumpadExpanded}
+                className="text-[9px] bg-slate-800 hover:bg-slate-700 font-extrabold px-2.5 py-1 rounded-md text-slate-300 transition-colors"
+              >
+                {isNumpadExpanded ? (language === 'ar' ? 'إخفاء' : 'Fermer ✕') : (language === 'ar' ? 'Afficher ⌨️' : 'Ouvrir ⌨️')}
+              </button>
+            </div>
+
+            {isNumpadExpanded && (
+              <div className="space-y-3 animate-fade-in text-[11px]">
+                {/* Mode Selector Tabs */}
+                <div className="grid grid-cols-3 gap-1 p-0.5 bg-slate-950 rounded-lg text-[9px] font-bold">
+                  {[
+                    { id: 'rapidScan', label: language === 'ar' ? 'رمز باركود' : 'Barcode 📟' },
+                    { id: 'search', label: language === 'ar' ? 'بحث سلع' : 'Chercher 🔍' },
+                    { id: 'customPrice', label: language === 'ar' ? 'سعر حر' : 'Libre ✍️' },
+                    { id: 'paidAmount', label: language === 'ar' ? 'كاش reçu' : 'Espèces 👤' },
+                    { id: 'discount', label: language === 'ar' ? 'خصم' : 'Remise 🏷️' },
+                    { id: 'lastItemQty', label: language === 'ar' ? 'كمية سعة' : 'Quantité 📦' },
+                  ].map(tab => (
+                    <button
+                      key={tab.id}
+                      type="button"
+                      onClick={() => {
+                        setActiveNumpadTarget(tab.id as any);
+                        if (tab.id === 'search') {
+                          setKeyboardLayout('alphabetic');
+                          setTimeout(() => searchInputRef.current?.focus(), 50);
+                        } else if (tab.id === 'rapidScan') {
+                          setKeyboardLayout('numeric');
+                          setTimeout(() => rapidScanInputRef.current?.focus(), 50);
+                        } else if (tab.id === 'paidAmount') {
+                          setKeyboardLayout('numeric');
+                          setTimeout(() => paidAmountInputRef.current?.focus(), 50);
+                        } else {
+                          setKeyboardLayout('numeric');
+                        }
+                      }}
+                      className={`py-1 rounded-md transition-all text-center select-none ${
+                        activeNumpadTarget === tab.id
+                          ? 'bg-gradient-to-br from-indigo-600 to-indigo-700 text-white shadow-xs'
+                          : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900'
+                      }`}
+                    >
+                      {tab.label}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Keyboard Layout Switcher (Numeric vs Alphabetic) */}
+                <div className="flex justify-between items-center bg-slate-950 p-1.5 rounded-xl border border-slate-800">
+                  <span className="text-[9px] uppercase font-black tracking-wider text-slate-400 pl-2">
+                    {language === 'ar' ? 'نمط لوحة المفاتيح' : 'Layout Clavier'}
+                  </span>
+                  <div className="flex bg-slate-900 p-0.5 rounded-lg border border-slate-800 gap-1 select-none">
+                    <button
+                      type="button"
+                      onClick={() => setKeyboardLayout('numeric')}
+                      className={`px-3 py-1 rounded text-[9px] font-black tracking-wider transition-all uppercase ${
+                        keyboardLayout === 'numeric'
+                          ? 'bg-indigo-600 text-white shadow-xs'
+                          : 'text-slate-400 hover:text-slate-200'
+                      }`}
+                    >
+                      🔢 123
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setKeyboardLayout('alphabetic')}
+                      className={`px-3 py-1 rounded text-[9px] font-black tracking-wider transition-all uppercase ${
+                        keyboardLayout === 'alphabetic'
+                          ? 'bg-indigo-600 text-white shadow-xs'
+                          : 'text-slate-400 hover:text-slate-200'
+                      }`}
+                    >
+                      🔤 ABC
+                    </button>
+                  </div>
+                </div>
+
+                {/* Sub-layout selectors when Alphabetic is active */}
+                {keyboardLayout === 'alphabetic' && (
+                  <div className="flex justify-between items-center bg-slate-950/60 p-1.5 rounded-xl border border-slate-850 animate-fade-in">
+                    <span className="text-[8px] uppercase font-extrabold tracking-wider text-slate-500 pl-2">
+                      {language === 'ar' ? 'تنسيق الحروف' : 'Format de Clavier'}
+                    </span>
+                    <div className="flex bg-slate-950 p-0.5 rounded border border-slate-800 gap-1 text-[8px] font-black">
+                      <button
+                        type="button"
+                        onClick={() => setAlphabeticType('azerty')}
+                        className={`px-2 py-0.5 rounded transition-all ${
+                          alphabeticType === 'azerty' ? 'bg-indigo-800 text-white' : 'text-slate-400 hover:text-slate-205'
+                        }`}
+                      >
+                        AZERTY
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setAlphabeticType('qwerty')}
+                        className={`px-2 py-0.5 rounded transition-all ${
+                          alphabeticType === 'qwerty' ? 'bg-indigo-800 text-white' : 'text-slate-400 hover:text-slate-205'
+                        }`}
+                      >
+                        QWERTY
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Glistening active display readout */}
+                <div className="bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-center space-y-0.5">
+                  <p className="text-[8px] font-black tracking-widest text-slate-500 uppercase">
+                    {activeNumpadTarget === 'rapidScan' && (language === 'ar' ? 'تعديل الباركود' : 'Saisie Code-barres')}
+                    {activeNumpadTarget === 'search' && (language === 'ar' ? 'بحث السلع بالاسم' : 'Filtre Catalogue')}
+                    {activeNumpadTarget === 'customPrice' && (language === 'ar' ? 'سعر البيع المباشر' : 'Saisie Prix Libre')}
+                    {activeNumpadTarget === 'paidAmount' && (language === 'ar' ? 'مبلغ كاش مستلم' : 'Saisie Espèces Reçu')}
+                    {activeNumpadTarget === 'discount' && (language === 'ar' ? 'حجم الخصم المضاف' : 'Saisie Remise Globale')}
+                    {activeNumpadTarget === 'lastItemQty' && (language === 'ar' ? 'كمية السلعة الأخيرة' : 'Saisie Quantité Article')}
+                  </p>
+                  <p className="text-sm font-mono font-black text-cyan-400 truncate">
+                    {activeNumpadTarget === 'rapidScan' && (rapidScanValue || '—')}
+                    {activeNumpadTarget === 'search' && (searchQuery || '—')}
+                    {activeNumpadTarget === 'customPrice' && (customItemPrice ? `${customItemPrice} DT` : '—')}
+                    {activeNumpadTarget === 'paidAmount' && (paidAmount ? `${paidAmount} DT` : '—')}
+                    {activeNumpadTarget === 'discount' && (globalDiscount ? `${globalDiscount} DT` : '0 DT')}
+                    {activeNumpadTarget === 'lastItemQty' && (cart.length > 0 ? `${cart[cart.length - 1].qty} x ${cart[cart.length - 1].product.name}` : (language === 'ar' ? 'لا توجد سلع بال سلة (فارغ)' : 'Le panier est vide'))}
+                  </p>
+                </div>
+
+                {/* Tactile Grids (Numeric vs Alphabetical) */}
+                {keyboardLayout === 'alphabetic' ? (
+                  <div className="space-y-1.5 animate-fade-in select-none">
+                    {/* Row 1 */}
+                    <div className="flex gap-1.2 justify-between">
+                      {(alphabeticType === 'azerty' 
+                        ? ['A', 'Z', 'E', 'R', 'T', 'Y', 'U', 'I', 'O', 'P']
+                        : ['Q', 'W', 'E', 'R', 'T', 'Y', 'U', 'I', 'O', 'P']
+                      ).map(char => (
+                        <button
+                          key={char}
+                          type="button"
+                          onClick={() => handleNumpadKeyPress(char)}
+                          className="flex-1 bg-slate-800 hover:bg-slate-700 active:scale-95 py-2 text-[10px] font-black rounded-lg transition-all text-slate-200 text-center cursor-pointer shadow-xs border border-slate-750"
+                        >
+                          {char}
+                        </button>
+                      ))}
+                    </div>
+
+                    {/* Row 2 */}
+                    <div className="flex gap-1.2 justify-between pl-1.5">
+                      {(alphabeticType === 'azerty'
+                        ? ['Q', 'S', 'D', 'F', 'G', 'H', 'J', 'K', 'L', 'M']
+                        : ['A', 'S', 'D', 'F', 'G', 'H', 'J', 'K', 'L', 'M']
+                      ).map(char => (
+                        <button
+                          key={char}
+                          type="button"
+                          onClick={() => handleNumpadKeyPress(char)}
+                          className="flex-1 bg-slate-800 hover:bg-slate-700 active:scale-95 py-2 text-[10px] font-black rounded-lg transition-all text-slate-200 text-center cursor-pointer shadow-xs border border-slate-750"
+                        >
+                          {char}
+                        </button>
+                      ))}
+                    </div>
+
+                    {/* Row 3 */}
+                    <div className="flex gap-1.2 justify-between pl-3">
+                      {(alphabeticType === 'azerty'
+                        ? ['W', 'X', 'C', 'V', 'B', 'N']
+                        : ['Z', 'X', 'C', 'V', 'B', 'N']
+                      ).map(char => (
+                        <button
+                          key={char}
+                          type="button"
+                          onClick={() => handleNumpadKeyPress(char)}
+                          className="flex-1 bg-slate-800 hover:bg-slate-700 active:scale-95 py-2 text-[10px] font-black rounded-lg transition-all text-slate-200 text-center cursor-pointer shadow-xs border border-slate-750"
+                        >
+                          {char}
+                        </button>
+                      ))}
+                      {/* Special fast character '-' */}
+                      <button
+                        type="button"
+                        onClick={() => handleNumpadKeyPress('-')}
+                        className="flex-1 bg-slate-850 hover:bg-slate-750 active:scale-95 py-2 text-[10px] font-black rounded-lg transition-all text-slate-350 text-center cursor-pointer border border-slate-750"
+                      >
+                        -
+                      </button>
+                      {/* Backspace */}
+                      <button
+                        type="button"
+                        onClick={() => handleNumpadKeyPress('⌫')}
+                        className="flex-grow-[1.5] bg-rose-950/70 border border-rose-900 text-rose-300 hover:bg-rose-905 active:scale-95 py-2 text-[10px] font-black rounded-lg transition-all text-center cursor-pointer shadow-xs"
+                        title="Effacer"
+                      >
+                        ⌫
+                      </button>
+                    </div>
+
+                    {/* Row 4 (Space, Clear, Special chars) */}
+                    <div className="flex gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => handleNumpadKeyPress('C')}
+                        className="w-14 bg-amber-950/70 border border-amber-900 text-amber-300 hover:bg-amber-900 active:scale-95 py-2 text-[10px] font-black rounded-lg transition-all text-center cursor-pointer"
+                        title="Vider"
+                      >
+                        CLR
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleNumpadKeyPress(' ')}
+                        className="flex-1 bg-indigo-950/90 hover:bg-indigo-900 active:scale-95 py-2 text-[10px] font-black rounded-lg transition-all text-indigo-200 text-center uppercase tracking-widest font-mono cursor-pointer border border-indigo-800"
+                      >
+                        {language === 'ar' ? 'فراغ ␣' : 'ESPACE ␣'}
+                      </button>
+                      {/* Extra symbols for convenience */}
+                      {['@', '_', '.'].map(char => (
+                        <button
+                          key={char}
+                          type="button"
+                          onClick={() => handleNumpadKeyPress(char)}
+                          className="w-8 bg-slate-850 hover:bg-slate-750 active:scale-95 py-2 text-[10px] font-black rounded-lg transition-all text-slate-350 text-center cursor-pointer border border-slate-750"
+                        >
+                          {char}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ) : (
+                  /* Tactile Numeric Grid */
+                  <div className="grid grid-cols-4 gap-1.5 animate-fade-in select-none">
+                    <button type="button" onClick={() => handleNumpadKeyPress('7')} className="bg-slate-800 hover:bg-slate-700 active:scale-95 py-2 text-xs font-black rounded-lg transition-all text-slate-200">7</button>
+                    <button type="button" onClick={() => handleNumpadKeyPress('8')} className="bg-slate-800 hover:bg-slate-700 active:scale-95 py-2 text-xs font-black rounded-lg transition-all text-slate-200">8</button>
+                    <button type="button" onClick={() => handleNumpadKeyPress('9')} className="bg-slate-800 hover:bg-slate-700 active:scale-95 py-2 text-xs font-black rounded-lg transition-all text-slate-200">9</button>
+                    <button 
+                      type="button" 
+                      onClick={() => {
+                        if (activeNumpadTarget === 'lastItemQty') {
+                          if (cart.length > 0) {
+                            const last = cart[cart.length - 1];
+                            handleUpdateQty(last.product.id, last.qty + 1);
+                            playScanBeep();
+                          }
+                        } else if (activeNumpadTarget === 'paidAmount') {
+                          setPaidAmount(prev => String((Number(prev) || 0) + 10));
+                        } else {
+                          handleNumpadKeyPress('1');
+                        }
+                      }} 
+                      className="bg-indigo-950 border border-indigo-900 text-indigo-400 hover:bg-indigo-900 active:scale-95 py-2 text-[9px] font-black rounded-lg transition-all"
+                    >
+                      {activeNumpadTarget === 'lastItemQty' ? '+1 Qty' : '+10 DT'}
+                    </button>
+
+                    <button type="button" onClick={() => handleNumpadKeyPress('4')} className="bg-slate-800 hover:bg-slate-700 active:scale-95 py-2 text-xs font-black rounded-lg transition-all text-slate-200">4</button>
+                    <button type="button" onClick={() => handleNumpadKeyPress('5')} className="bg-slate-800 hover:bg-slate-700 active:scale-95 py-2 text-xs font-black rounded-lg transition-all text-slate-200">5</button>
+                    <button type="button" onClick={() => handleNumpadKeyPress('6')} className="bg-slate-800 hover:bg-slate-700 active:scale-95 py-2 text-xs font-black rounded-lg transition-all text-slate-200">6</button>
+                    <button 
+                      type="button" 
+                      onClick={() => {
+                        if (activeNumpadTarget === 'lastItemQty') {
+                          if (cart.length > 0) {
+                            const last = cart[cart.length - 1];
+                            handleUpdateQty(last.product.id, last.qty + 5);
+                            playScanBeep();
+                          }
+                        } else if (activeNumpadTarget === 'paidAmount') {
+                          setPaidAmount(prev => String((Number(prev) || 0) + 20));
+                        }
+                      }} 
+                      className="bg-indigo-950 border border-indigo-900 text-indigo-400 hover:bg-indigo-900 active:scale-95 py-2 text-[9px] font-black rounded-lg transition-all"
+                    >
+                      {activeNumpadTarget === 'lastItemQty' ? '+5 Qty' : '+20 DT'}
+                    </button>
+
+                    <button type="button" onClick={() => handleNumpadKeyPress('1')} className="bg-slate-800 hover:bg-slate-700 active:scale-95 py-2 text-xs font-black rounded-lg transition-all text-slate-200">1</button>
+                    <button type="button" onClick={() => handleNumpadKeyPress('2')} className="bg-slate-800 hover:bg-slate-700 active:scale-95 py-2 text-xs font-black rounded-lg transition-all text-slate-200">2</button>
+                    <button type="button" onClick={() => handleNumpadKeyPress('3')} className="bg-slate-800 hover:bg-slate-700 active:scale-95 py-2 text-xs font-black rounded-lg transition-all text-slate-200">3</button>
+                    <button 
+                      type="button" 
+                      onClick={() => {
+                        if (activeNumpadTarget === 'lastItemQty') {
+                          if (cart.length > 0) {
+                            const last = cart[cart.length - 1];
+                            handleUpdateQty(last.product.id, last.qty + 10);
+                            playScanBeep();
+                          }
+                        } else if (activeNumpadTarget === 'paidAmount') {
+                          setPaidAmount(prev => String((Number(prev) || 0) + 50));
+                        }
+                      }} 
+                      className="bg-indigo-950 border border-indigo-900 text-indigo-400 hover:bg-indigo-900 active:scale-95 py-2 text-[9px] font-black rounded-lg transition-all"
+                    >
+                      {activeNumpadTarget === 'lastItemQty' ? '+10 Qty' : '+50 DT'}
+                    </button>
+
+                    <button type="button" onClick={() => handleNumpadKeyPress('0')} className="bg-slate-800 hover:bg-slate-700 active:scale-95 py-2 text-xs font-black rounded-lg transition-all text-slate-200">0</button>
+                    <button type="button" onClick={() => handleNumpadKeyPress('.')} className="bg-slate-800 hover:bg-slate-700 active:scale-95 py-2 text-sm font-black rounded-lg transition-all text-slate-200">.</button>
+                    <button type="button" onClick={() => handleNumpadKeyPress('⌫')} className="bg-rose-950/70 border border-rose-900 text-rose-300 hover:bg-rose-900 active:scale-95 py-2 text-xs font-black rounded-lg transition-all" title="Effacer dernier">⌫</button>
+                    <button type="button" onClick={() => handleNumpadKeyPress('C')} className="bg-amber-950/70 border border-amber-900 text-amber-350 hover:bg-amber-900 active:scale-95 py-2 text-xs font-black rounded-lg transition-all" title="Vider tout">C</button>
+                  </div>
+                )}
+
+                {/* Essential Quick Actions */}
+                <div className="grid grid-cols-2 gap-2 pt-2 border-t border-slate-800 select-none">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPaidAmount(String(finalTotal));
+                      playScanBeep();
+                    }}
+                    className="bg-emerald-600 hover:bg-emerald-700 active:scale-95 py-2 rounded-lg text-white font-semibold font-mono text-[10px] uppercase flex items-center justify-center gap-1.5 transition-all text-center"
+                    title="Entrer le montant TTC exact de la caisse"
+                  >
+                    💵 {language === 'ar' ? 'المبلغ المستلم دقيق' : 'Montant Exact'}
+                  </button>
+                  
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (cart.length > 0) {
+                        handleCheckoutClick();
+                      } else {
+                        alert(language === 'ar' ? 'السلة فارغة' : 'Le panier est vide');
+                      }
+                    }}
+                    className="bg-sky-600 hover:bg-sky-700 active:scale-95 py-2 rounded-lg text-white font-semibold text-[10px] uppercase flex items-center justify-center gap-1.5 transition-all text-center"
+                  >
+                    ✔ {language === 'ar' ? 'تأكيد المعاملة ✔' : 'Valider Ticket'}
+                  </button>
+                </div>
+
+                {/* Collapsible reference guide */}
+                <div className="pt-2.5 text-[9.5px] text-slate-400 font-mono space-y-1 bg-slate-950/30 p-2.5 rounded-lg border border-slate-850">
+                  <p className="font-extrabold text-slate-300 border-b border-slate-800 pb-1 mb-1 text-[9.5px]">⌨️ Raccourcis Clavier Cashier (Pro) :</p>
+                  <div className="grid grid-cols-2 gap-x-2 gap-y-0.8 text-[8.5px]">
+                    <p>• <kbd className="bg-slate-800 text-slate-200 px-1 rounded font-bold">F2</kbd> : Vider Panier</p>
+                    <p>• <kbd className="bg-slate-800 text-slate-200 px-1 rounded font-bold">F3</kbd> : Recherche</p>
+                    <p>• <kbd className="bg-slate-800 text-slate-200 px-1 rounded font-bold">F4</kbd> : Saisie Espece</p>
+                    <p>• <kbd className="bg-slate-800 text-slate-200 px-1 rounded font-bold">F7</kbd> : Mode Retour</p>
+                    <p>• <kbd className="bg-slate-800 text-slate-200 px-1 rounded font-bold">F8</kbd> : Client Facture</p>
+                    <p>• <kbd className="bg-slate-800 text-slate-200 px-1 rounded font-bold">/</kbd> : Saisie Barcode</p>
+                    <p>• <kbd className="bg-slate-800 text-slate-200 px-1 rounded font-bold">*</kbd> : Prix Vente Libre</p>
+                    <p>• <kbd className="bg-slate-800 text-slate-200 px-1 rounded font-bold">+</kbd> / <kbd className="bg-slate-800 text-slate-200 px-1 rounded font-bold">-</kbd> : Ajuster dernier</p>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
 
       </div>
