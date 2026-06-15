@@ -12,7 +12,7 @@ import defaultPosLogo from '../assets/images/innova_pos_logo_1779782745745.png';
 export default function Auth({ onEnterDemo, isLockedState = false, user, db }: { onEnterDemo: () => void, isLockedState?: boolean, user?: any, db?: DatabaseState }) {
   const { language, toggleLanguage, t } = useLanguage();
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<{ message: string; code?: string; isDomainError?: boolean } | null>(null);
 
   // Dynamically pull store settings from local database (for branding at login)
   const localDb = useMemo(() => {
@@ -44,11 +44,24 @@ export default function Auth({ onEnterDemo, isLockedState = false, user, db }: {
       }
     } catch (err: any) {
       console.error('Core Auth Error:', err);
-      setError(
-        language === 'ar'
-          ? 'فشل تسجيل الدخول. يرجى التحقق من اتصالك بالإنترنت والمحاولة مجدداً.'
-          : 'Le login a échoué. Veuillez vérifier votre connexion internet et réessayer.'
-      );
+      const errCode = err?.code || '';
+      const isDomainError = errCode === 'auth/unauthorized-domain' || (err?.message && err.message.includes('unauthorized-domain'));
+      
+      let msg = language === 'ar'
+        ? 'فشل تسجيل الدخول. يرجى التحقق من اتصالك بالإنترنت والمحاولة مجدداً.'
+        : 'Le login a échoué. Veuillez vérifier votre connexion internet et réessayer.';
+
+      if (isDomainError) {
+        msg = language === 'ar'
+          ? `النطاق الحالي غير مصرح به في إعدادات Firebase Auth. يرجى إضافة النطاق الحالي للعمل بشكل صحيح.`
+          : `Le domaine actif n'est pas autorisé dans votre console Firebase Authentication.`;
+      }
+
+      setError({
+        message: msg,
+        code: errCode || undefined,
+        isDomainError
+      });
     } finally {
       setLoading(false);
     }
@@ -169,8 +182,49 @@ export default function Auth({ onEnterDemo, isLockedState = false, user, db }: {
           </div>
 
           {error && (
-            <div className="p-3 bg-rose-500/10 border border-rose-500/20 text-rose-400 rounded-lg text-xs text-center font-semibold leading-relaxed font-sans">
-              {error}
+            <div className="p-4 bg-rose-950/80 border border-rose-500/30 text-rose-200 rounded-xl text-xs space-y-2.5 text-start font-sans shadow-lg shadow-rose-950/40 relative overflow-hidden">
+              <div className="absolute top-0 right-0 w-16 h-16 bg-rose-500/10 rounded-full blur-xl pointer-events-none"></div>
+              
+              <div className="flex items-center gap-2 font-black text-rose-300">
+                <span className="text-sm">❌</span>
+                <span>
+                  {language === 'ar' ? 'فشل تسجيل الدخول' : 'Échec de connexion'}
+                </span>
+                {error.code && (
+                  <span className="text-[9px] font-mono bg-rose-900/60 text-rose-300 px-1.5 py-0.5 rounded ml-auto uppercase border border-rose-800/40 font-bold">
+                    {error.code}
+                  </span>
+                )}
+              </div>
+
+              <p className="font-semibold leading-relaxed bg-rose-950/30 p-2 rounded border border-rose-900/20 text-[11px]">
+                {error.message}
+              </p>
+
+              {error.isDomainError && (
+                <div className="mt-2 text-[11px] text-slate-300 space-y-2">
+                  <p className="font-black text-amber-400 uppercase tracking-wide text-[9.5px]">
+                    {language === 'ar' ? '🛠️ خطوات الحل السريع :' : '🛠️ SOLUTION RAPIDE :'}
+                  </p>
+                  <ol className="list-decimal list-inside space-y-1 rounded bg-slate-950/85 p-2.5 border border-slate-850 font-sans leading-relaxed text-slate-300">
+                    {language === 'ar' ? (
+                      <>
+                        <li>افتح منصة <strong className="text-white">Firebase Console</strong> لمشروعك.</li>
+                        <li>انتقل إلى <strong className="text-white">Authentication</strong> &gt; تبويب <strong className="text-white">Settings</strong>.</li>
+                        <li>في <strong className="text-white">Authorized domains</strong>، انقر على "إضافة".</li>
+                        <li>أدخل اسم النطاق التالي بدقة: <code className="bg-slate-900 border border-slate-800 px-1.5 py-0.5 rounded font-mono text-emerald-400 text-xs select-all font-bold">{window.location.hostname}</code></li>
+                      </>
+                    ) : (
+                      <>
+                        <li>Allez sur votre <strong className="text-white">Firebase Console</strong>.</li>
+                        <li>Accédez à <strong className="text-white">Authentication</strong> &gt; onglet <strong className="text-white">Settings</strong>.</li>
+                        <li>Dans <strong className="text-white">Authorized domains</strong>, cliquez sur "Ajouter".</li>
+                        <li>Saisissez l'hôte suivant : <code className="bg-slate-900 border border-slate-800 px-1.5 py-0.5 rounded font-mono text-emerald-400 text-xs select-all font-bold">{window.location.hostname}</code></li>
+                      </>
+                    )}
+                  </ol>
+                </div>
+              )}
             </div>
           )}
 
