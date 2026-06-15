@@ -5,14 +5,56 @@ import { useLanguage } from '../utils/LanguageContext';
 import { getDatabase } from '../utils/db';
 import { DatabaseState } from '../types';
 import { 
-  LogIn, Globe, Shield, Sparkles, Store, Phone, MapPin, BadgeCheck
+  LogIn, Globe, Shield, Sparkles, Store, Phone, MapPin, BadgeCheck, Settings, Database, Sparkle, HelpCircle, Save, RotateCcw
 } from 'lucide-react';
+import { motion, AnimatePresence } from 'motion/react';
 import defaultPosLogo from '../assets/images/innova_pos_logo_1779782745745.png';
+
+// Extractor helper to parse both Web app JSON config and pasted raw JavaScript code declarations
+const extractFirebaseConfig = (rawText: string) => {
+  try {
+    const trimmed = rawText.trim();
+    if (!trimmed) return null;
+    // Attempt standard JSON parsing
+    return JSON.parse(trimmed);
+  } catch (e) {
+    // Regex extractor for single/double quoted JS properties
+    const config: Record<string, string> = {};
+    const keys = ['apiKey', 'authDomain', 'projectId', 'storageBucket', 'messagingSenderId', 'appId', 'measurementId'];
+    let found = false;
+    keys.forEach(key => {
+      const regex = new RegExp(`['"]?${key}['"]?\\s*:\\s*['"]([^'"]+)['"]`, 'i');
+      const match = rawText.match(regex);
+      if (match && match[1]) {
+        config[key] = match[1].trim();
+        found = true;
+      }
+    });
+
+    if (found && config.projectId && config.apiKey) {
+      return config;
+    }
+  }
+  return null;
+};
 
 export default function Auth({ onEnterDemo, isLockedState = false, user, db }: { onEnterDemo: () => void, isLockedState?: boolean, user?: any, db?: DatabaseState }) {
   const { language, toggleLanguage, t } = useLanguage();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<{ message: string; code?: string; isDomainError?: boolean } | null>(null);
+
+  const [showFirebaseModal, setShowFirebaseModal] = useState(false);
+  const [configText, setConfigText] = useState(() => {
+    const saved = localStorage.getItem('CUSTOM_FIREBASE_CONFIG');
+    if (!saved) return '';
+    try {
+      return JSON.stringify(JSON.parse(saved), null, 2);
+    } catch {
+      return saved;
+    }
+  });
+  const [configError, setConfigError] = useState<string | null>(null);
+  const [configSuccess, setConfigSuccess] = useState(false);
 
   // Dynamically pull store settings from local database (for branding at login)
   const localDb = useMemo(() => {
@@ -67,6 +109,50 @@ export default function Auth({ onEnterDemo, isLockedState = false, user, db }: {
     }
   };
 
+  const handleSaveConfig = () => {
+    setConfigError(null);
+    setConfigSuccess(false);
+
+    if (!configText.trim()) {
+      setConfigError(language === 'ar' ? 'الرجاء إدخال نص الإعدادات أولاً.' : 'Veuillez saisir votre configuration.');
+      return;
+    }
+
+    const parsedConfig = extractFirebaseConfig(configText);
+    if (!parsedConfig) {
+      setConfigError(
+        language === 'ar'
+          ? 'صيغة الإعدادات غير صالحة. يرجى لصق كود Firebase Web App (JSON أو كائن JavaScript).'
+          : 'Configuration invalide. Veuillez coller le code d\'application Web Firebase ou un JSON valide.'
+      );
+      return;
+    }
+
+    // Verify critical attributes
+    if (!parsedConfig.apiKey || !parsedConfig.projectId || !parsedConfig.authDomain) {
+      setConfigError(
+        language === 'ar'
+          ? 'البيانات المدخلة تفتقد إلى حقول أساسية مثل apiKey أو projectId أو authDomain.'
+          : 'Champs critiques manquants (apiKey, projectId ou authDomain).'
+      );
+      return;
+    }
+
+    localStorage.setItem('CUSTOM_FIREBASE_CONFIG', JSON.stringify(parsedConfig));
+    setConfigSuccess(true);
+    setTimeout(() => {
+      window.location.reload();
+    }, 1200);
+  };
+
+  const handleResetConfig = () => {
+    localStorage.removeItem('CUSTOM_FIREBASE_CONFIG');
+    setConfigSuccess(true);
+    setTimeout(() => {
+      window.location.reload();
+    }, 1000);
+  };
+
   // Generate initials for fallback logo
   const initials = useMemo(() => {
     if (!storeName) return 'GP';
@@ -112,13 +198,35 @@ export default function Auth({ onEnterDemo, isLockedState = false, user, db }: {
           </div>
         </div>
 
-        <button
-          onClick={toggleLanguage}
-          className="flex items-center gap-2 px-3.5 py-1.5 rounded-lg bg-slate-900/80 hover:bg-slate-800 border border-slate-800 text-xs font-bold text-slate-300 hover:text-white transition-all cursor-pointer shadow-md shadow-black/20"
-        >
-          <Globe className="w-3.5 h-3.5 text-blue-400" />
-          <span>{language === 'ar' ? 'Français' : 'العربية'}</span>
-        </button>
+        <div className="flex items-center gap-2">
+          {/* Custom Firebase Setup Trigger */}
+          {!isLockedState && (
+            <button
+              onClick={() => setShowFirebaseModal(true)}
+              title={language === 'ar' ? 'تهيئة قاعدة بيانات سحابية مخصصة' : 'Configurer votre Cloud Firebase'}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-bold transition-all cursor-pointer shadow-md shadow-black/20 ${
+                localStorage.getItem('CUSTOM_FIREBASE_CONFIG')
+                  ? 'bg-emerald-950/70 text-emerald-300 border-emerald-500/40 hover:bg-emerald-900/80 hover:text-white'
+                  : 'bg-slate-900/80 text-slate-300 border-slate-800 hover:bg-slate-800 hover:text-white'
+              }`}
+            >
+              <Settings className={`w-3.5 h-3.5 ${localStorage.getItem('CUSTOM_FIREBASE_CONFIG') ? 'text-emerald-400 animate-pulse' : 'text-slate-400'}`} />
+              <span className="hidden sm:inline">
+                {localStorage.getItem('CUSTOM_FIREBASE_CONFIG')
+                  ? (language === 'ar' ? 'سحابة نشطة' : 'Cloud custom active')
+                  : (language === 'ar' ? 'سحابتي الخاصة' : 'Firebase custom')}
+              </span>
+            </button>
+          )}
+
+          <button
+            onClick={toggleLanguage}
+            className="flex items-center gap-2 px-3.5 py-1.5 rounded-lg bg-slate-900/80 hover:bg-slate-800 border border-slate-800 text-xs font-bold text-slate-300 hover:text-white transition-all cursor-pointer shadow-md shadow-black/20"
+          >
+            <Globe className="w-3.5 h-3.5 text-blue-400" />
+            <span>{language === 'ar' ? 'Français' : 'العربية'}</span>
+          </button>
+        </div>
       </header>
 
       {/* CENTER GLASS CARD BRANDING */}
@@ -182,10 +290,10 @@ export default function Auth({ onEnterDemo, isLockedState = false, user, db }: {
           </div>
 
           {error && (
-            <div className="p-4 bg-rose-950/80 border border-rose-500/30 text-rose-200 rounded-xl text-xs space-y-2.5 text-start font-sans shadow-lg shadow-rose-950/40 relative overflow-hidden">
+            <div className="p-4 bg-rose-950/80 border border-rose-500/30 text-rose-200 rounded-xl text-xs space-y-3.5 text-start font-sans shadow-lg shadow-rose-950/40 relative overflow-hidden">
               <div className="absolute top-0 right-0 w-16 h-16 bg-rose-500/10 rounded-full blur-xl pointer-events-none"></div>
               
-              <div className="flex items-center gap-2 font-black text-rose-300">
+              <div className="flex items-center gap-2 font-black text-rose-300 border-b border-rose-900/30 pb-2">
                 <span className="text-sm">❌</span>
                 <span>
                   {language === 'ar' ? 'فشل تسجيل الدخول' : 'Échec de connexion'}
@@ -202,27 +310,55 @@ export default function Auth({ onEnterDemo, isLockedState = false, user, db }: {
               </p>
 
               {error.isDomainError && (
-                <div className="mt-2 text-[11px] text-slate-300 space-y-2">
-                  <p className="font-black text-amber-400 uppercase tracking-wide text-[9.5px]">
-                    {language === 'ar' ? '🛠️ خطوات الحل السريع :' : '🛠️ SOLUTION RAPIDE :'}
-                  </p>
-                  <ol className="list-decimal list-inside space-y-1 rounded bg-slate-950/85 p-2.5 border border-slate-850 font-sans leading-relaxed text-slate-300">
+                <div className="text-[11px] text-slate-350 space-y-2.5">
+                  <div className="bg-amber-500/10 border border-amber-500/20 rounded-lg p-2.5 text-amber-200 flex items-start gap-2">
+                    <span className="text-xs">⚠️</span>
+                    <span className="font-semibold text-[10.5px] leading-relaxed">
+                      {language === 'ar' 
+                        ? 'تنبيه: إذا قمت بإضافة النطاق بالفعل وما زال لا يعمل، تحقق من النقاط التالية:' 
+                        : 'Si vous avez déjà ajouté le domaine et que cela ne marche toujours pas, vérifiez ces points critiques :'}
+                    </span>
+                  </div>
+
+                  <ul className="space-y-2 rounded-xl bg-slate-950/90 p-3.5 border border-slate-850 font-sans leading-relaxed text-slate-300 text-[10.5px] list-disc list-inside">
                     {language === 'ar' ? (
                       <>
-                        <li>افتح منصة <strong className="text-white">Firebase Console</strong> لمشروعك.</li>
-                        <li>انتقل إلى <strong className="text-white">Authentication</strong> &gt; تبويب <strong className="text-white">Settings</strong>.</li>
-                        <li>في <strong className="text-white">Authorized domains</strong>، انقر على "إضافة".</li>
-                        <li>أدخل اسم النطاق التالي بدقة: <code className="bg-slate-900 border border-slate-800 px-1.5 py-0.5 rounded font-mono text-emerald-400 text-xs select-all font-bold">{window.location.hostname}</code></li>
+                        <li>
+                          <span className="font-black text-white">اسم المشروع المحدّد :</span> يجب إضافة النطاق داخل المشروع ذو المعرّف <strong className="text-emerald-400 font-mono">{auth.app.options.projectId || 'innovapos'}</strong> حصراً في لوحة Firebase.
+                        </li>
+                        <li>
+                          <span className="font-black text-white">الصيغة الدقيقة للمجال :</span> أدخل النطاق بالضبط كالتالي <code className="bg-slate-900 border border-slate-800 px-1.5 py-0.5 rounded font-mono text-emerald-400 text-xs font-bold select-all">innova-pos.vercel.app</code> (بدون <code className="text-slate-400">https://</code> وبدون أي شرطة مائلة <code className="text-slate-400">/</code>).
+                        </li>
+                        <li>
+                          <span className="font-black text-white">إضافة نطاق الـ WWW :</span> إذا كنت تتصفح من خلال الرابط المزود بـ www، فيجب إضافة نطاق إضافي آخر وهو: <code className="bg-slate-900 border border-slate-800 px-1.5 py-0.5 rounded font-mono text-emerald-400 text-xs font-bold select-all">www.innova-pos.vercel.app</code>
+                        </li>
+                        <li>
+                          <span className="font-black text-white">تأخر انتشار التحديث :</span> يستغرق تحديث Firebase المعتمد من <strong className="text-amber-400">2 إلى 10 دقائق</strong> للانتشار الفعلي. يرجى تجربة فتح المتصفح بوضع التصفح الخفي (Incognito Mode) أو مسح الذاكرة ممتلئة.
+                        </li>
+                        <li>
+                          <span className="font-black text-white">المكان الصحيح بالإعدادات :</span> يتم تفعيل هذا من منصة <strong className="text-white">Firebase Console</strong> وتحديداً في <strong className="text-white">Authentication &gt; Settings &gt; Authorized domains</strong> وليس فقط في Google Cloud.
+                        </li>
                       </>
                     ) : (
                       <>
-                        <li>Allez sur votre <strong className="text-white">Firebase Console</strong>.</li>
-                        <li>Accédez à <strong className="text-white">Authentication</strong> &gt; onglet <strong className="text-white">Settings</strong>.</li>
-                        <li>Dans <strong className="text-white">Authorized domains</strong>, cliquez sur "Ajouter".</li>
-                        <li>Saisissez l'hôte suivant : <code className="bg-slate-900 border border-slate-800 px-1.5 py-0.5 rounded font-mono text-emerald-400 text-xs select-all font-bold">{window.location.hostname}</code></li>
+                        <li>
+                          <strong className="text-white">Identifiant Firebase correct :</strong> Assurez-vous d'ajouter le domaine dans le projet avec l'ID exact <strong className="text-emerald-400 font-mono">{auth.app.options.projectId || 'innovapos'}</strong> sur votre console Firebase.
+                        </li>
+                        <li>
+                          <strong className="text-white">Format d'hôte strict :</strong> Saisissez l'hôte exact sans aucun préfixe ni suffixe, soit uniquement : <code className="bg-slate-900 border border-slate-800 px-1.5 py-0.5 rounded font-mono text-emerald-400 text-xs font-bold select-all">innova-pos.vercel.app</code> (sans <code className="text-slate-400">https://</code> et sans barre oblique <code className="text-slate-400">/</code>).
+                        </li>
+                        <li>
+                          <strong className="text-white">Ajouter les sous-domaines (WWW) :</strong> Si vous accédez à votre application via www, vous devez également ajouter une ligne pour : <code className="bg-slate-900 border border-slate-800 px-1.5 py-0.5 rounded font-mono text-emerald-400 text-xs font-bold select-all">www.innova-pos.vercel.app</code>
+                        </li>
+                        <li>
+                          <strong className="text-white">Délai de propagation :</strong> Les mises à jour de domaines autorisés Firebase prennent généralement entre <strong className="text-amber-400">2 et 10 minutes</strong> pour être propagées. Testez en Ouvrant une fenêtre de <strong className="text-white">navigation privée (Incognito)</strong> ou videz le cache.
+                        </li>
+                        <li>
+                          <strong className="text-white">Emplacement exact :</strong> Cela doit être configuré dans votre console <strong className="text-white">Firebase Console</strong> dans l'onglet <strong className="text-white">Authentication &gt; Settings &gt; Authorized domains</strong> (et non uniquement sur Google Cloud Console).
+                        </li>
                       </>
                     )}
-                  </ol>
+                  </ul>
                 </div>
               )}
             </div>
@@ -310,6 +446,157 @@ export default function Auth({ onEnterDemo, isLockedState = false, user, db }: {
           <span>{t('tech_support') || 'Support email'} : kharoufwala24@gmail.com</span>
         </div>
       </footer>
+
+      {/* ⚙️ CUSTOM FIREBASE CONFIGURATION PORTAL */}
+      <AnimatePresence>
+        {showFirebaseModal && (
+          <div className="fixed inset-0 bg-slate-950/85 backdrop-blur-md flex items-center justify-center p-4 z-50 overflow-y-auto" style={{ zIndex: 99999 }}>
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 15 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 15 }}
+              transition={{ duration: 0.15 }}
+              className="bg-slate-900 border border-slate-800 rounded-2xl max-w-lg w-full p-5 md:p-6 shadow-2xl space-y-4 text-start font-sans max-h-[88vh] overflow-y-auto no-print"
+            >
+              <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+                <div className="flex items-center gap-2">
+                  <Database className="w-5 h-5 text-amber-500 animate-pulse" />
+                  <h3 className="text-base font-black text-white font-display">
+                    {language === 'ar' ? 'ربط سحابة Firebase الخاصة بك' : 'Lier votre Firebase Privé'}
+                  </h3>
+                </div>
+                <button
+                  onClick={() => {
+                    setShowFirebaseModal(false);
+                    setConfigError(null);
+                    setConfigSuccess(false);
+                  }}
+                  className="p-1 px-2.5 rounded bg-slate-850 hover:bg-slate-800 text-slate-400 hover:text-white text-xs font-bold transition-all cursor-pointer"
+                >
+                  ✕
+                </button>
+              </div>
+
+              {/* ACTIVE DB STATUS DISPLAY */}
+              <div className="p-3 bg-slate-950 border border-slate-850 rounded-xl space-y-1.5">
+                <div className="flex justify-between items-center text-xs">
+                  <span className="text-slate-400 font-bold">
+                    {language === 'ar' ? 'مشروع قاعدة البيانات النشط :' : 'Projet Firebase Actif :'}
+                  </span>
+                  {localStorage.getItem('CUSTOM_FIREBASE_CONFIG') ? (
+                    <span className="font-extrabold text-emerald-400 bg-emerald-950/60 px-2 py-0.5 rounded border border-emerald-900/30 font-sans flex items-center gap-1 leading-none text-[10px] uppercase">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping"></span>
+                      {language === 'ar' ? 'سحابة خاصة نشطة' : 'Cloud Privé'}
+                    </span>
+                  ) : (
+                    <span className="font-extrabold text-blue-400 bg-blue-950/60 px-2 py-0.5 rounded border border-blue-900/30 font-sans leading-none text-[10px] uppercase">
+                      {language === 'ar' ? 'السحابة الافتراضية للتطبيق' : 'Cloud par défaut'}
+                    </span>
+                  )}
+                </div>
+                <div className="flex justify-between items-center text-xs">
+                  <span className="text-slate-500">{language === 'ar' ? 'مُعرف المشروع (ProjectId) :' : 'Identifiant unique (Project ID) :'}</span>
+                  <span className="font-mono text-slate-350 bg-slate-900 px-1.5 py-0.5 rounded font-black max-w-[200px] truncate">
+                    {auth.app.options.projectId}
+                  </span>
+                </div>
+              </div>
+
+              {/* CONTEXT DIRECTIVE */}
+              <div className="bg-blue-950/30 border border-blue-900/20 text-blue-300 rounded-lg p-3 text-[11px] leading-relaxed space-y-1">
+                <p className="font-black text-sky-400 uppercase tracking-widest flex items-center gap-1 text-[10px]">
+                  <HelpCircle className="w-3.5 h-3.5 shrink-0" />
+                  {language === 'ar' ? 'أين تجد كود الإعدادات؟' : 'OÙ TROUVER CETTE CONFIGURATION ?'}
+                </p>
+                <p>
+                  {language === 'ar' ? (
+                    <>
+                      اذهب للوحة <strong className="text-white">Firebase Console</strong> لمشروعك الخاص (مثل <span className="text-amber-400">InnovaPos</span>) &gt; <strong className="text-white">Project Settings</strong> &gt; في الأسفل تحت تبويب <strong className="text-white">Your Apps</strong> ستجد كائن <strong className="text-amber-400">Firebase configuration</strong>. قم بنسخه ولصقه كاملاً في الحقل أدناه.
+                    </>
+                  ) : (
+                    <>
+                      Allez sur votre <strong className="text-white">Firebase Console</strong> pour votre projet (ex: <span className="text-amber-400">InnovaPos</span>) &gt; <strong className="text-white">Paramètres du projet</strong> &gt; faites défiler vers le bas jusqu'à la section <strong className="text-white">Vos applications</strong> et copiez l'objet de <strong className="text-amber-400">Firebase configuration</strong>.
+                    </>
+                  )}
+                </p>
+              </div>
+
+              {/* INPUT AREA */}
+              <div className="space-y-1.5">
+                <label className="block text-xs font-bold text-slate-300">
+                  {language === 'ar' ? 'كائن إعدادات الويب (JSON / JavaScript Object) :' : 'Collez le code de configuration (JSON ou JavaScript Object) :'}
+                </label>
+                <textarea
+                  value={configText}
+                  onChange={(e) => setConfigText(e.target.value)}
+                  placeholder={
+                    language === 'ar'
+                      ? '{\n  "apiKey": "...",\n  "authDomain": "...",\n  "projectId": "...",\n  ...\n}'
+                      : '{\n  apiKey: "...",\n  authDomain: "...",\n  projectId: "...",\n  ...\n}'
+                  }
+                  className="w-full h-32 bg-slate-950 border border-slate-800 rounded-xl py-2 px-3 focus:outline-none focus:border-amber-500/50 text-emerald-400 font-mono text-xs leading-relaxed"
+                />
+              </div>
+
+              {/* ERROR/SUCCESS STATUS */}
+              {configError && (
+                <p className="p-2.5 bg-rose-950/50 border border-rose-905/30 text-rose-300 rounded-lg text-xs leading-relaxed">
+                  ⚠️ {configError}
+                </p>
+              )}
+              {configSuccess && (
+                <p className="p-2.5 bg-emerald-950/70 border border-emerald-900/30 text-emerald-300 rounded-lg text-xs font-bold flex items-center gap-1.5 animate-pulse">
+                  <Sparkles className="w-4 h-4 text-emerald-400 shrink-0" />
+                  <span>
+                    {language === 'ar'
+                      ? 'تم حفظ الإعدادات بنجاح! جاري إعادة تحميل الصفحة لتطبيق التغييرات...'
+                      : 'Configuration enregistrée avec succès ! Redémarrage en cours...'}
+                  </span>
+                </p>
+              )}
+
+              {/* ACTIONS */}
+              <div className="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-slate-800/60">
+                {localStorage.getItem('CUSTOM_FIREBASE_CONFIG') ? (
+                  <button
+                    type="button"
+                    onClick={handleResetConfig}
+                    className="flex items-center gap-1.5 px-3 py-2 bg-rose-950/50 hover:bg-rose-900/70 border border-rose-900/20 text-rose-300 text-xs font-bold rounded-lg cursor-pointer transition-colors"
+                  >
+                    <RotateCcw className="w-3.5 h-3.5" />
+                    <span>{language === 'ar' ? 'إعادة التعيين للافتراضي' : 'Restaurer défaut'}</span>
+                  </button>
+                ) : (
+                  <div />
+                )}
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowFirebaseModal(false);
+                      setConfigError(null);
+                      setConfigSuccess(false);
+                    }}
+                    className="px-3.5 py-2 bg-slate-850 hover:bg-slate-800 border border-slate-800 text-slate-300 hover:text-white text-xs font-bold rounded-lg cursor-pointer transition-colors"
+                  >
+                    {language === 'ar' ? 'إلغاء' : 'Annuler'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleSaveConfig}
+                    disabled={configSuccess}
+                    className="flex items-center gap-1.5 px-4 py-2 bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-400 hover:to-orange-500 text-slate-950 text-xs font-black rounded-lg cursor-pointer shadow-md shadow-orange-950/10 transition-all font-sans transform active:scale-98 disabled:opacity-50"
+                  >
+                    <Save className="w-3.5 h-3.5" />
+                    <span>{language === 'ar' ? 'حفظ وتفعيل' : 'Enregistrer & Activer'}</span>
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

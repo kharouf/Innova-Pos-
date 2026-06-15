@@ -1,15 +1,29 @@
-import { initializeApp } from 'firebase/app';
+import { initializeApp, getApp, getApps } from 'firebase/app';
 import { getAuth, GoogleAuthProvider, signInWithPopup } from 'firebase/auth';
 import { initializeFirestore, setLogLevel } from 'firebase/firestore';
 import { getStorage } from 'firebase/storage';
 import firebaseConfig from '../../firebase-applet-config.json';
 
-const config = firebaseConfig as any;
-const app = initializeApp(config);
+// Dynamically support loading a customized Firebase config from localized web storage
+let activeConfig = firebaseConfig as any;
+const customConfigStr = typeof window !== 'undefined' ? localStorage.getItem('CUSTOM_FIREBASE_CONFIG') : null;
+if (customConfigStr) {
+  try {
+    const parsed = JSON.parse(customConfigStr);
+    if (parsed && parsed.projectId && parsed.apiKey) {
+      activeConfig = parsed;
+    }
+  } catch (e) {
+    console.warn('[FIRESTORE SYSTEM INFO] Custom configuration parsing error:', e);
+  }
+}
+
+const app = getApps().length === 0 ? initializeApp(activeConfig) : getApps()[0];
+
 export const db = initializeFirestore(app, {
   experimentalForceLongPolling: true,
-}, config.firestoreDatabaseId); /* CRITICAL: The app will break without this line */
-export const auth = getAuth();
+}, activeConfig.firestoreDatabaseId); /* CRITICAL: The app will break without this line */
+export const auth = getAuth(app);
 export const storage = getStorage(app);
 
 // Keep track of the Google OAuth access token in-memory
