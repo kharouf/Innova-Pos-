@@ -305,7 +305,7 @@ function AppContent() {
 
     // Prepare SMTP details if available in db.settings
     const storeName = db?.settings?.storeName || 'Boutique POS';
-    const adminEmail = db?.settings?.adminEmail || 'kharoufwala24@gmail.com';
+    const adminEmail = db?.settings?.adminEmail || 'innovapospro@gmail.com';
     const smtpSettings = db?.settings ? {
       smtpHost: db.settings.smtpHost,
       smtpPort: db.settings.smtpPort,
@@ -358,7 +358,7 @@ function AppContent() {
       const expensesTotal = shiftExpenses.reduce((sum, exp) => sum + exp.amount, 0);
 
       const storeName = db?.settings?.storeName || 'Boutique POS';
-      const adminEmail = db?.settings?.adminEmail || 'kharoufwala24@gmail.com';
+      const adminEmail = db?.settings?.adminEmail || 'innovapospro@gmail.com';
       const smtpSettings = db?.settings ? {
         smtpHost: db.settings.smtpHost,
         smtpPort: db.settings.smtpPort,

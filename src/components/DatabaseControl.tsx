@@ -531,10 +531,10 @@ export default function DatabaseControl({ db, onUpdateDb, license, user }: Datab
   const [invoiceMarginRight, setInvoiceMarginRight] = useState<number>(initialSettings.invoiceMarginRight ?? 8);
 
   // 📧 Email notification configuration state hooks
-  const [adminEmail, setAdminEmail] = useState<string>(initialSettings.adminEmail || '');
-  const [enableCriticalStockEmailAlerts, setEnableCriticalStockEmailAlerts] = useState<boolean>(initialSettings.enableCriticalStockEmailAlerts ?? false);
-  const [enableIndividualProductEmailAlerts, setEnableIndividualProductEmailAlerts] = useState<boolean>(initialSettings.enableIndividualProductEmailAlerts ?? false);
-  const [enableDailyLowStockEmail, setEnableDailyLowStockEmail] = useState<boolean>(initialSettings.enableDailyLowStockEmail ?? false);
+  const [adminEmail, setAdminEmail] = useState<string>(initialSettings.adminEmail || 'innovapospro@gmail.com');
+  const [enableCriticalStockEmailAlerts, setEnableCriticalStockEmailAlerts] = useState<boolean>(initialSettings.enableCriticalStockEmailAlerts ?? true);
+  const [enableIndividualProductEmailAlerts, setEnableIndividualProductEmailAlerts] = useState<boolean>(initialSettings.enableIndividualProductEmailAlerts ?? true);
+  const [enableDailyLowStockEmail, setEnableDailyLowStockEmail] = useState<boolean>(initialSettings.enableDailyLowStockEmail ?? true);
 
   // 👥 User Security & Multi-Role Staff states
   const [users, setUsers] = useState<AppUser[]>(() => {
@@ -552,12 +552,12 @@ export default function DatabaseControl({ db, onUpdateDb, license, user }: Datab
   const [showStaffPinInputPass, setShowStaffPinInputPass] = useState<Record<string, boolean>>({});
 
   // ⚙️ SMTP Mail configuration state hooks
-  const [smtpHost, setSmtpHost] = useState<string>(initialSettings.smtpHost || '');
-  const [smtpPort, setSmtpPort] = useState<number>(initialSettings.smtpPort || 587);
-  const [smtpUser, setSmtpUser] = useState<string>(initialSettings.smtpUser || '');
-  const [smtpPass, setSmtpPass] = useState<string>(initialSettings.smtpPass || '');
-  const [smtpSecure, setSmtpSecure] = useState<boolean>(initialSettings.smtpSecure ?? false);
-  const [smtpSenderName, setSmtpSenderName] = useState<string>(initialSettings.smtpSenderName || '');
+  const [smtpHost, setSmtpHost] = useState<string>(initialSettings.smtpHost || 'smtp.gmail.com');
+  const [smtpPort, setSmtpPort] = useState<number>(initialSettings.smtpPort || 465);
+  const [smtpUser, setSmtpUser] = useState<string>(initialSettings.smtpUser || 'innovapospro@gmail.com');
+  const [smtpPass, setSmtpPass] = useState<string>(initialSettings.smtpPass || 'jkoe fwep mqxi gkck');
+  const [smtpSecure, setSmtpSecure] = useState<boolean>(initialSettings.smtpSecure ?? true);
+  const [smtpSenderName, setSmtpSenderName] = useState<string>(initialSettings.smtpSenderName || 'InnovaPos Alerts');
   const [themeMode, setThemeMode] = useState<'light' | 'dark'>(initialSettings.themeMode || 'light');
 
   useEffect(() => {
