@@ -1,5 +1,5 @@
 import { jsPDF } from 'jspdf';
-import { Invoice, DatabaseState } from '../types';
+import { Invoice, DatabaseState, Product, Partner } from '../types';
 
 /**
  * Clean sanitization of string to avoid jsPDF Helvetica font errors with non-Latin/Arabic characters.
@@ -530,4 +530,512 @@ export function downloadInvoicePDF({
 
   // Save/Download A4 PDF document
   doc.save(`${invoice.type.toUpperCase()}_${invoice.number}.pdf`);
+}
+
+export interface PurchaseOrderPDFOptions {
+  products: Product[];
+  partner?: Partner; // Selected supplier (optional)
+  settings: DatabaseState['settings'];
+  language: 'ar' | 'fr';
+  formatCurrency?: (value: number) => string;
+}
+
+export function downloadPurchaseOrderPDF({
+  products,
+  partner,
+  settings,
+  language,
+  formatCurrency
+}: PurchaseOrderPDFOptions) {
+  const storeName = settings?.storeName ?? "INNOVA POS PRO";
+  const storePhone = settings?.storePhone ?? "+216 24260711";
+  const storeAddress = settings?.storeAddress ?? "AVENU HABIB BORGIBA GHANNOUCHE GABES";
+  const matriculeFiscal = settings?.matriculeFiscal ?? "1234567/A/M/000";
+
+  const format = formatCurrency || ((v: number) => `${v.toLocaleString()} DZD`);
+
+  const doc = new jsPDF({
+    orientation: 'portrait',
+    unit: 'mm',
+    format: 'a4'
+  });
+
+  let currentPage = 1;
+
+  const docTitle = language === 'ar' ? 'BON DE COMMANDE FOURNISSEUR' : 'BON DE COMMANDE FOURNISSEUR';
+  const numberLabel = 'N°:';
+  const dateLabel = 'Date:';
+  const supplierLabel = language === 'ar' ? 'Fournisseur:' : 'Fournisseur:';
+  const phoneLabel = 'Tél:';
+  const mfLabel = 'M.F:';
+  const addressLabel = 'Adresse:';
+
+  const orderNumber = `BC-${new Date().getFullYear()}-${String(Math.floor(10000 + Math.random() * 90000))}`;
+  const orderDate = new Date().toISOString().split('T')[0];
+
+  const drawPageHeader = (pageNumber: number) => {
+    // Left color banner accent: slate-700 / dark blue for supplier orders
+    doc.setFillColor(30, 41, 59); // slate-800
+    doc.rect(0, 0, 8, 297, 'F');
+
+    // Store header blocks
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(14);
+    doc.setTextColor(30, 41, 59);
+    doc.text(cleanPdfText(storeName), 15, 18);
+
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(8.5);
+    doc.setTextColor(100, 116, 139);
+    doc.text(`Acheteur / Émetteur : ${cleanPdfText(storeName)}`, 15, 23);
+    doc.text(`Adresse : ${cleanPdfText(storeAddress)}`, 15, 27);
+    doc.text(`Contact / Tél : ${cleanPdfText(storePhone)}`, 15, 31);
+    if (matriculeFiscal) {
+      doc.text(`Identifiant fiscal (M.F) : ${cleanPdfText(matriculeFiscal)}`, 15, 35);
+    }
+
+    // Document title header right
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(12);
+    doc.setTextColor(15, 23, 42);
+    doc.text(`${docTitle}`, 195, 18, { align: 'right' });
+    
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(10);
+    doc.setTextColor(37, 99, 235);
+    doc.text(`${numberLabel} ${orderNumber}`, 195, 23, { align: 'right' });
+
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(8.5);
+    doc.setTextColor(71, 85, 105);
+    doc.text(`${dateLabel} ${orderDate}`, 195, 27, { align: 'right' });
+
+    // Decorative slim horizontal separator rule
+    doc.setDrawColor(226, 232, 240);
+    doc.line(15, 38, 195, 38);
+  };
+
+  drawPageHeader(currentPage);
+
+  // Supplier details card box
+  let currentY = 44;
+  doc.setFillColor(248, 250, 252); // slate-50
+  doc.roundedRect(15, currentY, 180, 24, 1, 1, 'F');
+  doc.setDrawColor(241, 245, 249);
+  doc.roundedRect(15, currentY, 180, 24, 1, 1, 'S');
+
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(8.5);
+  doc.setTextColor(100, 116, 139);
+  doc.text("DESTINATAIRE / FOURNISSEUR PARTENAIRE :", 18, currentY + 5);
+
+  const supplierName = partner ? partner.name : (language === 'ar' ? 'مزود عام لتلبية الطلب' : 'Fournisseur Principal d\'Approvisionnement');
+  const supplierPhone = partner ? partner.phone : 'N/A';
+  const supplierAddress = partner ? partner.address : 'N/A';
+  const paymentTerms = partner?.paymentTerms ? partner.paymentTerms : 'Comptant / Traite ou Facturation standard';
+
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(11);
+  doc.setTextColor(15, 23, 42);
+  doc.text(cleanPdfText(supplierName), 18, currentY + 11);
+
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(8);
+  doc.setTextColor(71, 85, 105);
+  doc.text(`Tél : ${cleanPdfText(supplierPhone)} | Adresse : ${cleanPdfText(supplierAddress)}`, 18, currentY + 16);
+  doc.text(`Conditions de paiement : ${cleanPdfText(paymentTerms)}`, 18, currentY + 21);
+
+  // Right info card on supplier box
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(8.5);
+  doc.setTextColor(100, 116, 139);
+  doc.text(`Priorité: HAUTE (Alerte Stock)`, 120, currentY + 7);
+  doc.text(`Statut: Brouillon de commande`, 120, currentY + 13);
+  doc.text(`Usage: Réapprovisionnement`, 120, currentY + 19);
+
+  currentY += 30;
+
+  // Table header row
+  doc.setFillColor(241, 245, 249); // slate-100
+  doc.rect(15, currentY, 180, 7.5, 'F');
+  
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(8.5);
+  doc.setTextColor(51, 65, 85);
+
+  doc.text("Désignation de l'article / Référence", 17, currentY + 5);
+  doc.text("Seuil", 95, currentY + 5, { align: 'right' });
+  doc.text("Stock Actuel", 120, currentY + 5, { align: 'right' });
+  doc.text("Qté Commandée", 150, currentY + 5, { align: 'right' });
+  doc.text("P.U Achat Est.", 172, currentY + 5, { align: 'right' });
+  doc.text("Total Estimé", 193, currentY + 5, { align: 'right' });
+
+  doc.setDrawColor(226, 232, 240);
+  doc.line(15, currentY + 7.5, 195, currentY + 7.5);
+  currentY += 7.5;
+
+  // Item rows
+  const rowHeight = 7.5;
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(9);
+  doc.setTextColor(15, 23, 42);
+
+  let subTotal = 0;
+
+  products.forEach((prod, idx) => {
+    // Check page overflow
+    if (currentY > 235) {
+      doc.setFontSize(8);
+      doc.setTextColor(148, 163, 184);
+      doc.text(`Page ${currentPage}`, 105, 287, { align: 'center' });
+      
+      doc.addPage();
+      currentPage++;
+      drawPageHeader(currentPage);
+      currentY = 44;
+    }
+
+    // Row zebra background
+    if (idx % 2 === 1) {
+      doc.setFillColor(248, 250, 252);
+      doc.rect(15, currentY, 180, rowHeight, 'F');
+    }
+
+    // Calculate elegant order quantity to replenish stock:
+    // We order at least enough to reach 2x minAlertQty, with a minimum of 10 or 50 pieces.
+    const qtyOrdered = Math.max(10, (prod.minAlertQty * 2) - prod.stock);
+    const itemTotal = qtyOrdered * prod.purchasePrice;
+    subTotal += itemTotal;
+
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(8.5);
+    doc.setTextColor(30, 41, 59);
+    
+    const maxLen = 35;
+    const prodLabelName = prod.name.length > maxLen ? prod.name.substring(0, maxLen - 2) + ".." : prod.name;
+    doc.text(cleanPdfText(prodLabelName), 17, currentY + 5);
+
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(8);
+    doc.setTextColor(100, 116, 139);
+    doc.text(`Réf : ${prod.code || 'N/A'} (Cat : ${cleanPdfText(prod.category)})`, 17, currentY + 8.2);
+
+    doc.setTextColor(15, 23, 42);
+    // Alignments
+    doc.text(String(prod.minAlertQty), 95, currentY + 5, { align: 'right' });
+    doc.text(`${prod.stock} ${cleanPdfText(prod.unit)}`, 120, currentY + 5, { align: 'right' });
+    
+    doc.setFont("helvetica", "bold");
+    doc.setTextColor(37, 99, 235);
+    doc.text(`${qtyOrdered} ${cleanPdfText(prod.unit)}`, 150, currentY + 5, { align: 'right' });
+
+    doc.setFont("helvetica", "normal");
+    doc.setTextColor(15, 23, 42);
+    doc.text(format(prod.purchasePrice), 172, currentY + 5, { align: 'right' });
+    
+    doc.setFont("helvetica", "bold");
+    doc.text(format(itemTotal), 193, currentY + 5, { align: 'right' });
+
+    doc.setDrawColor(241, 245, 249);
+    doc.line(15, currentY + rowHeight + 1.5, 195, currentY + rowHeight + 1.5);
+    
+    currentY += rowHeight + 2;
+  });
+
+  // Notes block
+  currentY += 4;
+  if (currentY > 210) {
+    doc.setFontSize(8);
+    doc.setTextColor(148, 163, 184);
+    doc.text(`Page ${currentPage}`, 105, 287, { align: 'center' });
+    
+    doc.addPage();
+    currentPage++;
+    drawPageHeader(currentPage);
+    currentY = 44;
+  }
+
+  doc.setFillColor(254, 252, 232); // light yellow border
+  doc.rect(15, currentY, 90, 20, 'F');
+  doc.setDrawColor(254, 240, 138);
+  doc.rect(15, currentY, 90, 20, 'S');
+
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(8.5);
+  doc.setTextColor(133, 77, 14); // warm dark yellow
+  doc.text("NOTE D'AVERTISSEMENT STOCK :", 18, currentY + 5);
+
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(7.5);
+  doc.setTextColor(113, 63, 18);
+  doc.text("Ce document d'approvisionnement a ete genere", 18, currentY + 10);
+  doc.text("automatiquement suite au franchissement du seuil", 18, currentY + 13);
+  doc.text("critique des stocks. Quantite recommandee.", 18, currentY + 16);
+
+  // Calculations block on bottom right
+  const calcX = 115;
+  const valX = 193;
+
+  doc.setFontSize(8.5);
+  doc.setTextColor(71, 85, 105);
+  
+  doc.setFont("helvetica", "normal");
+  doc.text("Sous-total Estimé (H.T) :", calcX, currentY + 4);
+  doc.text(format(subTotal), valX, currentY + 4, { align: 'right' });
+  currentY += 5;
+
+  const estimatedTax = subTotal * 0.19; // assume standard 19% tax rate or 0% as fallback
+  doc.text("TVA Estimée (19%) :", calcX, currentY + 4);
+  doc.text(format(estimatedTax), valX, currentY + 4, { align: 'right' });
+  currentY += 5;
+
+  doc.setDrawColor(226, 232, 240);
+  doc.line(calcX, currentY + 3, 195, currentY + 3);
+  currentY += 6;
+
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(10);
+  doc.setTextColor(15, 23, 42);
+  doc.text("TOTAL ESTIMÉ (TTC) :", calcX, currentY + 4);
+  
+  doc.setTextColor(37, 99, 235);
+  doc.text(format(subTotal + estimatedTax), valX, currentY + 4, { align: 'right' });
+  currentY += 12;
+
+  // Signatures
+  doc.setDrawColor(203, 213, 225);
+  doc.line(15, currentY, 195, currentY);
+  currentY += 5;
+
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(7.5);
+  doc.setTextColor(100, 116, 139);
+  doc.text("SIGNATURES & CACHET POUR COMMANDE", 15, currentY + 2);
+
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(8);
+  doc.setTextColor(71, 85, 105);
+  doc.text("Pour l'Acheteur (Innova POS Pro) :", 15, currentY + 8);
+  doc.text("Pour le Fournisseur (Accuse de reception) :", 125, currentY + 8);
+
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(7.5);
+  doc.text("Document de reapprovisionnement genere automatiquement par le systeme.", 15, currentY + 18);
+
+  doc.setFontSize(8);
+  doc.setTextColor(148, 163, 184);
+  doc.text(`Page ${currentPage}`, 105, 287, { align: 'center' });
+
+  doc.save(`BON_DE_COMMANDE_${orderNumber}.pdf`);
+}
+
+interface ShiftReportPDFOptions {
+  settings: DatabaseState['settings'];
+  language: 'ar' | 'fr';
+  cashierName: string;
+  startTime: string;
+  endTime: string;
+  invoices: Invoice[];
+  expenses: any[];
+  formatCurrency: (value: number) => string;
+}
+
+export function downloadShiftReportPDF({
+  settings,
+  language,
+  cashierName,
+  startTime,
+  endTime,
+  invoices,
+  expenses,
+  formatCurrency
+}: ShiftReportPDFOptions) {
+  const storeName = settings?.storeName ?? "INNOVA POS PRO";
+  const storePhone = settings?.storePhone ?? "+216 24 260 711";
+  const storeAddress = settings?.storeAddress ?? "AVENU HABIB BOURGUIBA GHANNOUCHE GABES";
+
+  // Filter non-return vs return invoices
+  const salesCount = invoices.length;
+  const revenueTotal = invoices.reduce((sum, inv) => sum + (inv.isReturn ? -inv.total : inv.total), 0);
+  const paidTotal = invoices.reduce((sum, inv) => sum + (inv.isReturn ? -(inv.paidAmount || 0) : (inv.paidAmount || 0)), 0);
+  const creditTotal = invoices.reduce((sum, inv) => sum + (inv.isReturn ? -(inv.balance || 0) : (inv.balance || 0)), 0);
+
+  // Spendings/expenses
+  const expensesTotal = expenses.reduce((sum, exp) => sum + (exp.amount || 0), 0);
+
+  // COGS Calculation
+  const cogsTotal = invoices.reduce((sum, inv) => {
+    const invCogs = inv.items.reduce((itemSum, item) => itemSum + ((item.qty || 0) * (item.purchasePrice || 0)), 0);
+    return sum + (inv.isReturn ? -invCogs : invCogs);
+  }, 0);
+
+  // Net Profit
+  const netProfit = revenueTotal - cogsTotal - expensesTotal;
+
+  // Compute layout dimensions: 80mm roll width. Dynamic height
+  const baseHeight = 160 + (expenses.length * 8) + Math.min(20, invoices.length * 5);
+  const computedHeight = Math.max(180, baseHeight);
+
+  const doc = new jsPDF({
+    orientation: 'portrait',
+    unit: 'mm',
+    format: [80, computedHeight]
+  });
+
+  // 1. Store Header
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(10.5);
+  doc.setTextColor(30, 41, 59);
+  doc.text(cleanPdfText(storeName).toUpperCase(), 40, 10, { align: 'center' });
+
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(7.5);
+  doc.setTextColor(100, 116, 139);
+  doc.text(cleanPdfText(storeAddress), 40, 14, { align: 'center' });
+  doc.text(`Tél: ${cleanPdfText(storePhone)}`, 40, 18, { align: 'center' });
+
+  // Divider
+  doc.setDrawColor(186, 195, 208);
+  doc.setLineWidth(0.2);
+  doc.line(5, 22, 75, 22);
+
+  // Report Title
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(11);
+  doc.setTextColor(15, 23, 42);
+  const titleText = language === 'ar' ? 'رسمي: تقرير نهاية نوبة العمل' : 'RAPPORT EXECUTIF DE SHIFT';
+  doc.text(titleText, 40, 28, { align: 'center' });
+  
+  doc.setFontSize(7);
+  doc.setTextColor(100, 116, 139);
+  doc.text(`DATE EXPLOITATION: ${new Date().toLocaleDateString()}`, 40, 32, { align: 'center' });
+
+  // Boxed shift metadata
+  doc.setFillColor(248, 250, 252);
+  doc.rect(8, 36, 64, 21, 'F');
+  doc.setDrawColor(226, 232, 240);
+  doc.rect(8, 36, 64, 21, 'S');
+
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(7.5);
+  doc.setTextColor(51, 65, 85);
+  doc.text(`Caissier: ${cleanPdfText(cashierName)}`, 11, 41);
+  
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(6.5);
+  doc.setTextColor(71, 85, 105);
+  doc.text(`Début: ${new Date(startTime).toLocaleString()}`, 11, 46);
+  doc.text(`Fin: ${new Date(endTime).toLocaleString()}`, 11, 51);
+
+  // Receipts Table metrics info
+  let currentY = 63;
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(8);
+  doc.setTextColor(15, 23, 42);
+  doc.text(language === 'ar' ? 'ملخص العمليات والنقدية :' : 'RECAPITULATIF DES TRANSACTIONS', 8, currentY);
+  currentY += 4;
+  doc.line(8, currentY, 72, currentY);
+  currentY += 4.5;
+
+  // Single rows helper
+  const drawRow = (label: string, value: string, isBold = false) => {
+    doc.setFont("helvetica", isBold ? "bold" : "normal");
+    doc.setFontSize(7.5);
+    doc.setTextColor(isBold ? 15 : 71, isBold ? 23 : 85, isBold ? 42 : 105);
+    doc.text(label, 8, currentY);
+    doc.text(value, 72, currentY, { align: 'right' });
+    currentY += 4.5;
+  };
+
+  drawRow(language === 'ar' ? 'عدد التذاكر / المبيعات :' : 'Nombre de Ventes :', `${salesCount}`);
+  drawRow(language === 'ar' ? 'إجمالي المبيعات (الخام) :' : 'Chiffre d\'Affaires (TTC) :', formatCurrency(revenueTotal));
+  drawRow(language === 'ar' ? 'المبالغ المقبوضة (المدفوع) :' : 'Règlements Reçus (Payé) :', formatCurrency(paidTotal));
+  drawRow(language === 'ar' ? 'الديون المسجلة (كريديت) :' : 'Ventes à Crédit (Restant) :', formatCurrency(creditTotal));
+
+  // Divider
+  doc.setDrawColor(241, 245, 249);
+  doc.line(8, currentY, 72, currentY);
+  currentY += 4.5;
+
+  // Expenses Segment
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(8);
+  doc.setTextColor(15, 23, 42);
+  doc.text(language === 'ar' ? 'مصاريف وخصومات النوبة :' : 'CHARGES & DECAISSEMENTS', 8, currentY);
+  currentY += 4;
+  doc.line(8, currentY, 72, currentY);
+  currentY += 4.5;
+
+  drawRow(language === 'ar' ? 'إجمالي المصاريف المسجلة :' : 'Total des Dépenses :', formatCurrency(expensesTotal), expensesTotal > 0);
+
+  // List expenses if they exist
+  if (expenses.length > 0) {
+    expenses.forEach((exp, idx) => {
+      if (currentY + 6 > computedHeight - 15) return; // safety boundary
+      doc.setFont("helvetica", "italic");
+      doc.setFontSize(6.5);
+      doc.setTextColor(115, 115, 115);
+      const desc = exp.description ? cleanPdfText(exp.description) : `Charge #${idx + 1}`;
+      const lineText = `${idx + 1}. ${desc.substring(0, 18)} :`;
+      doc.text(lineText, 10, currentY);
+      doc.text(formatCurrency(exp.amount), 72, currentY, { align: 'right' });
+      currentY += 3.5;
+    });
+    currentY += 2;
+  }
+
+  // Divider
+  doc.setDrawColor(241, 245, 249);
+  doc.line(8, currentY, 72, currentY);
+  currentY += 4.5;
+
+  // Financial margins Segment
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(8);
+  doc.setTextColor(15, 23, 42);
+  doc.text(language === 'ar' ? 'النتائج والربحية المقدرة :' : 'PERFORMANCE FINANCIERE', 8, currentY);
+  currentY += 4;
+  doc.line(8, currentY, 72, currentY);
+  currentY += 4.5;
+
+  drawRow(language === 'ar' ? 'تكلفة السلع المباعة :' : 'Coût d\'Achat des ventes :', formatCurrency(cogsTotal));
+  
+  doc.setFillColor(240, 253, 244); // light green bg for profit highlight
+  doc.rect(8, currentY - 3.5, 64, 7, 'F');
+  drawRow(language === 'ar' ? 'صافي أرباح النوبة والربحية :' : 'Bénéfice Net Retenu (Marge) :', formatCurrency(netProfit), true);
+  currentY += 2;
+
+  // Divider
+  doc.setDrawColor(186, 195, 208);
+  doc.setLineWidth(0.2);
+  doc.line(5, currentY, 75, currentY);
+  currentY += 5;
+
+  // Barcode
+  let barX = 14;
+  doc.setDrawColor(0, 0, 0);
+  doc.setLineWidth(0.4);
+  for (let i = 0; i < 26; i++) {
+    const w = Math.random() > 0.4 ? 0.35 : 0.8;
+    doc.setLineWidth(w);
+    doc.line(barX, currentY, barX, currentY + 8);
+    barX += w + (Math.random() > 0.5 ? 0.4 : 1.1);
+  }
+  currentY += 12;
+
+  // Text code for barcode representation
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(7);
+  doc.setTextColor(100, 116, 139);
+  doc.text(`SHIFT-REP-${Date.now().toString().slice(-6)}`, 40, currentY, { align: 'center' });
+  currentY += 5;
+
+  // Footer notes
+  doc.setFont("helvetica", "italic");
+  doc.setFontSize(6);
+  doc.setTextColor(148, 163, 184);
+  doc.text("Généré par Innova Caisse Inteligente", 40, currentY, { align: 'center' });
+  doc.text("Document certifié conforme à la caisse physique", 40, currentY + 3, { align: 'center' });
+
+  doc.save(`RAPPORT_SHIFT_${cleanPdfText(cashierName).replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.pdf`);
 }

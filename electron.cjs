@@ -47,14 +47,31 @@ function createMainWindow() {
     backgroundColor: '#ffffff'
   });
 
-  // Load the web app served by the locally spawned express server after a tiny delay
+  // Load the web app served by the locally spawned express server with resilient retry backoffs
+  const loadWithRetry = (attempt = 1) => {
+    console.log(`[DESKTOP CORE]: Connecting to local database backend (Attempt ${attempt}/15)...`);
+    mainWindow.loadURL('http://localhost:3000')
+      .then(() => {
+        console.log('[DESKTOP CORE]: Successfully established server connection and opened application.');
+      })
+      .catch((err) => {
+        console.warn(`[DESKTOP CORE]: Connection attempt ${attempt} missed. Retrying in 1.5 seconds...`);
+        if (attempt < 15) {
+          setTimeout(() => {
+            loadWithRetry(attempt + 1);
+          }, 1500);
+        } else {
+          console.error('[DESKTOP CORE]: Express server process took too long to boot. Loading local bundle as fallback.');
+          mainWindow.loadFile(path.join(__dirname, 'dist', 'index.html')).catch((fileError) => {
+            console.error('[DESKTOP CORE CRITICAL]: Native static fallback loading failed:', fileError);
+          });
+        }
+      });
+  };
+
   setTimeout(() => {
-    mainWindow.loadURL('http://localhost:3000').catch((err) => {
-      console.warn('Initial server connect failed, retrying...', err);
-      // Fallback reload once
-      mainWindow.loadURL('http://localhost:3000');
-    });
-  }, 1800);
+    loadWithRetry();
+  }, 1000);
 
   // Manage navigation external link behavior (open in default browser instead of frame)
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {

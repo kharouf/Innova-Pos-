@@ -2,6 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { DatabaseState, Traite, DailyExpense } from '../types';
 import { useLanguage } from '../utils/LanguageContext';
 import { showToast } from '../utils/toast';
+import { checkIsIframe } from '../utils/storage';
 import { 
   CreditCard, 
   ArrowUpRight, 
@@ -82,7 +83,7 @@ export default function Finance({ db, onUpdateDb }: FinanceProps) {
   const handleTraiteSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!traPartnerId || traAmount <= 0 || !traDateDue) {
-      alert("⚠️ Saisie incomplète. Veuillez remplir tous les champs obligatoires.");
+      showToast("⚠️ Saisie incomplète. Veuillez remplir tous les champs obligatoires.", 'error');
       return;
     }
 
@@ -140,7 +141,7 @@ export default function Finance({ db, onUpdateDb }: FinanceProps) {
     try {
       const printContent = document.getElementById('print-area');
       const portal = document.getElementById('print-portal');
-      const isIframe = window.self !== window.top;
+      const isIframe = checkIsIframe();
 
       if (printContent && portal) {
         portal.innerHTML = `
@@ -236,7 +237,7 @@ export default function Finance({ db, onUpdateDb }: FinanceProps) {
               activeFinanceTab === 'payments' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-500 hover:text-slate-800'
             }`}
           >
-            🧾 {language === 'ar' ? 'سجل المقبوضات' : 'Journal des Encaissements'} ({db.payments.length})
+            🧾 {language === 'ar' ? 'سجل المقبوضات' : 'Journal des Encaissements'} ({(db.payments || []).length})
           </button>
         </div>
       </div>
@@ -290,7 +291,7 @@ export default function Finance({ db, onUpdateDb }: FinanceProps) {
       ) : activeFinanceTab === 'payments' ? (
         <div className="space-y-4">
           <div className="bg-white rounded border border-slate-200 overflow-hidden shadow-xs">
-            {db.payments.length === 0 ? (
+            {(db.payments || []).length === 0 ? (
               <div className="text-center py-20 text-slate-400">
                 <Coins className="w-12 h-12 stroke-1 mx-auto mb-3" />
                 <h3 className="font-bold text-sm text-slate-800">
@@ -313,7 +314,7 @@ export default function Finance({ db, onUpdateDb }: FinanceProps) {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 font-mono">
-                    {db.payments.map(pay => (
+                    {(db.payments || []).map(pay => (
                       <tr key={pay.id} className="hover:bg-slate-50/60 font-medium">
                         <td className="p-4 text-slate-500 whitespace-nowrap">{pay.date}</td>
                         <td className="p-4 font-sans text-slate-800 font-bold">{pay.partnerName}</td>

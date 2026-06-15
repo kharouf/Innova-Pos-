@@ -1,10 +1,9 @@
 {
-  "projectId": "innovapos",
-  "appId": "1:634874284485:web:154a0aacb1fc92d86023ac",
-  "apiKey": "AIzaSyDXuQI9LxDJBdUW1K6xPexrABIeumPYZNI",
-  "authDomain": "innovapos-54140.firebaseapp.com",
-  "firestoreDatabaseId": "ai-studio-e0cc1c3a-1b3e-49a0-b2d6-c05b9317be2f",
-  "storageBucket": "innovapos.firebasestorage.app",
-  "messagingSenderId": "634874284485",
+  "projectId": "the-pod-107pf",
+  "appId": "1:155373054649:web:f9ab9acd7c4e15f9cc0968",
+  "apiKey": "AIzaSyCzZNqDYHil23EHxwkn5HR1YM9to1FwlS8",
+  "authDomain": "the-pod-107pf.firebaseapp.com",
+  "storageBucket": "the-pod-107pf.firebasestorage.app",
+  "messagingSenderId": "155373054649",
   "measurementId": ""
 }

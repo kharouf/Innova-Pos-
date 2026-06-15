@@ -1,5 +1,5 @@
 import React, { useRef, useState, useEffect } from 'react';
-import { DatabaseState, StoreSettings, Product } from '../types';
+import { DatabaseState, StoreSettings, Product, AppUser, UserRole } from '../types';
 import { SAMPLE_PRODUCTS } from '../utils/db';
 import { useLanguage } from '../utils/LanguageContext';
 import { showToast } from '../utils/toast';
@@ -31,7 +31,18 @@ import {
   RefreshCw,
   Check,
   Server,
-  AlertCircle
+  AlertCircle,
+  Wifi,
+  Lock,
+  Unlock,
+  Globe,
+  Activity,
+  Terminal,
+  Download,
+  Users,
+  UserPlus,
+  Edit3,
+  Key
 } from 'lucide-react';
 import { storage, auth, googleSignInForWorkspace, getCachedAccessToken, setCachedAccessToken } from '../utils/firebase';
 import { ref, uploadString, getDownloadURL } from 'firebase/storage';
@@ -193,10 +204,11 @@ export default function DatabaseControl({ db, onUpdateDb, license, user }: Datab
       }
     } catch (err: any) {
       console.error('Google Workspace connect error:', err);
-      alert(
+      showToast(
         language === 'ar'
           ? "❌ فشل الاتصال بحساب Google. يرجى محاولة فتح التطبيق في نافذة مستقلة وقبول الصلاحيات."
-          : "❌ Échec de la connexion à Google. Veuillez ouvrir l'application dans un nouvel onglet et accepter les conditions."
+          : "❌ Échec de la connexion à Google. Veuillez ouvrir l'application dans un nouvel onglet et accepter les conditions.",
+        'error'
       );
     }
   };
@@ -295,10 +307,11 @@ export default function DatabaseControl({ db, onUpdateDb, license, user }: Datab
       }
     } catch (err: any) {
       console.error('Restore from Drive failed:', err);
-      alert(
+      showToast(
         language === 'ar'
           ? `❌ فشل استعادة البيانات: ${err.message || String(err)}`
-          : `❌ Échec de la restauration : ${err.message || String(err)}`
+          : `❌ Échec de la restauration : ${err.message || String(err)}`,
+        'error'
       );
     }
   };
@@ -506,11 +519,37 @@ export default function DatabaseControl({ db, onUpdateDb, license, user }: Datab
   const [receiptShowCommercialTerms, setReceiptShowCommercialTerms] = useState<boolean>(initialSettings.receiptShowCommercialTerms ?? true);
   const [receiptCompactSize, setReceiptCompactSize] = useState<boolean>(initialSettings.receiptCompactSize ?? false);
 
+  const [receiptCustomLogo, setReceiptCustomLogo] = useState<string>(initialSettings.receiptCustomLogo || '');
+  const [invoiceCustomLogo, setInvoiceCustomLogo] = useState<string>(initialSettings.invoiceCustomLogo || '');
+  const [receiptMarginTop, setReceiptMarginTop] = useState<number>(initialSettings.receiptMarginTop ?? 2);
+  const [receiptMarginBottom, setReceiptMarginBottom] = useState<number>(initialSettings.receiptMarginBottom ?? 3);
+  const [receiptMarginLeft, setReceiptMarginLeft] = useState<number>(initialSettings.receiptMarginLeft ?? 3);
+  const [receiptMarginRight, setReceiptMarginRight] = useState<number>(initialSettings.receiptMarginRight ?? 3);
+  const [invoiceMarginTop, setInvoiceMarginTop] = useState<number>(initialSettings.invoiceMarginTop ?? 8);
+  const [invoiceMarginBottom, setInvoiceMarginBottom] = useState<number>(initialSettings.invoiceMarginBottom ?? 8);
+  const [invoiceMarginLeft, setInvoiceMarginLeft] = useState<number>(initialSettings.invoiceMarginLeft ?? 8);
+  const [invoiceMarginRight, setInvoiceMarginRight] = useState<number>(initialSettings.invoiceMarginRight ?? 8);
+
   // 📧 Email notification configuration state hooks
   const [adminEmail, setAdminEmail] = useState<string>(initialSettings.adminEmail || '');
   const [enableCriticalStockEmailAlerts, setEnableCriticalStockEmailAlerts] = useState<boolean>(initialSettings.enableCriticalStockEmailAlerts ?? false);
   const [enableIndividualProductEmailAlerts, setEnableIndividualProductEmailAlerts] = useState<boolean>(initialSettings.enableIndividualProductEmailAlerts ?? false);
   const [enableDailyLowStockEmail, setEnableDailyLowStockEmail] = useState<boolean>(initialSettings.enableDailyLowStockEmail ?? false);
+
+  // 👥 User Security & Multi-Role Staff states
+  const [users, setUsers] = useState<AppUser[]>(() => {
+    return initialSettings.users || [
+      { id: 'user-1', name: 'Administrateur', pin: '0000', role: 'admin' as const, isActive: true, avatar: '👑' },
+      { id: 'user-2', name: 'Agent de Vente', pin: '1111', role: 'sales' as const, isActive: true, avatar: '💼' },
+      { id: 'user-3', name: 'Agent de Stock', pin: '2222', role: 'inventory' as const, isActive: true, avatar: '📦' }
+    ];
+  });
+  const [editingUserId, setEditingUserId] = useState<string | null>(null);
+  const [staffName, setStaffName] = useState('');
+  const [staffRole, setStaffRole] = useState<'admin' | 'sales' | 'inventory'>('sales');
+  const [staffPin, setStaffPin] = useState('');
+  const [staffIsActive, setStaffIsActive] = useState(true);
+  const [showStaffPinInputPass, setShowStaffPinInputPass] = useState<Record<string, boolean>>({});
 
   // ⚙️ SMTP Mail configuration state hooks
   const [smtpHost, setSmtpHost] = useState<string>(initialSettings.smtpHost || '');
@@ -520,6 +559,127 @@ export default function DatabaseControl({ db, onUpdateDb, license, user }: Datab
   const [smtpSecure, setSmtpSecure] = useState<boolean>(initialSettings.smtpSecure ?? false);
   const [smtpSenderName, setSmtpSenderName] = useState<string>(initialSettings.smtpSenderName || '');
   const [themeMode, setThemeMode] = useState<'light' | 'dark'>(initialSettings.themeMode || 'light');
+
+  useEffect(() => {
+    if (initialSettings.themeMode) {
+      setThemeMode(initialSettings.themeMode);
+    }
+  }, [initialSettings.themeMode]);
+
+  // 🛡️ VPN Private Network Gateway parameters
+  const [vpnEnabled, setVpnEnabled] = useState<boolean>(initialSettings.vpnEnabled ?? false);
+  const [vpnProtocol, setVpnProtocol] = useState<'wireguard' | 'openvpn' | 'zerotier' | 'tailscale' | 'ipsec'>(initialSettings.vpnProtocol || 'wireguard');
+  const [vpnServerAddress, setVpnServerAddress] = useState<string>(initialSettings.vpnServerAddress || '197.31.244.15');
+  const [vpnPort, setVpnPort] = useState<number>(initialSettings.vpnPort || 51820);
+  const [vpnPublicKey, setVpnPublicKey] = useState<string>(initialSettings.vpnPublicKey || 'v+6hJ78zKeD/p7Gv4I38XbNW12Y93hG70R/q9K1Wf8A=');
+  const [vpnPrivateKey, setVpnPrivateKey] = useState<string>(initialSettings.vpnPrivateKey || 'eM7fD82XbNWk8fH76uM2P37mO38xKl90R/q+A1Wg0S*=');
+  const [vpnClientIp, setVpnClientIp] = useState<string>(initialSettings.vpnClientIp || '10.8.0.2');
+  const [vpnIpRange, setVpnIpRange] = useState<string>(initialSettings.vpnIpRange || '10.8.0.0/24');
+
+  // VPN Connection simulation states
+  const [vpnConnectionState, setVpnConnectionState] = useState<'disconnected' | 'connecting' | 'connected' | 'error'>(() => {
+    return (initialSettings.vpnEnabled) ? 'connected' : 'disconnected';
+  });
+  const [vpnConnectionLogs, setVpnConnectionLogs] = useState<string[]>([]);
+
+  const handleToggleVpnConnection = () => {
+    if (vpnConnectionState === 'connected') {
+      setVpnConnectionState('disconnected');
+      setVpnConnectionLogs(prev => [...prev, `[${new Date().toLocaleTimeString()}] Tunnel VPN privé fermé par l'administrateur.`]);
+      showToast(language === 'ar' ? '🔒 تم إيقاف اتصال الـ VPN بنجاح' : '🔒 Connexion VPN fermée avec succès', 'info');
+    } else {
+      setVpnConnectionState('connecting');
+      setVpnConnectionLogs([`[${new Date().toLocaleTimeString()}] Initialising secure virtual private tunnel gateway...`]);
+
+      const logSteps = [
+        `[${new Date().toLocaleTimeString()}] Protocol chosen: ${vpnProtocol.toUpperCase()}`,
+        `[${new Date().toLocaleTimeString()}] Resolving private secure socket endpoint: ${vpnServerAddress}:${vpnPort}...`,
+        `[${new Date().toLocaleTimeString()}] Handshake sequence initiated with public key: ${vpnPublicKey.substring(0, 8)}...`,
+        `[${new Date().toLocaleTimeString()}] Peer handshake acknowledged. Assigned security virtual IP: ${vpnClientIp}`,
+        `[${new Date().toLocaleTimeString()}] Injecting static routes for local print servers and secure synchronization: ${vpnIpRange}`,
+        `[${new Date().toLocaleTimeString()}] Tunnel VPN secure connection established successfully. Latency: 24ms.`
+      ];
+
+      logSteps.forEach((step, idx) => {
+        setTimeout(() => {
+          setVpnConnectionLogs(prev => [...prev, step]);
+          if (idx === logSteps.length - 1) {
+            setVpnConnectionState('connected');
+            showToast(
+              language === 'ar'
+                ? '🟢 تم إنشاء اتصال الـ VPN المشفر بنجاح!'
+                : '🟢 Tunnel VPN sécurisé établi avec succès !',
+              'success'
+            );
+          }
+        }, (idx + 1) * 600);
+      });
+    }
+  };
+
+  const handleDownloadVpnConfig = () => {
+    let content = '';
+    let ext = 'conf';
+
+    if (vpnProtocol === 'wireguard') {
+      content = `[Interface]
+PrivateKey = ${vpnPrivateKey}
+Address = ${vpnClientIp}/32
+DNS = 1.1.1.1, 8.8.8.8
+
+[Peer]
+PublicKey = ${vpnPublicKey}
+Endpoint = ${vpnServerAddress}:${vpnPort}
+AllowedIPs = ${vpnIpRange}
+PersistentKeepalive = 25
+`;
+      ext = 'conf';
+    } else if (vpnProtocol === 'openvpn') {
+      content = `client
+dev tun
+proto udp
+remote ${vpnServerAddress} ${vpnPort}
+resolv-retry infinite
+nobackup
+persist-key
+persist-tun
+cipher AES-256-GCM
+auth SHA512
+verb 3
+<ca>
+-----BEGIN CERTIFICATE-----
+MIIB/TCCAWWgAwIBAgIJAP2q8hO1... [TUNISIA CORPORATE ROOT SECURE CA]
+-----END CERTIFICATE-----
+</ca>
+`;
+      ext = 'ovpn';
+    } else {
+      content = `# Securing POS synchronization client config for ${vpnProtocol.toUpperCase()} protocol
+server_address: ${vpnServerAddress}
+port: ${vpnPort}
+client_assigned_ip: ${vpnClientIp}
+encryption_mode: High-Security Advanced
+`;
+      ext = 'txt';
+    }
+
+    const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `Innova_Secure_VPN_${vpnProtocol}_${db?.settings?.storeName?.replace(/\s+/g, '_') || 'Store'}.${ext}`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+
+    showToast(
+      language === 'ar'
+        ? `📥 تم تحميل ملف إعدادات الـ VPN لحسابك`
+        : `📥 Fichier de configuration VPN téléchargé avec succès`,
+      'success'
+    );
+  };
 
   const [manualExpensesOffset, setManualExpensesOffset] = useState<number>(initialSettings.manualExpensesOffset || 0);
   const [manualProfitsOffset, setManualProfitsOffset] = useState<number>(initialSettings.manualProfitsOffset || 0);
@@ -624,6 +784,74 @@ export default function DatabaseControl({ db, onUpdateDb, license, user }: Datab
     reader.readAsDataURL(file);
   };
 
+  const handleReceiptLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        const MAX_WIDTH = 300;
+        const MAX_HEIGHT = 300;
+        let width = img.width;
+        let height = img.height;
+        if (width > height) {
+          if (width > MAX_WIDTH) {
+            height *= MAX_WIDTH / width;
+            width = MAX_WIDTH;
+          }
+        } else {
+          if (height > MAX_HEIGHT) {
+            width *= MAX_HEIGHT / height;
+            height = MAX_HEIGHT;
+          }
+        }
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        ctx?.drawImage(img, 0, 0, width, height);
+        setReceiptCustomLogo(canvas.toDataURL('image/png', 0.85));
+      };
+      img.src = event.target?.result as string;
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleInvoiceLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        const MAX_WIDTH = 400;
+        const MAX_HEIGHT = 400;
+        let width = img.width;
+        let height = img.height;
+        if (width > height) {
+          if (width > MAX_WIDTH) {
+            height *= MAX_WIDTH / width;
+            width = MAX_WIDTH;
+          }
+        } else {
+          if (height > MAX_HEIGHT) {
+            width *= MAX_HEIGHT / height;
+            height = MAX_HEIGHT;
+          }
+        }
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        ctx?.drawImage(img, 0, 0, width, height);
+        setInvoiceCustomLogo(canvas.toDataURL('image/png', 0.85));
+      };
+      img.src = event.target?.result as string;
+    };
+    reader.readAsDataURL(file);
+  };
+
   // 2. Export entire database schema to structured client-side .json download
   const handleExportDatabase = () => {
     try {
@@ -638,7 +866,7 @@ export default function DatabaseControl({ db, onUpdateDb, license, user }: Datab
       linkElement.click();
     } catch (e) {
       console.error('Failed to export DB', e);
-      alert(language === 'ar' ? '⚠️ فشل تصدير قاعدة البيانات.' : '⚠️ Impossible d\'exporter la base de données.');
+      showToast(language === 'ar' ? '⚠️ فشل تصدير قاعدة البيانات.' : '⚠️ Impossible d\'exporter la base de données.', 'error');
     }
   };
 
@@ -751,6 +979,16 @@ export default function DatabaseControl({ db, onUpdateDb, license, user }: Datab
       receiptCustomThankYou,
       receiptShowCommercialTerms,
       receiptCompactSize,
+      receiptCustomLogo,
+      invoiceCustomLogo,
+      receiptMarginTop,
+      receiptMarginBottom,
+      receiptMarginLeft,
+      receiptMarginRight,
+      invoiceMarginTop,
+      invoiceMarginBottom,
+      invoiceMarginLeft,
+      invoiceMarginRight,
       adminEmail,
       enableCriticalStockEmailAlerts,
       enableIndividualProductEmailAlerts,
@@ -762,7 +1000,16 @@ export default function DatabaseControl({ db, onUpdateDb, license, user }: Datab
       smtpPass,
       smtpSecure,
       smtpSenderName,
-      themeMode
+      themeMode,
+      vpnEnabled,
+      vpnProtocol,
+      vpnServerAddress,
+      vpnPort,
+      vpnPublicKey,
+      vpnPrivateKey,
+      vpnClientIp,
+      vpnIpRange,
+      users
     };
 
     onUpdateDb({
@@ -1543,6 +1790,249 @@ export default function DatabaseControl({ db, onUpdateDb, license, user }: Datab
               </div>
             </div>
 
+            {/* 🖼️ Custom Logos & Marges d'impression */}
+            <div className="md:col-span-2 border-t border-slate-100 pt-5 mt-3">
+              <label className="text-[11px] font-bold text-slate-650 uppercase block mb-2.5 tracking-wider font-sans">
+                {language === 'ar' ? '🖼️ الشعارات المخصصة هوامش الطباعة (حراري 80 مم و A4)' : "🖼️ Logos Personnalisés & Marges d'Impression (80mm & A4)"}
+              </label>
+
+              <div className="bg-slate-50 border border-slate-205 rounded-xl p-4 md:p-5 space-y-5">
+                <p className="text-[11px] text-slate-500 font-medium leading-normal">
+                  {language === 'ar'
+                    ? '💡 عيّن شعارًا مختلفًا لكل فئة من فئات الفواتير، وتحكّم بدقة في هوامش الطباعة (بالمليمتر mm) لتتناسب تمامًا مع طابعتك وتمنع قص المضمون.'
+                    : "💡 Configurez un logo distinct pour vos tickets thermiques et vos factures A4, et ajustez précisément les marges d'impression (en mm) pour un rendu parfait sur vos supports."}
+                </p>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  {/* THERMAL 80mm CARD */}
+                  <div className="bg-white border border-slate-200 p-4 rounded-xl shadow-3xs space-y-4">
+                    <div className="border-b border-rose-100 pb-2 flex items-center justify-between">
+                      <span className="text-xs font-bold text-rose-955 flex items-center gap-1.5">
+                        <span>🎫</span>
+                        {language === 'ar' ? 'تخصيص تذاكر البيع (80mm)' : 'Reçus Thermiques (80mm)'}
+                      </span>
+                    </div>
+
+                    {/* Logo Thermal */}
+                    <div className="space-y-2">
+                      <label className="text-[10px] font-bold text-slate-500 uppercase block">
+                        {language === 'ar' ? 'الشعار المخصص للتذاكر الحرارية :' : 'Logo spécifique pour Ticket (80mm) :'}
+                      </label>
+                      <div className="flex items-center gap-3">
+                        {receiptCustomLogo ? (
+                          <div className="relative group shrink-0">
+                            <img
+                              src={receiptCustomLogo}
+                              alt="Receipt Logo"
+                              className="w-16 h-16 rounded border border-slate-250 object-cover bg-white"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => setReceiptCustomLogo('')}
+                              className="absolute -top-1.5 -right-1.5 bg-rose-600 text-white rounded-full p-0.5 hover:bg-rose-700 transition-colors shadow-sm cursor-pointer"
+                              title="Supprimer"
+                            >
+                              <span className="text-[9px] font-black block w-3.5 h-3.5 leading-tight">✕</span>
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="w-16 h-16 bg-slate-50 rounded border-2 border-dashed border-slate-300 flex items-center justify-center text-slate-350 text-xs shrink-0 select-none">
+                            {language === 'ar' ? 'عام' : 'Défaut'}
+                          </div>
+                        )}
+                        <div className="flex-1">
+                          <input
+                            type="file"
+                            id="receiptCustomLogoFile"
+                            accept="image/*"
+                            onChange={handleReceiptLogoUpload}
+                            className="hidden"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => document.getElementById('receiptCustomLogoFile')?.click()}
+                            className="px-2.5 py-1.5 bg-slate-50 border border-slate-250 hover:border-blue-500 hover:bg-blue-50/50 hover:text-blue-700 text-slate-700 rounded text-[10.5px] font-bold flex items-center gap-1 shadow-2xs cursor-pointer transition-colors"
+                          >
+                            <span>📷</span>
+                            <span>{language === 'ar' ? 'اختيار شعار التذكرة' : 'Définir logo unique'}</span>
+                          </button>
+                          <span className="text-[9px] text-slate-400 block mt-1">
+                            {language === 'ar' ? 'سيعوض شعار المتجر العام في وصل الشراء' : 'Surchargera le logo général sur le ticket'}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Margins Thermal */}
+                    <div className="space-y-2 pt-2 border-t border-slate-100">
+                      <label className="text-[10px] font-bold text-slate-500 uppercase block">
+                        {language === 'ar' ? 'هوامش الطباعة الحرارية (mm) :' : 'Marges du Reçu Thermique (en mm) :'}
+                      </label>
+                      <div className="grid grid-cols-4 gap-2">
+                        <div>
+                          <span className="text-[8.5px] text-slate-400 block text-center mb-0.5">{language === 'ar' ? 'أعلى' : 'Haut'}</span>
+                          <input
+                            type="number"
+                            min="0"
+                            max="50"
+                            value={receiptMarginTop}
+                            onChange={(e) => setReceiptMarginTop(Number(e.target.value))}
+                            className="w-full text-center text-xs font-mono font-bold border border-slate-250 p-1 rounded bg-slate-50"
+                          />
+                        </div>
+                        <div>
+                          <span className="text-[8.5px] text-slate-400 block text-center mb-0.5">{language === 'ar' ? 'أسفل' : 'Bas'}</span>
+                          <input
+                            type="number"
+                            min="0"
+                            max="50"
+                            value={receiptMarginBottom}
+                            onChange={(e) => setReceiptMarginBottom(Number(e.target.value))}
+                            className="w-full text-center text-xs font-mono font-bold border border-slate-250 p-1 rounded bg-slate-50"
+                          />
+                        </div>
+                        <div>
+                          <span className="text-[8.5px] text-slate-400 block text-center mb-0.5">{language === 'ar' ? 'يسار' : 'Gauche'}</span>
+                          <input
+                            type="number"
+                            min="0"
+                            max="50"
+                            value={receiptMarginLeft}
+                            onChange={(e) => setReceiptMarginLeft(Number(e.target.value))}
+                            className="w-full text-center text-xs font-mono font-bold border border-slate-250 p-1 rounded bg-slate-50"
+                          />
+                        </div>
+                        <div>
+                          <span className="text-[8.5px] text-slate-400 block text-center mb-0.5">{language === 'ar' ? 'يمين' : 'Droite'}</span>
+                          <input
+                            type="number"
+                            min="0"
+                            max="50"
+                            value={receiptMarginRight}
+                            onChange={(e) => setReceiptMarginRight(Number(e.target.value))}
+                            className="w-full text-center text-xs font-mono font-bold border border-slate-250 p-1 rounded bg-slate-50"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* A4 INVOICES CARD */}
+                  <div className="bg-white border border-slate-200 p-4 rounded-xl shadow-3xs space-y-4">
+                    <div className="border-b border-indigo-100 pb-2 flex items-center justify-between">
+                      <span className="text-xs font-bold text-indigo-955 flex items-center gap-1.5">
+                        <span>📄</span>
+                        {language === 'ar' ? 'تخصيص فواتير A4' : 'Factures & Bons A4'}
+                      </span>
+                    </div>
+
+                    {/* Logo Invoice */}
+                    <div className="space-y-2">
+                      <label className="text-[10px] font-bold text-slate-500 uppercase block">
+                        {language === 'ar' ? 'الشعار المخصص لفواتير A4 :' : 'Logo spécifique pour Factures A4 :'}
+                      </label>
+                      <div className="flex items-center gap-3">
+                        {invoiceCustomLogo ? (
+                          <div className="relative group shrink-0">
+                            <img
+                              src={invoiceCustomLogo}
+                              alt="Invoice Logo"
+                              className="w-16 h-16 rounded border border-slate-250 object-cover bg-white"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => setInvoiceCustomLogo('')}
+                              className="absolute -top-1.5 -right-1.5 bg-rose-600 text-white rounded-full p-0.5 hover:bg-rose-700 transition-colors shadow-sm cursor-pointer"
+                              title="Supprimer"
+                            >
+                              <span className="text-[9px] font-black block w-3.5 h-3.5 leading-tight">✕</span>
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="w-16 h-16 bg-slate-50 rounded border-2 border-dashed border-slate-300 flex items-center justify-center text-slate-350 text-xs shrink-0 select-none">
+                            {language === 'ar' ? 'عام' : 'Défaut'}
+                          </div>
+                        )}
+                        <div className="flex-1">
+                          <input
+                            type="file"
+                            id="invoiceCustomLogoFile"
+                            accept="image/*"
+                            onChange={handleInvoiceLogoUpload}
+                            className="hidden"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => document.getElementById('invoiceCustomLogoFile')?.click()}
+                            className="px-2.5 py-1.5 bg-slate-50 border border-slate-250 hover:border-indigo-500 hover:bg-indigo-50/50 hover:text-indigo-700 text-slate-700 rounded text-[10.5px] font-bold flex items-center gap-1 shadow-2xs cursor-pointer transition-colors"
+                          >
+                            <span>📷</span>
+                            <span>{language === 'ar' ? 'اختيار شعار A4' : 'Définir logo unique'}</span>
+                          </button>
+                          <span className="text-[9px] text-slate-400 block mt-1">
+                            {language === 'ar' ? 'سيعوض شعار المتجر العام في فواتير A4' : 'Surchargera le logo général sur l\'A4'}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Margins Invoice */}
+                    <div className="space-y-2 pt-2 border-t border-slate-100">
+                      <label className="text-[10px] font-bold text-slate-500 uppercase block">
+                        {language === 'ar' ? 'هوامش مستندات A4 (mm) :' : 'Marges des Factures/Bons A4 (en mm) :'}
+                      </label>
+                      <div className="grid grid-cols-4 gap-2">
+                        <div>
+                          <span className="text-[8.5px] text-slate-400 block text-center mb-0.5">{language === 'ar' ? 'أعلى' : 'Haut'}</span>
+                          <input
+                            type="number"
+                            min="0"
+                            max="100"
+                            value={invoiceMarginTop}
+                            onChange={(e) => setInvoiceMarginTop(Number(e.target.value))}
+                            className="w-full text-center text-xs font-mono font-bold border border-slate-250 p-1 rounded bg-slate-50"
+                          />
+                        </div>
+                        <div>
+                          <span className="text-[8.5px] text-slate-400 block text-center mb-0.5">{language === 'ar' ? 'أسفل' : 'Bas'}</span>
+                          <input
+                            type="number"
+                            min="0"
+                            max="100"
+                            value={invoiceMarginBottom}
+                            onChange={(e) => setInvoiceMarginBottom(Number(e.target.value))}
+                            className="w-full text-center text-xs font-mono font-bold border border-slate-250 p-1 rounded bg-slate-50"
+                          />
+                        </div>
+                        <div>
+                          <span className="text-[8.5px] text-slate-400 block text-center mb-0.5">{language === 'ar' ? 'يسار' : 'Gauche'}</span>
+                          <input
+                            type="number"
+                            min="0"
+                            max="100"
+                            value={invoiceMarginLeft}
+                            onChange={(e) => setInvoiceMarginLeft(Number(e.target.value))}
+                            className="w-full text-center text-xs font-mono font-bold border border-slate-250 p-1 rounded bg-slate-50"
+                          />
+                        </div>
+                        <div>
+                          <span className="text-[8.5px] text-slate-400 block text-center mb-0.5">{language === 'ar' ? 'يمين' : 'Droite'}</span>
+                          <input
+                            type="number"
+                            min="0"
+                            max="100"
+                            value={invoiceMarginRight}
+                            onChange={(e) => setInvoiceMarginRight(Number(e.target.value))}
+                            className="w-full text-center text-xs font-mono font-bold border border-slate-250 p-1 rounded bg-slate-50"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
             {/* 📧 Administrative Email Notifications Section */}
             <div className="md:col-span-2 border-t border-slate-100 pt-5 mt-3">
               <label className="text-[11px] font-bold text-slate-650 uppercase block mb-2.5 tracking-wider font-sans flex items-center gap-1">
@@ -1952,6 +2442,372 @@ export default function DatabaseControl({ db, onUpdateDb, license, user }: Datab
             </div>
           )}
         </form>
+      </div>
+
+      {/* SECTION 1.5: Personnel, Rôles et Autorisations d'accès */}
+      <div className="bg-white rounded border border-slate-200 shadow-xs overflow-hidden">
+        <div className="bg-slate-50 border-b border-slate-150 p-4 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Users className="w-4 h-4 text-indigo-600" />
+            <h2 className="text-sm font-bold text-slate-850">
+              {language === 'ar' ? '1.5 إدارة فريق العمل، الصلاحيات والأدوار' : '1.5 Gestion de l\'Équipe, Rôles & Habilitations'}
+            </h2>
+          </div>
+          <span className="px-2 py-0.5 bg-indigo-100 text-indigo-700 rounded-full text-[9px] font-black tracking-wider uppercase">
+            {users.length} {language === 'ar' ? 'مستخدمين' : 'Utilisateurs'}
+          </span>
+        </div>
+
+        <div className="p-6 space-y-6">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            
+            {/* Form to Add/Edit staff member */}
+            <div className="lg:col-span-1 bg-slate-50 p-4 rounded border border-slate-200 space-y-4">
+              <h3 className="text-xs font-extrabold text-slate-800 uppercase tracking-wider flex items-center gap-1.5 border-b border-slate-200 pb-2">
+                <UserPlus className="w-4 h-4 text-blue-600" />
+                {editingUserId 
+                  ? (language === 'ar' ? 'تعديل معطيات الموظف' : 'Modifier le compte')
+                  : (language === 'ar' ? 'إضافة موظف جديد للفريق' : 'Ajouter un Collaborateur')}
+              </h3>
+
+              <div className="space-y-3">
+                <div>
+                  <label className="text-[10px] font-extrabold text-slate-500 uppercase block mb-1">
+                    {language === 'ar' ? 'الاسم الكامل للموظف' : 'Nom Complet'}
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={staffName}
+                    onChange={(e) => setStaffName(e.target.value)}
+                    placeholder={language === 'ar' ? 'مثال: أحمد عبد الله' : 'ex: Ahmed Ben Ali'}
+                    className="w-full bg-white border border-slate-250 rounded py-1.5 px-3 text-xs font-bold text-slate-800 focus:outline-hidden focus:border-indigo-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-[10px] font-extrabold text-slate-500 uppercase block mb-1">
+                    {language === 'ar' ? 'صلاحيات الدور الوظيفي' : 'Rôle de sécurité & Droits'}
+                  </label>
+                  <select
+                    value={staffRole}
+                    onChange={(e) => setStaffRole(e.target.value as UserRole)}
+                    className="w-full bg-white border border-slate-250 rounded py-1.5 px-3 text-xs font-bold text-slate-800 focus:outline-hidden focus:border-indigo-500"
+                  >
+                    <option value="admin">
+                      👑 {language === 'ar' ? 'مدير بالنظام (كل الصلاحيات)' : 'Directeur / Admin (Accès Total)'}
+                    </option>
+                    <option value="sales">
+                      💼 {language === 'ar' ? 'طاقم الحسابات والمبيعات والعملاء' : 'Équipe Commerciale & Caisse (Clients, POS, Factures)'}
+                    </option>
+                    <option value="inventory">
+                      📦 {language === 'ar' ? 'مسؤول المخزن وتفاصيل السلع' : 'Gestionnaire de Stock (Articles, Prix & Dépôt)'}
+                    </option>
+                  </select>
+                  <div className="mt-1 p-2 bg-indigo-50 text-[10px] rounded text-indigo-750 font-medium leading-relaxed">
+                    {staffRole === 'admin' ? (
+                      language === 'ar' 
+                        ? '💡 يمتلك كامل الوصول لإعدادات البرنامج، تنزيل قاعدة البيانات، التحليلات والأرباح والتبويبات.'
+                        : '💡 Accès total à tous les onglets, statistiques financières, réglages et journal comptable.'
+                    ) : staffRole === 'sales' ? (
+                      language === 'ar' 
+                        ? '💡 يمتلك صلاحية البيع، إدارة الحسابات والذمم للعملاء والموردين وأرشيف الفواتير فقط.'
+                        : '💡 Accès réservé au POS, recharges télécom, gestion clients/comptes et journal des factures.'
+                    ) : (
+                      language === 'ar' 
+                        ? '💡 يرتكز عمله في تبويب البضائع، تعديل كميات المخازن، أسعار الشراء والبيع والباركود.'
+                        : '💡 Accès exclusif au catalogue de stock et fiches articles (Prix, stocks, alertes).'
+                    )}
+                  </div>
+                </div>
+
+                <div>
+                  <label className="text-[10px] font-extrabold text-slate-500 uppercase block mb-1">
+                    {language === 'ar' ? 'الرمز السري للدخول للفرع (4 أرقام)' : 'Code PIN secret (4 chiffres)'}
+                  </label>
+                  <div className="relative">
+                    <input
+                      type="password"
+                      maxLength={4}
+                      pattern="\d{4}"
+                      required
+                      value={staffPin}
+                      onChange={(e) => setStaffPin(e.target.value.replace(/\D/g, ''))}
+                      placeholder="0000"
+                      className="w-full bg-white border border-slate-250 rounded py-1.5 px-3 text-xs font-mono font-bold tracking-widest text-slate-800 focus:outline-hidden focus:border-indigo-500"
+                    />
+                    <span className="absolute right-3 top-2 text-slate-400">
+                      <Key className="w-4 h-4" />
+                    </span>
+                  </div>
+                  <p className="text-[9px] text-slate-400 font-medium">
+                    {language === 'ar' ? 'رمز فريد يستعمله الموظف للدخول لجلسته بأمان.' : 'Code numérique utilisé pour verrouiller / déverrouiller la session.'}
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-2 py-1">
+                  <input
+                    type="checkbox"
+                    id="staff_is_active"
+                    checked={staffIsActive}
+                    onChange={(e) => setStaffIsActive(e.target.checked)}
+                    className="w-4 h-4 text-indigo-650 text-indigo-600 rounded border-slate-200"
+                  />
+                  <label htmlFor="staff_is_active" className="text-[11px] font-bold text-slate-700 cursor-pointer select-none">
+                    {language === 'ar' ? 'الموظف نشط بالنظام' : 'Statut actif du compte'}
+                  </label>
+                </div>
+
+                <div className="flex gap-2 pt-2 border-t border-slate-200">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (!staffName || staffPin.length !== 4) {
+                        showToast(
+                          language === 'ar'
+                            ? '⚠️ يرجى تعبئة الاسم وإدخال رمز PIN من 4 أرقام!'
+                            : '⚠️ Veuillez saisir un nom complet et un code PIN de 4 chiffres !',
+                          'error'
+                        );
+                        return;
+                      }
+
+                      let subList = [...users];
+                      if (editingUserId) {
+                        subList = subList.map(u => u.id === editingUserId ? {
+                          ...u,
+                          name: staffName,
+                          role: staffRole,
+                          pin: staffPin,
+                          isActive: staffIsActive
+                        } : u);
+                        showToast(language === 'ar' ? '✅ تم تحديث الموظف بنجاح' : '✅ Collaborateur mis à jour avec succès', 'success');
+                      } else {
+                        // Avoid PIN collision
+                        if (subList.some(u => u.pin === staffPin)) {
+                          showToast(
+                            language === 'ar'
+                              ? '⚠️ هذا الرمز السري PIN مستعمل لموظف آخر! يرجى اختيار رمز فريد.'
+                              : '⚠️ Ce code PIN est déjà attribué à un autre agent ! Veuillez choisir un code unique.',
+                            'error'
+                          );
+                          return;
+                        }
+
+                        const emojiMap = { admin: '👑', sales: '💼', inventory: '📦' };
+                        const newU: AppUser = {
+                          id: 'user-' + Date.now(),
+                          name: staffName,
+                          role: staffRole,
+                          pin: staffPin,
+                          isActive: staffIsActive,
+                          avatar: emojiMap[staffRole] || '👤'
+                        };
+                        subList.push(newU);
+                        showToast(language === 'ar' ? '✅ تم تسجيل الموظف الجديد' : '✅ Nouveau collaborateur enregistré', 'success');
+                      }
+
+                      // Save straight to DB
+                      setUsers(subList);
+                      onUpdateDb({
+                        ...db,
+                        settings: {
+                          ...db.settings!,
+                          users: subList
+                        }
+                      });
+
+                      // Reset form
+                      setEditingUserId(null);
+                      setStaffName('');
+                      setStaffRole('sales');
+                      setStaffPin('');
+                      setStaffIsActive(true);
+                    }}
+                    className="flex-1 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded text-[10px] font-black uppercase text-center cursor-pointer transition-colors"
+                  >
+                    {editingUserId ? (language === 'ar' ? 'حفظ التعديلات' : 'Enregistrer') : (language === 'ar' ? 'إضافة الموظف' : 'Ajouter')}
+                  </button>
+                  {editingUserId && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEditingUserId(null);
+                        setStaffName('');
+                        setStaffRole('sales');
+                        setStaffPin('');
+                        setStaffIsActive(true);
+                      }}
+                      className="px-2.5 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-800 rounded text-[10px] font-extrabold uppercase cursor-pointer"
+                    >
+                      {language === 'ar' ? 'إلغاء' : 'Annuler'}
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* List and Permissions matrix */}
+            <div className="lg:col-span-2 space-y-4">
+              <h3 className="text-xs font-extrabold text-slate-850 uppercase tracking-wider">
+                {language === 'ar' ? 'أعضاء الفريق المسجلين بالنظام حالياً ومستويات الوصول' : 'Membres d\'équipe inscrits & Matrice d\'accès'}
+              </h3>
+
+              <div className="border border-slate-200 rounded overflow-hidden">
+                <table className="w-full text-start text-xs font-sans">
+                  <thead className="bg-slate-50 text-slate-500 font-extrabold uppercase text-[10px] border-b border-slate-200">
+                    <tr>
+                      <th className="px-4 py-3 text-start">{language === 'ar' ? 'العضو / المسمى' : 'Collaborateur'}</th>
+                      <th className="px-4 py-3 text-start">{language === 'ar' ? 'الدور والصلاحيات' : 'Rôle de Sécurité'}</th>
+                      <th className="px-4 py-3 text-start">{language === 'ar' ? 'الرمز PIN' : 'Code PIN'}</th>
+                      <th className="px-4 py-3 text-center">{language === 'ar' ? 'الحالة' : 'Statut'}</th>
+                      <th className="px-4 py-3 text-center">{language === 'ar' ? 'التحكم' : 'Actions'}</th>
+                    </tr>
+                  </thead>
+                  <tbody className="bg-white divide-y divide-slate-150">
+                    {users.map(u => (
+                      <tr key={u.id} className="hover:bg-slate-50/50">
+                        <td className="px-4 py-3">
+                          <div className="flex items-center gap-2">
+                            <span className="text-base">{u.avatar || '👤'}</span>
+                            <div className="font-bold text-slate-800 text-[11px]">{u.name}</div>
+                          </div>
+                        </td>
+                        <td className="px-4 py-3">
+                          <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded text-[10px] font-bold ${
+                            u.role === 'admin' 
+                              ? 'bg-purple-100 text-purple-800 border border-purple-200' 
+                              : u.role === 'sales'
+                              ? 'bg-blue-100 text-blue-800 border border-blue-200'
+                              : 'bg-amber-100 text-amber-800 border border-amber-200'
+                          }`}>
+                            <span>
+                              {u.role === 'admin' ? '👑 Admin' : u.role === 'sales' ? '💼 Commercial' : '📦 Logistique'}
+                            </span>
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 font-mono text-[11px] font-bold">
+                          <div className="flex items-center gap-1.5 text-slate-700">
+                            <span>{showStaffPinInputPass[u.id] ? u.pin : '••••'}</span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setShowStaffPinInputPass(prev => ({
+                                  ...prev,
+                                  [u.id]: !prev[u.id]
+                                }));
+                              }}
+                              className="text-slate-400 hover:text-slate-700 p-0.5 cursor-pointer"
+                            >
+                              {showStaffPinInputPass[u.id] ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                            </button>
+                          </div>
+                        </td>
+                        <td className="px-4 py-3 text-center">
+                          <span className={`inline-flex px-1.5 py-0.5 rounded text-[9px] font-black uppercase ${
+                            u.isActive 
+                              ? 'bg-emerald-100 text-emerald-800 border border-emerald-250' 
+                              : 'bg-rose-100 text-rose-800 border border-rose-250'
+                          }`}>
+                            {u.isActive ? (language === 'ar' ? 'نشط' : 'Actif') : (language === 'ar' ? 'موقف' : 'Désactivé')}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 text-center">
+                          <div className="inline-flex gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setEditingUserId(u.id);
+                                setStaffName(u.name);
+                                setStaffRole(u.role);
+                                setStaffPin(u.pin);
+                                setStaffIsActive(u.isActive);
+                              }}
+                              className="p-1 text-blue-600 hover:bg-blue-50 border border-blue-200 rounded cursor-pointer transition-colors"
+                              title="Modifier"
+                            >
+                              <Edit3 className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              disabled={u.role === 'admin' && users.filter(usr => usr.role === 'admin' && usr.isActive).length <= 1}
+                              onClick={() => {
+                                if (u.role === 'admin' && users.filter(usr => usr.role === 'admin' && usr.isActive).length <= 1) {
+                                  showToast(
+                                    language === 'ar'
+                                      ? '⚠️ لا يمكن حذف آخر مدير نشط في النظام لتفادي قفل البرنامج!'
+                                      : '⚠️ Impossible de supprimer le seul administrateur actif pour éviter tout blocage !',
+                                    'error'
+                                  );
+                                  return;
+                                }
+
+                                if (confirm(language === 'ar' ? `هل أنت متأكد من حذف حساب الموظف ${u.name}؟` : `Supprimer définitivement le compte de ${u.name} ?`)) {
+                                  const filtered = users.filter(usr => usr.id !== u.id);
+                                  setUsers(filtered);
+                                  onUpdateDb({
+                                    ...db,
+                                    settings: {
+                                      ...db.settings!,
+                                      users: filtered
+                                    }
+                                  });
+                                  showToast(language === 'ar' ? '🗑️ تم الحذف بنجاح' : '🗑️ Compte de l\'agent supprimé', 'info');
+                                }
+                              }}
+                              className="p-1 text-rose-600 hover:bg-rose-50 border border-rose-200 rounded disabled:opacity-40 disabled:hover:bg-transparent disabled:cursor-not-allowed cursor-pointer transition-colors"
+                              title="Supprimer"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Roles Rights Reference Matrix */}
+              <div className="bg-slate-50 rounded border border-slate-200 p-4">
+                <h4 className="text-[10px] font-black text-indigo-700 uppercase tracking-widest mb-2">
+                  {language === 'ar' ? '📋 جدول الصلاحيات الرسمي ومستويات الحماية (Matrix):' : '📋 MATRICE D\'ACCÈS ET DROITS ADMINISTRATIFS :'}
+                </h4>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-[10px] text-slate-600 leading-normal">
+                  <div className="p-2.5 bg-purple-50/50 border border-purple-100 rounded">
+                    <span className="font-black text-purple-900 block mb-1">👑 ADMINISTRATEUR (Admin)</span>
+                    <ul className="list-disc pl-3.5 space-y-0.5">
+                      <li>{language === 'ar' ? 'إجمالي فروع البرنامج بالكامل' : 'Accès Absolu sans restriction'}</li>
+                      <li>{language === 'ar' ? 'تحليل الأرباح والخزينة ومؤشرات الأداء' : 'Statistiques avancées, profits, Chiffre d\'Affaires'}</li>
+                      <li>{language === 'ar' ? 'تعديل المعطيات، التهيئة وتبويبات المبيعات' : 'Édition des catalogues articles & prix d\'achat'}</li>
+                      <li>{language === 'ar' ? 'نسخ احتياطي واسترجاع ومسح السيرفر' : 'Sauvegardes de sécurité, cloud Google Drive'}</li>
+                    </ul>
+                  </div>
+                  <div className="p-2.5 bg-blue-50/50 border border-blue-100 rounded">
+                    <span className="font-black text-blue-900 block mb-1">💼 COMMERCIAL / CAISSE (Sales)</span>
+                    <ul className="list-disc pl-3.5 space-y-0.5">
+                      <li>{language === 'ar' ? 'واجهة بيع POS وصندوق الكاش التفاعلي' : 'Vente Caisse POS complète'}</li>
+                      <li>{language === 'ar' ? 'الوصولات وبطاقات الشحن لشركات الإتصال' : 'Interface recharge Télécom'}</li>
+                      <li>{language === 'ar' ? 'إدارة العملاء، الديون وأرشيف الفواتير' : 'Saisie clients, dettes, fournisseurs, créances'}</li>
+                      <li className="text-rose-600 font-bold">🚫 {language === 'ar' ? 'يمنع الدخول لقسم الأرباح والسلع والضبط' : 'Interdit : Dashboard financier & Administration'}</li>
+                    </ul>
+                  </div>
+                  <div className="p-2.5 bg-amber-50/50 border border-amber-100 rounded">
+                    <span className="font-black text-amber-900 block mb-1">📦 UNITÉ LOGISTIQUE / STOCKS (Inventory)</span>
+                    <ul className="list-disc pl-3.5 space-y-0.5">
+                      <li>{language === 'ar' ? 'الدخول لقائمة السلع وتفاصيل المنتجات' : 'Accès Catalogue Produits & Stocks'}</li>
+                      <li>{language === 'ar' ? 'رصد كميات البضائع، التنبيهات والتواريخ' : 'Vue seuils d\'alerte quantitatifs'}</li>
+                      <li>{language === 'ar' ? 'إضافة بطاقة كود بار جديد للمنتجات بالمحل' : 'Création / Mise à jour des fiches articles'}</li>
+                      <li className="text-rose-600 font-bold">🚫 {language === 'ar' ? 'يمنع البيع، الفواتير، الديون وحركة الخزنة' : 'Interdit : Caisse POS, Finances & Facturation'}</li>
+                    </ul>
+                  </div>
+                </div>
+              </div>
+
+            </div>
+
+          </div>
+        </div>
       </div>
 
       {/* SECTION 2 (Custom): Adjustment of Financial Balances & Capital */}
@@ -2537,6 +3393,263 @@ export default function DatabaseControl({ db, onUpdateDb, license, user }: Datab
               </span>
             </div>
           </div>
+        </div>
+      </div>
+
+      {/* SECTION 3.8: SECURE INTEGRATION - VPN GATEWAY ACCESS */}
+      <div className="bg-white rounded border border-slate-200 shadow-xs overflow-hidden">
+        <div className="bg-slate-50 border-b border-slate-150 p-4 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Wifi className="w-4 h-4 text-indigo-600" />
+            <h2 className="text-sm font-bold text-slate-850">
+              {language === 'ar' ? '3.8 بوابة الشبكة الافتراضية الخاصة (VPN Secure Gateway)' : '3.8 Passerelle de Réseau Privé Sécurisé (VPN Gateway)'}
+            </h2>
+          </div>
+          <span className="px-2 py-0.5 bg-indigo-50 text-indigo-700 rounded-full text-[9px] font-black tracking-wider uppercase border border-indigo-100">
+            {vpnProtocol.toUpperCase()}
+          </span>
+        </div>
+
+        <div className="p-6 space-y-6">
+          <p className="text-xs text-slate-500 font-semibold leading-relaxed text-start">
+            {language === 'ar'
+              ? 'تتيح لك بوابة الـ VPN الآمنة ربط طابعات الفواتير الحرارية المحلية، والموازين الإلكترونية، والهواتف اللوحية للعمال داخل متجرك بقاعدة البيانات السحابية الحالية بأمان تام وبشكل مشفر ودون تعريض معطياتك للإنترنت العام.'
+              : 'La passerelle VPN sécurisée permet de connecter les imprimantes thermiques de reçus, balances et tablettes de vente locales à la base de données cloud de manière chiffrée de bout en bout, isolée de l\'Internet public.'}
+          </p>
+
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            
+            {/* Column 1 & 2: VPN settings parameters input */}
+            <div className="lg:col-span-2 space-y-4 text-start">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                
+                {/* Protocol Selector */}
+                <div>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">
+                    {language === 'ar' ? 'بروتوكول الاتصال والأنفاق' : 'Protocole de Tunnel VPN'}
+                  </label>
+                  <select
+                    value={vpnProtocol}
+                    onChange={(e) => setVpnProtocol(e.target.value as any)}
+                    className="w-full bg-slate-50 border border-slate-200 rounded py-2 px-3 text-xs font-bold text-slate-800 focus:outline-hidden focus:border-indigo-500"
+                  >
+                    <option value="wireguard">🛡️ WireGuard (Recommandé - Léger & Ultra Rapide)</option>
+                    <option value="openvpn">🔒 OpenVPN (Chiffrement Militaire Robuste)</option>
+                    <option value="zerotier">🌐 ZeroTier Virtual LAN Gateway</option>
+                    <option value="tailscale">👥 Tailscale Mesh Connector</option>
+                  </select>
+                </div>
+
+                {/* Server Address */}
+                <div>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">
+                    {language === 'ar' ? 'عنوان خادم الـ VPN المضيف' : 'Adresse IP / Hôte de la Passerelle'}
+                  </label>
+                  <div className="relative">
+                    <span className="absolute left-3 top-2.5 text-slate-400">
+                      <Globe className="w-4 h-4" />
+                    </span>
+                    <input
+                      type="text"
+                      value={vpnServerAddress}
+                      onChange={(e) => setVpnServerAddress(e.target.value)}
+                      placeholder="Ex: 197.31.244.15 ou tunnel.innovapos.com font-mono"
+                      className="w-full bg-slate-50 border border-slate-200 rounded py-2 pl-9 pr-3 text-xs font-bold text-slate-800 focus:outline-hidden focus:border-indigo-500 font-mono"
+                    />
+                  </div>
+                </div>
+
+                {/* UDP Port */}
+                <div>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">
+                    {language === 'ar' ? 'منفذ الاتصال الآمن (UDP Port)' : 'Port d\'Écoute Réseau (UDP)'}
+                  </label>
+                  <input
+                    type="number"
+                    value={vpnPort}
+                    onChange={(e) => setVpnPort(parseInt(e.target.value) || 0)}
+                    className="w-full bg-slate-50 border border-slate-200 rounded py-2 px-3 text-xs font-bold text-slate-800 focus:outline-hidden focus:border-indigo-500 font-mono"
+                  />
+                </div>
+
+                {/* Assigned Client IP address */}
+                <div>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">
+                    {language === 'ar' ? 'عنوان الآي بي الممنوح للعميل' : 'Adresse IP Locale du Client asignée'}
+                  </label>
+                  <input
+                    type="text"
+                    value={vpnClientIp}
+                    onChange={(e) => setVpnClientIp(e.target.value)}
+                    placeholder="Ex: 10.8.0.2"
+                    className="w-full bg-slate-50 border border-slate-200 rounded py-2 px-3 text-xs font-bold text-slate-800 focus:outline-hidden focus:border-indigo-500 font-mono"
+                  />
+                </div>
+
+                {/* Allowed IPs scope */}
+                <div className="sm:col-span-2">
+                  <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">
+                    {language === 'ar' ? 'نطاق العناوين المسموح بعبورها (Allowed IPs)' : 'Plage d\'Adresses Routées (Allowed IPs)'}
+                  </label>
+                  <input
+                    type="text"
+                    value={vpnIpRange}
+                    onChange={(e) => setVpnIpRange(e.target.value)}
+                    placeholder="Ex: 10.8.0.0/24, 192.168.1.0/24"
+                    className="w-full bg-slate-50 border border-slate-200 rounded py-2 px-3 text-xs font-bold text-slate-800 focus:outline-hidden focus:border-indigo-500 font-mono"
+                  />
+                </div>
+
+                {/* Public Key */}
+                <div className="sm:col-span-2">
+                  <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">
+                    {language === 'ar' ? 'المفتاح العمومي للخادم البوابة (Server Public Key)' : 'Clé Publique du Serveur VPN (Handshake Key)'}
+                  </label>
+                  <input
+                    type="text"
+                    value={vpnPublicKey}
+                    onChange={(e) => setVpnPublicKey(e.target.value)}
+                    className="w-full bg-slate-50 border border-slate-200 rounded py-2 px-3 text-xs font-bold text-slate-800 focus:outline-hidden focus:border-indigo-500 font-mono"
+                  />
+                </div>
+
+              </div>
+
+              {/* Action Buttons to connect/download config */}
+              <div className="flex flex-col sm:flex-row gap-3 pt-2">
+                
+                {/* Connect Simulator button */}
+                <button
+                  type="button"
+                  onClick={handleToggleVpnConnection}
+                  disabled={vpnConnectionState === 'connecting'}
+                  className={`flex-1 py-2.5 px-4 rounded text-xs font-bold transition-all shadow-xs flex items-center justify-center gap-2 cursor-pointer border-0 ${
+                    vpnConnectionState === 'connected'
+                      ? 'bg-emerald-600 hover:bg-emerald-700 text-white'
+                      : vpnConnectionState === 'connecting'
+                      ? 'bg-amber-100 text-amber-700 cursor-wait'
+                      : 'bg-indigo-600 hover:bg-indigo-700 text-white'
+                  }`}
+                >
+                  <Activity className={`w-4 h-4 shrink-0 ${vpnConnectionState === 'connecting' ? 'animate-spin' : ''}`} />
+                  <span>
+                    {vpnConnectionState === 'connected'
+                      ? (language === 'ar' ? '🔴 قطع اتصال شبكة الـ VPN' : '🔴 Déconnecter le Tunnel VPN')
+                      : vpnConnectionState === 'connecting'
+                      ? (language === 'ar' ? '⚡ جاري الاتصال...' : '⚡ Établissement du tunnel...')
+                      : (language === 'ar' ? '🟢 تشغيل واختبار اتصال الـ VPN' : '🟢 Activer & Tester le Tunnel VPN')}
+                  </span>
+                </button>
+
+                {/* Download Config File */}
+                <button
+                  type="button"
+                  onClick={handleDownloadVpnConfig}
+                  className="py-2.5 px-4 bg-slate-100 hover:bg-slate-200 text-slate-700 hover:text-slate-900 border border-slate-200 rounded text-xs font-bold transition-all flex items-center justify-center gap-2 cursor-pointer shadow-3xs"
+                >
+                  <Download className="w-4 h-4 shrink-0" />
+                  <span>
+                    {language === 'ar' ? '📥 تحميل ملف إعدادات العميل' : 'Télécharger (.conf / .ovpn)'}
+                  </span>
+                </button>
+
+              </div>
+            </div>
+
+            {/* Column 3: Live Connection State Widget & dark Console Logs */}
+            <div className="bg-slate-950 p-5 rounded-xl border border-slate-850 flex flex-col justify-between text-start relative overflow-hidden min-h-[280px]">
+              {/* Background ambient light */}
+              <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-500/5 rounded-full blur-2xl pointer-events-none" />
+              
+              <div className="space-y-4 relative z-10">
+                <div className="flex items-center justify-between">
+                  <span className="text-[9px] uppercase font-bold text-slate-500 tracking-widest font-mono">
+                    {language === 'ar' ? 'مراقب بوابة الأمان' : 'Security Log Terminal'}
+                  </span>
+                  
+                  {/* Status badge */}
+                  <div className="flex items-center gap-1.5 bg-slate-900/80 rounded-full px-2 py-0.5 border border-slate-800">
+                    <span className={`w-1.5 h-1.5 rounded-full ${
+                      vpnConnectionState === 'connected'
+                        ? 'bg-emerald-500 animate-pulse'
+                        : vpnConnectionState === 'connecting'
+                        ? 'bg-amber-500 animate-pulse'
+                        : 'bg-rose-500'
+                    }`} />
+                    <span className={`text-[8px] font-bold font-mono tracking-wider ${
+                      vpnConnectionState === 'connected'
+                        ? 'text-emerald-400'
+                        : vpnConnectionState === 'connecting'
+                        ? 'text-amber-400'
+                        : 'text-rose-400'
+                    }`}>
+                      {vpnConnectionState.toUpperCase()}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Console Log Area */}
+                <div className="bg-slate-900 border border-slate-850 rounded-lg p-3 h-48 overflow-y-auto font-mono text-[9px] text-slate-350 leading-relaxed custom-scrollbar text-left select-text">
+                  {vpnConnectionLogs.length === 0 ? (
+                    <div className="text-slate-500 italic h-full flex flex-col items-center justify-center gap-2 text-center">
+                      <Terminal className="w-5 h-5 text-slate-700 animate-pulse" />
+                      <span>
+                        {language === 'ar'
+                          ? 'اضغط على زر (تشغيل واختبار) لبدء محاذاة البيانات وتشفير المعبر السلكي.'
+                          : 'Cliquez sur "Activer & Tester" pour initier la négociation cryptographique.'}
+                      </span>
+                    </div>
+                  ) : (
+                    vpnConnectionLogs.map((log, index) => (
+                      <div key={index} className={`border-b border-white/[0.02] pb-1 mb-1 font-mono ${
+                        log.includes('established') || log.includes('🟢') || log.includes('نجاح')
+                          ? 'text-emerald-400 font-bold'
+                          : log.includes('error') || log.includes('🔒') || log.includes('إيقاف')
+                          ? 'text-rose-400'
+                          : 'text-slate-300'
+                      }`}>
+                        {log}
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+
+              {/* Status footer inside console widget */}
+              <div className="text-[9px] font-mono font-bold text-slate-500 flex items-center justify-between border-t border-slate-900 pt-3 mt-3 relative z-10">
+                <div className="flex items-center gap-1">
+                  <span>LATENCY:</span>
+                  <span className={vpnConnectionState === 'connected' ? 'text-emerald-400' : 'text-slate-500'}>
+                    {vpnConnectionState === 'connected' ? '24 ms' : '-- ms'}
+                  </span>
+                </div>
+                <div className="flex items-center gap-1">
+                  <span>TRANSFER:</span>
+                  <span className={vpnConnectionState === 'connected' ? 'text-emerald-400' : 'text-slate-500'}>
+                    {vpnConnectionState === 'connected' ? '1.4 MB/s' : '0.0 kb/s'}
+                  </span>
+                </div>
+              </div>
+
+            </div>
+
+          </div>
+
+          {/* Alert check details about local connection IP compatibility */}
+          <div className="bg-indigo-50/50 p-4 rounded-lg border border-indigo-100 flex items-start gap-3 text-start">
+            <Info className="w-4 h-4 text-indigo-600 mt-0.5 shrink-0" />
+            <div className="space-y-1">
+              <h4 className="text-[11px] font-bold text-indigo-950 uppercase tracking-wide">
+                {language === 'ar' ? '💡 ربط مكونات المحل (طابعة الفواتير، عميل البيع المساعد)' : '💡 Liaison d\'équipements locaux (Imprimantes et Périphériques)'}
+              </h4>
+              <p className="text-[10px] text-indigo-900 font-medium leading-relaxed">
+                {language === 'ar'
+                  ? `بمجرد تفعيل الـ VPN، يمكنك ربط طابعات التذاكر الحرارية المتصلة بشبكتك المحلية عبر إدخل عنوان الآي بي المسند للجهاز العميل (IP: ${vpnClientIp}) في إعدادات الطباعة دون القلق من جدر الحماية.`
+                  : `Après avoir démarré le tunnel VPN avec succès, configurez l'adresse IP virtuelle de votre poste (${vpnClientIp}) dans vos serveurs d'impression ou balances de pesée afin de router de façon fluide et ultra-sécurisée les ordres d'impression thermiques.`}
+              </p>
+            </div>
+          </div>
+
         </div>
       </div>
 

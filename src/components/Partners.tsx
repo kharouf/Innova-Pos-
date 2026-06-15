@@ -16,6 +16,7 @@ import {
   ExternalLink
 } from 'lucide-react';
 import PartnersMap from './PartnersMap';
+import { checkIsIframe } from '../utils/storage';
 
 interface PartnersProps {
   db: DatabaseState;
@@ -82,11 +83,11 @@ export default function Partners({ db, onUpdateDb }: PartnersProps) {
       settings: updatedSettings
     });
     setShowLoyaltySettings(false);
-    alert(language === 'ar' ? "✅ تم حفظ إعدادات نظام الولاء بنجاح!" : "✅ Paramètres de fidélité enregistrés avec succès !");
+    showToast(language === 'ar' ? "✅ تم حفظ إعدادات نظام الولاء بنجاح!" : "✅ Paramètres de fidélité enregistrés avec succès !", 'success');
   };
 
   const filteredPartners = useMemo(() => {
-    return db.partners.filter(p => {
+    return (db.partners || []).filter(p => {
       const matchType = activeTab === 'all' || activeTab === 'map' ? true : p.type === activeTab;
       const matchSearch = p.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
                           (p.phone && p.phone.includes(searchQuery)) ||
@@ -142,7 +143,7 @@ export default function Partners({ db, onUpdateDb }: PartnersProps) {
     e.preventDefault();
     if (!name.trim()) return;
 
-    let updatedPartners = [...db.partners];
+    let updatedPartners = [...(db.partners || [])];
     const rateNum = discountRate.trim() ? parseFloat(discountRate) : undefined;
     const ptsNum = selectedTabIsClient ? (parseInt(loyaltyPoints, 10) || 0) : undefined;
 
@@ -207,7 +208,7 @@ export default function Partners({ db, onUpdateDb }: PartnersProps) {
     if (!selectedPartner) return;
     const amount = Number(paymentAmount);
     if (isNaN(amount) || amount <= 0) {
-      alert("⚠️ Veuillez saisir un montant valide supérieur à 0 DZD.");
+      showToast("⚠️ Veuillez saisir un montant valide supérieur à 0 DZD.", 'error');
       return;
     }
 
@@ -238,7 +239,7 @@ export default function Partners({ db, onUpdateDb }: PartnersProps) {
       notes: paymentNotes.trim() || (selectedTabIsClient ? 'Versement d\'acompte client' : 'Règlement de facture fournisseur')
     };
 
-    const updatedPartners = db.partners.map(p => {
+    const updatedPartners = (db.partners || []).map(p => {
       if (p.id === selectedPartner.id) {
         return {
           ...p,
@@ -251,7 +252,7 @@ export default function Partners({ db, onUpdateDb }: PartnersProps) {
     onUpdateDb({
       ...db,
       partners: updatedPartners,
-      payments: [newPayment, ...db.payments]
+      payments: [newPayment, ...(db.payments || [])]
     });
 
     setSelectedPartner(null);
@@ -530,7 +531,7 @@ export default function Partners({ db, onUpdateDb }: PartnersProps) {
             const isClient = p.type === 'client';
             const hasDebt = isClient ? p.currentBalance > 0 : p.currentBalance < 0;
             const absBalance = Math.abs(p.currentBalance);
-            const associatedLogs = db.payments.filter(l => l.partnerId === p.id);
+            const associatedLogs = (db.payments || []).filter(l => l.partnerId === p.id);
 
             return (
               <div key={p.id} className="bg-white rounded border border-slate-200 p-5 flex flex-col justify-between space-y-4">
@@ -1097,7 +1098,7 @@ export default function Partners({ db, onUpdateDb }: PartnersProps) {
 
         // Filter and merge invoices + payments into a single cronological ledger sheet
         const partnerInvoices = db.invoices.filter(inv => inv.partnerId === p.id);
-        const partnerPayments = db.payments.filter(pay => pay.partnerId === p.id);
+        const partnerPayments = (db.payments || []).filter(pay => pay.partnerId === p.id);
 
         interface LedgerRow {
           id: string;
@@ -1179,7 +1180,7 @@ export default function Partners({ db, onUpdateDb }: PartnersProps) {
           try {
             const printContent = document.getElementById('print-credit-statement');
             const portal = document.getElementById('print-portal');
-            const isIframe = window.self !== window.top;
+            const isIframe = checkIsIframe();
 
             if (printContent && portal) {
               portal.innerHTML = `

@@ -14,8 +14,17 @@ export interface Product {
   emailAlertsEnabled?: boolean; // Toggle per-product email notifications
   isFoodProduct?: boolean;
   expiryDate?: string; // format YYYY-MM-DD
+  dateExpiration?: string; // format YYYY-MM-DD
   weightVolume?: string;
   tvaRate?: number; // Taux de TVA: 0, 7, 19
+  priceHistory?: {
+    id: string;
+    timestamp: string;
+    oldSellingPrice: number;
+    newSellingPrice: number;
+    oldPurchasePrice: number;
+    newPurchasePrice: number;
+  }[];
 }
 
 export interface Partner {
@@ -105,6 +114,17 @@ export interface DailyExpense {
   category: string;
 }
 
+export type UserRole = 'admin' | 'sales' | 'inventory';
+
+export interface AppUser {
+  id: string;
+  name: string;
+  pin: string; // PIN code for login switching
+  role: UserRole;
+  isActive: boolean;
+  avatar?: string; // profile emoji or initials
+}
+
 export interface StoreSettings {
   storeName: string;
   storePhone: string;
@@ -120,6 +140,7 @@ export interface StoreSettings {
   manualProfitsOffset?: number;
   manualCreditOffset?: number;
   customCapitalValue?: number;
+  users?: AppUser[]; // Multiple users with roles and permissions
 
   // Sector-specific detailed parameters
   tvaAlimentaire?: number; // default VAT for foods
@@ -146,6 +167,16 @@ export interface StoreSettings {
   receiptCustomThankYou?: string;
   receiptShowCommercialTerms?: boolean;
   receiptCompactSize?: boolean;
+  receiptCustomLogo?: string; // Custom Base64 logo specifically for thermal receipts
+  invoiceCustomLogo?: string; // Custom Base64 logo specifically for A4 invoices
+  receiptMarginTop?: number;
+  receiptMarginBottom?: number;
+  receiptMarginLeft?: number;
+  receiptMarginRight?: number;
+  invoiceMarginTop?: number;
+  invoiceMarginBottom?: number;
+  invoiceMarginLeft?: number;
+  invoiceMarginRight?: number;
 
   // 📧 Administrative Email Notifications
   adminEmail?: string;
@@ -162,6 +193,14 @@ export interface StoreSettings {
   smtpSenderName?: string;
   themeMode?: 'light' | 'dark';
   useGmailApi?: boolean;
+  vpnEnabled?: boolean;
+  vpnProtocol?: 'wireguard' | 'openvpn' | 'zerotier' | 'tailscale' | 'ipsec';
+  vpnServerAddress?: string;
+  vpnPort?: number;
+  vpnPublicKey?: string;
+  vpnPrivateKey?: string;
+  vpnClientIp?: string;
+  vpnIpRange?: string;
 }
 
 export interface DatabaseState {

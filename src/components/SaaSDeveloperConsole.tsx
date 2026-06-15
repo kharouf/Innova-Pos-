@@ -292,7 +292,7 @@ export default function SaaSDeveloperConsole() {
               : 'border-transparent text-slate-500 hover:text-slate-700'
           }`}
         >
-          👤 {language === 'ar' ? 'تراخيص الشركات والمشتركين' : 'Licences & Tenants'} ({tenants.length})
+          👤 {language === 'ar' ? 'الحسابات المسجلة في Firestore' : 'Comptes Firestore / Tenants'} ({tenants.length})
         </button>
         <button
           onClick={() => setConsoleTab('updates')}
@@ -352,6 +352,28 @@ export default function SaaSDeveloperConsole() {
       {/* CONTROL TABLE SECTION */}
       <div className="bg-white border border-slate-200 rounded overflow-hidden">
         
+        {/* Firestore Registered Accounts Header Banner */}
+        <div className="p-4 bg-slate-900 border-b border-rose-500/10 flex items-center justify-between text-white flex-wrap gap-2 text-start">
+          <div className="flex items-center gap-2">
+            <div className="p-2 bg-rose-500/10 rounded-lg text-rose-400">
+              <Users className="w-4 h-4 text-rose-500" />
+            </div>
+            <div>
+              <h2 className="text-xs font-black uppercase tracking-wider font-mono text-slate-100 flex items-center gap-1.5">
+                <span>{language === 'ar' ? '🗂️ الحسابات المسجلة في السحابة' : '🗂️ Comptes enregistrés sur Firestore'}</span>
+              </h2>
+              <p className="text-[10px] text-slate-400 font-semibold mt-0.5">
+                {language === 'ar' 
+                  ? 'بوابة المبيعات والتراخيص النشطة للمشتركين للتحكم الفوري عن بعد والتعديل' 
+                  : 'Fiches d\'identification, dates de souscription et contrôle d\'accès cloud des boutiques'}
+              </p>
+            </div>
+          </div>
+          <span className="text-[9px] bg-red-500/10 text-red-400 border border-red-500/20 px-2.5 py-0.5 font-bold font-mono rounded-md uppercase tracking-wide">
+            Firestore Master List
+          </span>
+        </div>
+
         {/* Filters bar */}
         <div className="p-4 bg-slate-50 border-b border-slate-200 flex flex-col sm:flex-row gap-3 items-center justify-between">
           <div className="relative w-full sm:max-w-xs">

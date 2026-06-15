@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { DatabaseState, SystemUpdate, Product, StoreSettings } from './types';
+import { DatabaseState, SystemUpdate, Product, StoreSettings, AppUser } from './types';
 import { getDatabase, saveDatabase } from './utils/db';
 import { LanguageProvider, useLanguage } from './utils/LanguageContext';
 import { safeLocalStorage } from './utils/storage';
@@ -8,6 +8,7 @@ import { auth } from './utils/firebase';
 import { loadUserDatabase, seedUserDatabase, syncDatabaseDiff, loadUserLicense, loadSystemUpdates } from './utils/firebaseSync';
 import { UserLicenseData, verifyLicenseKey } from './utils/licensing';
 import { sendCriticalStockEmail, sendShiftOpeningEmail, sendShiftClosingEmail, sendDailyLowStockSummaryEmail, EmailLog } from './utils/notifications';
+import { downloadPurchaseOrderPDF, downloadShiftReportPDF } from './utils/pdfGenerator';
 import Auth from './components/Auth';
 import Dashboard from './components/Dashboard';
 import POS from './components/POS';
@@ -16,6 +17,7 @@ import Partners from './components/Partners';
 import InvoicesList from './components/InvoicesList';
 import Finance from './components/Finance';
 import DatabaseControl from './components/DatabaseControl';
+import TelecomRecharge from './components/TelecomRecharge';
 import SaaSDeveloperConsole from './components/SaaSDeveloperConsole';
 import SaaSLicenseLockedScreen from './components/SaaSLicenseLockedScreen';
 import ToastContainer from './components/ToastContainer';
@@ -47,11 +49,12 @@ import {
   Eye,
   EyeOff,
   Sun,
-  Moon
+  Moon,
+  Printer
 } from 'lucide-react';
 
 function AppContent() {
-  const { language, toggleLanguage, t } = useLanguage();
+  const { language, toggleLanguage, t, formatCurrency } = useLanguage();
   
   // Authentication & Sync State
   const [user, setUser] = useState<any>(null);
@@ -97,18 +100,20 @@ function AppContent() {
   const [pinError, setPinError] = useState(false);
   const [showPinInputPass, setShowPinInputPass] = useState(false);
 
-  // Forced theme override independent of the remote database settings
-  const [forcedThemeMode, setForcedThemeMode] = useState<'light' | 'dark' | null>(() => {
-    const saved = safeLocalStorage.getItem('pos_forced_theme_mode');
-    return (saved === 'light' || saved === 'dark') ? (saved as 'light' | 'dark') : null;
-  });
+  const handleToggleGlobalTheme = () => {
+    const currentDb = db || getDatabase();
+    if (!currentDb) return;
+    const currentTheme = currentDb.settings?.themeMode || 'light';
+    const nextTheme = currentTheme === 'dark' ? 'light' : 'dark';
 
-  const handleToggleForcedTheme = () => {
-    const defaultTheme = db?.settings?.themeMode || 'light';
-    const activeTheme = forcedThemeMode || defaultTheme;
-    const nextTheme = activeTheme === 'dark' ? 'light' : 'dark';
-    setForcedThemeMode(nextTheme);
-    safeLocalStorage.setItem('pos_forced_theme_mode', nextTheme);
+    const updatedDb = {
+      ...currentDb,
+      settings: {
+        ...(currentDb.settings || {}),
+        themeMode: nextTheme
+      }
+    };
+    handleUpdateDb(updatedDb);
   };
 
   // States for low stock levels prompt & banner
@@ -136,6 +141,70 @@ function AppContent() {
   const [updateStepMessage, setUpdateStepMessage] = useState('');
   const [isSystemFullyUpdated, setIsSystemFullyUpdated] = useState(() => safeLocalStorage.getItem('last_acknowledged_update') === '24/05/2026 - 15:40');
   const [isUpdateSuccess, setIsUpdateSuccess] = useState(false);
+
+  // 👥 Multi-Role User state variables
+  const [activeUser, setActiveUser] = useState<AppUser | null>(() => {
+    try {
+      const saved = safeLocalStorage.getItem('pos_active_user');
+      if (saved) return JSON.parse(saved);
+    } catch (_) {}
+    return null;
+  });
+
+  const [showUserSwitchModal, setShowUserSwitchModal] = useState(false);
+  const [selectedSwitchUser, setSelectedSwitchUser] = useState<AppUser | null>(null);
+  const [switchPinInput, setSwitchPinInput] = useState('');
+  const [switchPinError, setSwitchPinError] = useState(false);
+
+  // Sync activeUser with the latest DB definitions or default them
+  useEffect(() => {
+    if (db && db.settings) {
+      const usersList: AppUser[] = db.settings.users || [
+        { id: 'user-1', name: 'Administrateur', pin: '0000', role: 'admin' as const, isActive: true, avatar: '👑' },
+        { id: 'user-2', name: 'Agent de Vente', pin: '1111', role: 'sales' as const, isActive: true, avatar: '💼' },
+        { id: 'user-3', name: 'Agent de Stock', pin: '2222', role: 'inventory' as const, isActive: true, avatar: '📦' }
+      ];
+
+      // Make sure current db settings has users
+      if (!db.settings.users) {
+        db.settings.users = usersList;
+        saveDatabase(db);
+      }
+
+      if (!activeUser) {
+        const defaultUser = usersList.find(u => u.role === 'admin' && u.isActive) || usersList[0];
+        setActiveUser(defaultUser);
+        safeLocalStorage.setItem('pos_active_user', JSON.stringify(defaultUser));
+      } else {
+        const currentDetails = usersList.find(u => u.id === activeUser.id);
+        if (currentDetails) {
+          if (!currentDetails.isActive) {
+            const defaultUser = usersList.find(u => u.role === 'admin' && u.isActive) || usersList[0];
+            setActiveUser(defaultUser);
+            safeLocalStorage.setItem('pos_active_user', JSON.stringify(defaultUser));
+          } else {
+            setActiveUser(currentDetails);
+            safeLocalStorage.setItem('pos_active_user', JSON.stringify(currentDetails));
+          }
+        } else {
+          const defaultUser = usersList.find(u => u.role === 'admin' && u.isActive) || usersList[0];
+          setActiveUser(defaultUser);
+          safeLocalStorage.setItem('pos_active_user', JSON.stringify(defaultUser));
+        }
+      }
+    }
+  }, [db]);
+
+  // 🛡️ Enforce Tab Restriction based on Active User Role
+  useEffect(() => {
+    if (activeUser) {
+      if (activeUser.role === 'sales' && !['pos', 'telecom', 'invoices', 'partners'].includes(activeTab)) {
+        setActiveTab('pos');
+      } else if (activeUser.role === 'inventory' && !['products'].includes(activeTab)) {
+        setActiveTab('products');
+      }
+    }
+  }, [activeUser, activeTab]);
 
   const handlePerformSystemUpdate = async () => {
     setIsPerformingUpdate(true);
@@ -333,8 +402,45 @@ function AppContent() {
     }
   };
 
+  const handlePrintCurrentShiftReport = () => {
+    const startTime = safeLocalStorage.getItem('shift_open_time') || new Date().toISOString();
+    const endTime = new Date().toISOString();
+    
+    const shiftInvoices = db?.invoices.filter(inv => {
+      return new Date(inv.date) >= new Date(startTime);
+    }) || [];
+
+    const shiftExpenses = db?.expenses?.filter(exp => {
+      const expDate = exp.date || startTime;
+      return new Date(expDate) >= new Date(startTime);
+    }) || [];
+
+    downloadShiftReportPDF({
+      settings: db?.settings,
+      language,
+      cashierName,
+      startTime,
+      endTime,
+      invoices: shiftInvoices,
+      expenses: shiftExpenses,
+      formatCurrency
+    });
+  };
+
   // 1. Listen to Firebase Authentication State
   useEffect(() => {
+    // Fail-safe helper to prevent network delays or Firebase hangs from blocking the app boot
+    const withTimeout = <T,>(promise: Promise<T>, timeoutMs: number, fallbackValue: T): Promise<T> => {
+      let timeoutId: any;
+      const timeoutPromise = new Promise<T>((resolve) => {
+        timeoutId = setTimeout(() => {
+          console.warn(`[INNOVA BOOT SAFETY] Operation exceeded ${timeoutMs}ms. Forcing local offline fallback...`);
+          resolve(fallbackValue);
+        }, timeoutMs);
+      });
+      return Promise.race([promise, timeoutPromise]).finally(() => clearTimeout(timeoutId));
+    };
+
     const unsubscribe = auth.onAuthStateChanged(async (currentUser) => {
       setUser(currentUser);
       setLoadingAuth(false);
@@ -343,23 +449,41 @@ function AppContent() {
         setDemoMode(false);
         setSyncingCloud(true);
         try {
-          // Attempt loading this store's custom cloud database
-          const cloudDb = await loadUserDatabase(currentUser.uid);
+          // Attempt loading this store's custom cloud database with a 4.5s safe timeout
+          const cloudDb = await withTimeout(loadUserDatabase(currentUser.uid), 4500, null);
           let dbInstance = cloudDb;
           if (cloudDb) {
             setDb(cloudDb);
             saveDatabase(cloudDb);
           } else {
-            // New account: seed with beautiful default Tunisian Superette database
+            // New account or offline fallback: seed or use local cache
             const localFallback = getDatabase();
             dbInstance = localFallback;
-            await seedUserDatabase(currentUser.uid, localFallback);
+            seedUserDatabase(currentUser.uid, localFallback).catch(err => {
+              console.log("[FIRESTORE SYSTEM INFO] Background database seeding handled:", err);
+            });
             setDb(localFallback);
           }
 
-          // Fetch the license document for this tenant user
+          // Fetch the license document with a 3.5s safe timeout
           const storeName = dbInstance?.settings?.storeName || '';
-          const userLicense = await loadUserLicense(currentUser.uid, currentUser.email, storeName);
+          const trialExpiryDate = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+          const defaultOfflineLicense = {
+            uid: currentUser.uid,
+            email: currentUser.email,
+            registeredAt: new Date().toISOString().split('T')[0],
+            licenseExpiry: trialExpiryDate,
+            licenseStatus: 'trial' as any,
+            licenseKey: '',
+            remoteAnnouncement: 'Remarque: Connexion lente. Validation locale activée.',
+            businessName: storeName || 'Etablissement',
+            location: ''
+          };
+          const userLicense = await withTimeout(
+            loadUserLicense(currentUser.uid, currentUser.email, storeName),
+            3500,
+            defaultOfflineLicense
+          );
           setLicense(userLicense);
 
           // Verify the license signature validity and expiry
@@ -533,13 +657,13 @@ function AppContent() {
 
   // Apply visual theme mode dynamically on document element
   useEffect(() => {
-    const activeTheme = forcedThemeMode || db?.settings?.themeMode || 'light';
+    const activeTheme = db?.settings?.themeMode || getDatabase().settings?.themeMode || 'light';
     if (activeTheme === 'dark') {
       document.documentElement.classList.add('dark');
     } else {
       document.documentElement.classList.remove('dark');
     }
-  }, [forcedThemeMode, db?.settings?.themeMode]);
+  }, [db?.settings?.themeMode]);
 
   // 3. Keep database states synchronized
   const handleUpdateDb = async (updatedDb: DatabaseState) => {
@@ -553,6 +677,35 @@ function AppContent() {
         await syncDatabaseDiff(user.uid, oldDb, updatedDb);
       } catch (err) {
         console.log("[FIRESTORE SYSTEM INFO] Incremental background cloud synchronization failed or offline", err);
+      }
+    }
+
+    // 4. Automatically generate a supplier purchase order (PDF) for products having reached their critical threshold during stock alert
+    if (oldDb && oldDb.products && updatedDb.products) {
+      const oldProductsMap = new Map<string, Product>(oldDb.products.map(p => [p.id, p]));
+      const itemsToOrder: Product[] = [];
+
+      for (const newPrd of updatedDb.products) {
+        const oldPrd = oldProductsMap.get(newPrd.id);
+        const isCurrentlyCritical = newPrd.stock <= newPrd.minAlertQty;
+        const wasPreviouslyNotCritical = !oldPrd || oldPrd.stock > oldPrd.minAlertQty;
+
+        if (isCurrentlyCritical && wasPreviouslyNotCritical) {
+          itemsToOrder.push(newPrd);
+        }
+      }
+
+      if (itemsToOrder.length > 0) {
+        try {
+          console.log("[SYSTEM] Stock alert! Automatically generating Bon de Commande for newly critical products:", itemsToOrder);
+          downloadPurchaseOrderPDF({
+            products: itemsToOrder,
+            settings: updatedDb.settings,
+            language,
+          });
+        } catch (pdfErr) {
+          console.error("Auto supplier purchase order PDF generation failed:", pdfErr);
+        }
       }
     }
 
@@ -709,6 +862,7 @@ function AppContent() {
   let NAV_ITEMS = [
     { id: 'dashboard', label: t('nav_dashboard'), subLabel: language === 'ar' ? 'لوحة القيادة والمؤشرات' : 'Statistiques', icon: LayoutDashboard },
     { id: 'pos', label: t('nav_pos'), subLabel: language === 'ar' ? 'آلة تسجيل النقد السريع' : 'Caisse de vente', icon: ShoppingCart },
+    { id: 'telecom', label: language === 'ar' ? 'تذاكر شحن الهاتف' : 'Tickets Télécom', subLabel: language === 'ar' ? 'Ooredoo، اتصالات تونس، Orange' : 'Recharges Ooredoo, TT, Orange', icon: Smartphone },
     { id: 'products', label: t('nav_products'), subLabel: language === 'ar' ? 'المخزون والسلع الغذائية' : 'Catalogue & Prix', icon: Boxes },
     { id: 'invoices', label: t('nav_invoices'), subLabel: language === 'ar' ? 'أرشيف المبيعات والوصولات' : 'Journal ventes', icon: FileText },
     { id: 'partners', label: t('nav_partners'), subLabel: language === 'ar' ? 'الحسابات والديون والعملاء' : 'Comptes auxiliaires', icon: Users },
@@ -726,8 +880,17 @@ function AppContent() {
   }
 
   if (isWorkerMode) {
-    // Workers only see the sales screen / POS
-    NAV_ITEMS = NAV_ITEMS.filter(item => item.id === 'pos');
+    // Workers see both cash sale register (POS) and telecom recharge ticket creator!
+    NAV_ITEMS = NAV_ITEMS.filter(item => item.id === 'pos' || item.id === 'telecom');
+  }
+
+  // Filter based on assigned user role
+  if (activeUser) {
+    if (activeUser.role === 'sales') {
+      NAV_ITEMS = NAV_ITEMS.filter(item => ['pos', 'telecom', 'invoices', 'partners'].includes(item.id));
+    } else if (activeUser.role === 'inventory') {
+      NAV_ITEMS = NAV_ITEMS.filter(item => ['products'].includes(item.id));
+    }
   }
 
   const activeItem = NAV_ITEMS.find(item => item.id === activeTab);
@@ -765,6 +928,19 @@ function AppContent() {
               {db.settings?.activitySector || 'Etablissement'}
             </span>
           </div>
+          {/* Global Theme Toggle Button */}
+          <button
+            onClick={handleToggleGlobalTheme}
+            id="theme-mode-toggle-desktop"
+            className="p-1.5 rounded-lg bg-slate-850 hover:bg-slate-800 text-slate-300 hover:text-white transition-all cursor-pointer flex items-center justify-center border border-slate-800 shrink-0 select-none focus:outline-hidden"
+            title={language === 'ar' ? 'تغيير المظهر' : 'Changer thème'}
+          >
+            {(db?.settings?.themeMode || 'light') === 'dark' ? (
+              <Sun className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+            ) : (
+              <Moon className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+            )}
+          </button>
         </div>
 
         {/* Section title */}
@@ -799,23 +975,49 @@ function AppContent() {
 
         {/* User Account state info inside desktop sidebar footer */}
         <div className="p-4 bg-slate-950/60 border-t border-slate-800 space-y-2.5">
-          <div className="flex items-center gap-2 px-1.5 py-1">
-            <User className="w-4 h-4 text-slate-400 shrink-0" />
-            <div className="min-w-0">
-              <span className="text-[10px] font-bold text-white block truncate">
-                {user ? user.displayName || user.email : 'Guest / Mode Démo'}
-              </span>
-              <span className="text-[8px] text-slate-500 font-bold block uppercase flex items-center gap-1">
-                {user ? (
-                  <>
-                    <CloudLightning className="w-2.5 h-2.5 text-emerald-400" />
-                    <span>Cloud Sync</span>
-                  </>
-                ) : (
-                  <span>Local Offline</span>
-                )}
-              </span>
+          
+          {/* Active POS Software User display and switch button */}
+          <div className="flex items-center justify-between p-2 rounded bg-slate-900/90 border border-slate-800">
+            <div className="flex items-center gap-2 min-w-0">
+              <span className="text-sm shrink-0">{activeUser?.avatar || '👤'}</span>
+              <div className="min-w-0">
+                <span className="text-[10px] font-extrabold text-blue-400 block truncate leading-none mb-0.5">
+                  {activeUser?.name || 'Utilisateur'}
+                </span>
+                <span className="text-[8px] text-slate-500 font-bold uppercase block tracking-wider leading-none">
+                  {activeUser?.role === 'admin' ? (language === 'ar' ? '👑 مدير' : '👑 Admin') : 
+                   activeUser?.role === 'sales' ? (language === 'ar' ? '💼 مبيعات' : '💼 Ventes') : 
+                   (language === 'ar' ? '📦 مخزون' : '📦 Stock')}
+                </span>
+              </div>
             </div>
+            <button
+              onClick={() => {
+                setSelectedSwitchUser(null);
+                setSwitchPinInput('');
+                setSwitchPinError(false);
+                setShowUserSwitchModal(true);
+              }}
+              className="px-2 py-1 bg-blue-600 hover:bg-blue-700 text-[8px] font-black uppercase text-white rounded transition-colors cursor-pointer shrink-0"
+            >
+              {language === 'ar' ? 'تغيير' : 'Sessions'}
+            </button>
+          </div>
+
+          <div className="flex justify-between items-center px-1">
+            <span className="text-[9px] text-slate-400 font-bold truncate">
+              {user ? user.displayName || user.email : 'Guest / Mode Démo'}
+            </span>
+            <span className="text-[8px] text-slate-500 font-bold uppercase flex items-center gap-1 shrink-0">
+              {user ? (
+                <>
+                  <CloudLightning className="w-2.5 h-2.5 text-emerald-400" />
+                  <span>Cloud Sync</span>
+                </>
+              ) : (
+                <span>Local Offline</span>
+              )}
+            </span>
           </div>
 
           {/* Worker Lock Toggle Button */}
@@ -840,15 +1042,16 @@ function AppContent() {
             )}
           </button>
 
-          {/* Forced Theme Toggle Button */}
+           {/* Global Theme Toggle Button (Shortcut) */}
           <button
-            onClick={handleToggleForcedTheme}
+            onClick={handleToggleGlobalTheme}
+            id="theme-mode-toggle-footer"
             className="w-full flex items-center justify-center gap-2 p-2 rounded text-[10px] font-bold bg-slate-900 border border-slate-800 text-slate-300 hover:text-white hover:bg-slate-800/60 transition-all cursor-pointer select-none"
             title={language === 'ar' ? 'تغيير المظهر' : 'Changer thème'}
           >
-            {(forcedThemeMode || db?.settings?.themeMode || 'light') === 'dark' ? (
+            {(db?.settings?.themeMode || 'light') === 'dark' ? (
               <>
-                <Sun className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                <Sun className="w-3.5 h-3.5 text-amber-450 shrink-0" />
                 <span>{language === 'ar' ? '☀️ مظهر فاتح' : '☀️ Mode Clair'}</span>
               </>
             ) : (
@@ -859,10 +1062,10 @@ function AppContent() {
             )}
           </button>
 
-          <div className="grid grid-cols-2 gap-1.5">
+          <div className="grid grid-cols-2 gap-1.5 w-full">
             <button
               onClick={toggleLanguage}
-              className="flex items-center justify-center gap-1 bg-slate-900 hover:bg-slate-850 p-2 rounded text-[8px] font-black text-slate-300 hover:text-white transition-all cursor-pointer border border-slate-800"
+              className="w-full flex items-center justify-center gap-1 bg-slate-900 hover:bg-slate-850 p-2 rounded text-[8px] font-black text-slate-300 hover:text-white transition-all cursor-pointer border border-slate-800"
               title="Langue / لغة"
             >
               <Globe className="w-3.5 h-3.5 text-blue-400 shrink-0" />
@@ -870,11 +1073,11 @@ function AppContent() {
             </button>
             <button
               onClick={handleLogout}
-              className="flex items-center justify-center gap-1 bg-slate-900 hover:bg-rose-900/30 hover:text-rose-400 p-2 rounded text-[8px] font-black text-slate-400 transition-all cursor-pointer border border-slate-800"
-              title={t('logout')}
+              className="w-full flex items-center justify-center gap-1 bg-slate-900 hover:bg-rose-950/40 hover:text-rose-400 p-2 rounded text-[8px] font-black text-rose-500/80 transition-all cursor-pointer border border-slate-800"
+              title={language === 'ar' ? 'تسجيل الخروج' : 'Déconnexion'}
             >
               <LogOut className="w-3.5 h-3.5 shrink-0" />
-              <span>{language === 'ar' ? 'خروج' : 'Exit'}</span>
+              <span>{language === 'ar' ? 'خروج' : 'Déconnecter'}</span>
             </button>
           </div>
         </div>
@@ -912,6 +1115,20 @@ function AppContent() {
         </div>
 
         <div className="flex items-center gap-2">
+          {/* Mobile active user switch trigger */}
+          <button
+            onClick={() => {
+              setSelectedSwitchUser(null);
+              setSwitchPinInput('');
+              setSwitchPinError(false);
+              setShowUserSwitchModal(true);
+            }}
+            className="flex items-center gap-1.5 px-2 py-1 bg-slate-850 hover:bg-slate-800 rounded text-[10px] font-bold border border-slate-750 transition-colors"
+          >
+            <span>{activeUser?.avatar || '👤'}</span>
+            <span className="max-w-[70px] truncate text-slate-300 font-extrabold text-[8px]">{activeUser?.name}</span>
+          </button>
+
           {!isSystemFullyUpdated && (
             <button
               onClick={() => {
@@ -1006,17 +1223,18 @@ function AppContent() {
                 )}
               </button>
 
-              {/* Mobile Forced Theme Toggle */}
+              {/* Mobile Global Theme Toggle */}
               <button
                 onClick={() => {
                   setMobileMenuOpen(false);
-                  handleToggleForcedTheme();
+                  handleToggleGlobalTheme();
                 }}
+                id="theme-mode-toggle-mobile"
                 className="w-full flex items-center justify-center gap-2 py-2 px-3 rounded text-[11px] font-bold bg-slate-900 border border-slate-800 text-slate-300 hover:text-white hover:bg-slate-800/60 transition-all cursor-pointer select-none"
               >
-                {(forcedThemeMode || db?.settings?.themeMode || 'light') === 'dark' ? (
+                {(db?.settings?.themeMode || 'light') === 'dark' ? (
                   <>
-                    <Sun className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                    <Sun className="w-3.5 h-3.5 text-amber-500 shrink-0" />
                     <span>{language === 'ar' ? '☀️ مظهر فاتح' : '☀️ Mode Clair'}</span>
                   </>
                 ) : (
@@ -1027,13 +1245,19 @@ function AppContent() {
                 )}
               </button>
 
+              {/* Mobile Logout Button */}
               <button
-                onClick={handleLogout}
-                className="w-full bg-slate-900 hover:bg-rose-950/40 hover:text-rose-400 text-slate-400 py-2.5 rounded text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-2"
+                onClick={() => {
+                  setMobileMenuOpen(false);
+                  handleLogout();
+                }}
+                className="w-full flex items-center justify-center gap-2 py-2 px-3 rounded text-[11px] font-bold bg-rose-950/25 hover:bg-rose-900/35 border border-rose-900/20 text-rose-400 hover:text-rose-350 transition-all cursor-pointer select-none"
               >
-                <LogOut className="w-4 h-4" />
-                <span>{t('logout')}</span>
+                <LogOut className="w-3.5 h-3.5 shrink-0" />
+                <span>{language === 'ar' ? 'تسجيل الخروج' : 'Se Déconnecter'}</span>
               </button>
+
+
             </div>
           </aside>
         </div>
@@ -1125,6 +1349,21 @@ function AppContent() {
                 </>
               )}
             </div>
+
+            {/* Simple Header Logout button if logged in */}
+            {user && (
+              <button
+                type="button"
+                onClick={handleLogout}
+                className="py-1 px-2.5 bg-rose-50 hover:bg-rose-100/80 text-rose-700 border border-rose-200 hover:border-rose-300 rounded text-[10px] font-bold uppercase transition-all flex items-center gap-1.5 shrink-0 cursor-pointer shadow-3xs hover:shadow-2xs active:scale-95 animate-fade-in"
+                title={language === 'ar' ? 'تسجيل الخروج' : 'Déconnexion'}
+              >
+                <LogOut className="w-3.5 h-3.5 text-rose-600" />
+                <span>{language === 'ar' ? 'خروج' : 'Déconnecter'}</span>
+              </button>
+            )}
+
+
           </div>
         </header>
 
@@ -1200,6 +1439,7 @@ function AppContent() {
 
               {activeTab === 'dashboard' && <Dashboard db={db} onNavigate={(tab) => { setActiveTab(tab); }} onUpdateDb={handleUpdateDb} />}
               {activeTab === 'pos' && <POS db={db} onUpdateDb={handleUpdateDb} onNavigate={(tab) => { setActiveTab(tab); }} />}
+              {activeTab === 'telecom' && <TelecomRecharge db={db} onUpdateDb={handleUpdateDb} />}
               {activeTab === 'products' && <Products db={db} onUpdateDb={handleUpdateDb} />}
               {activeTab === 'partners' && <Partners db={db} onUpdateDb={handleUpdateDb} />}
               {activeTab === 'invoices' && <InvoicesList db={db} onUpdateDb={handleUpdateDb} />}
@@ -1309,7 +1549,21 @@ function AppContent() {
                 )}
               </div>
 
-              <div className="grid grid-cols-2 gap-2.5 pt-2">
+              {/* Imprimer Rapport Shift ticket */}
+              <div className="pt-1">
+                <button
+                  type="button"
+                  onClick={handlePrintCurrentShiftReport}
+                  className="w-full bg-indigo-650 hover:bg-indigo-700 text-white py-2 px-3 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-2 cursor-pointer shadow-xs border border-indigo-600/30 font-sans"
+                >
+                  <Printer className="w-4 h-4 shrink-0" />
+                  <span>
+                    {language === 'ar' ? 'طباعة تقرير المناوبة الحالية (Ticket)' : 'Imprimer Rapport Shift'}
+                  </span>
+                </button>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2.5 pt-1">
                 <button
                   type="button"
                   onClick={() => {
@@ -1795,6 +2049,26 @@ function AppContent() {
                   <div className="truncate text-[8.5px] mt-1 text-slate-500">Sujet: {emailAlertToast.subject}</div>
                 </div>
 
+                <button
+                  type="button"
+                  onClick={() => {
+                    const matchedProduct = db?.products?.find(p => p.name === emailAlertToast.productName || p.code === emailAlertToast.productCode);
+                    if (matchedProduct) {
+                      downloadPurchaseOrderPDF({
+                        products: [matchedProduct],
+                        settings: db?.settings,
+                        language,
+                      });
+                    }
+                  }}
+                  className="w-full mt-2 bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white font-sans text-[10px] font-bold py-1.5 px-2.5 rounded flex items-center justify-center gap-1 transition-all text-center cursor-pointer shadow-sm"
+                >
+                  <FileText className="w-3 h-3 shrink-0 text-white" />
+                  <span>
+                    {language === 'ar' ? 'تحميل أمر الشراء (PDF)' : 'Bon de Commande (PDF)'}
+                  </span>
+                </button>
+
               </div>
             </div>
             
@@ -1807,6 +2081,256 @@ function AppContent() {
               className="absolute bottom-0 left-0 h-0.5 bg-emerald-500"
             />
           </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* 👤 ACTIVE SESSION USER SWITCHER MODAL WITH SECURE KEYPAD */}
+      <AnimatePresence>
+        {showUserSwitchModal && (
+          <div className="fixed inset-0 z-55 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-xs no-print" style={{ zIndex: 9999 }}>
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="bg-white rounded-xl shadow-2xl border border-slate-205 w-full max-w-md overflow-hidden text-start font-sans"
+              dir={language === 'ar' ? 'rtl' : 'ltr'}
+            >
+              {/* Modal Header */}
+              <div className="bg-slate-900 text-white p-5 flex justify-between items-center border-b border-slate-800">
+                <div className="flex items-center gap-2">
+                  <span className="text-xl">👤</span>
+                  <div>
+                    <h3 className="text-sm font-black uppercase tracking-wide">
+                      {language === 'ar' ? 'تبديل جلسة المستخدم الحالي' : 'Changer de Session Agent'}
+                    </h3>
+                    <p className="text-[10px] text-slate-400 font-medium">
+                      {language === 'ar' ? 'اختر حسابك المخصص ثم أدخل الرمز السري 🔒' : 'Sélectionnez votre compte commercial puis validez le code secret 🔒'}
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowUserSwitchModal(false)}
+                  className="p-1 hover:bg-slate-800 text-slate-400 hover:text-white rounded transition-colors"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <div className="p-6 space-y-6">
+                {!selectedSwitchUser ? (
+                  /* STEP 1: Select agent */
+                  <div className="space-y-4">
+                    <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 block">
+                      {language === 'ar' ? 'اختر حساب المستخدم و الدور:' : 'CHOISISSEZ UN MEMBRE COMMERCIAL :'}
+                    </label>
+                    <div className="grid grid-cols-1 gap-3">
+                      {(db?.settings?.users || [
+                        { id: 'user-1', name: 'Administrateur', pin: '0000', role: 'admin', isActive: true, avatar: '👑' },
+                        { id: 'user-2', name: 'Agent de Vente', pin: '1111', role: 'sales', isActive: true, avatar: '💼' },
+                        { id: 'user-3', name: 'Agent de Stock', pin: '2222', role: 'inventory', isActive: true, avatar: '📦' }
+                      ]).filter((u: any) => u.isActive).map((u: any) => (
+                        <button
+                          key={u.id}
+                          type="button"
+                          onClick={() => {
+                            setSelectedSwitchUser(u);
+                            setSwitchPinInput('');
+                            setSwitchPinError(false);
+                          }}
+                          className="flex items-center justify-between p-3 rounded-lg border border-slate-200 hover:border-blue-500 hover:bg-blue-50/40 text-start group cursor-pointer transition-all w-full"
+                        >
+                          <div className="flex items-center gap-3">
+                            <span className="text-2xl">{u.avatar || '👤'}</span>
+                            <div>
+                              <div className="text-xs font-black text-slate-800 group-hover:text-blue-700">{u.name}</div>
+                              <div className="text-[9px] font-bold text-slate-400 capitalize tracking-wider mt-0.5">
+                                {u.role === 'admin' ? (language === 'ar' ? '👑 مدير النظام' : '👑 Administrateur') :
+                                 u.role === 'sales' ? (language === 'ar' ? '💼 موظف مبيعات' : '💼 Personnel ventes & caisse') :
+                                 (language === 'ar' ? '📦 مسؤول مخزن' : '📦 Gestionnaire des stocks')}
+                              </div>
+                            </div>
+                          </div>
+                          <span className="text-[10px] font-black uppercase text-blue-600 bg-blue-50 group-hover:bg-blue-100 px-2.5 py-1 rounded transition-colors shrink-0">
+                            {language === 'ar' ? 'دخول' : 'Choisir'}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ) : (
+                  /* STEP 2: Input PIN */
+                  <div className="space-y-4 font-sans">
+                    <div className="flex items-center gap-3 pb-3 border-b border-slate-150">
+                      <button
+                        type="button"
+                        onClick={() => setSelectedSwitchUser(null)}
+                        className="text-[10px] font-black text-blue-600 hover:underline uppercase shrink-0"
+                      >
+                        ← {language === 'ar' ? 'الرجوع للقائمة' : 'Retour'}
+                      </button>
+                      <div className="flex items-center gap-1.5 ml-auto text-end shrink-0">
+                        <span className="text-sm">{selectedSwitchUser.avatar || '👤'}</span>
+                        <span className="text-xs font-extrabold text-slate-800">{selectedSwitchUser.name}</span>
+                      </div>
+                    </div>
+
+                    <div className="text-center space-y-3">
+                      <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 block">
+                        {language === 'ar' ? 'أدخل الرمز السري الخاص بك (PIN):' : 'SAISISSEZ LE CODE PIN (4 CHIFFRES) :'}
+                      </label>
+                      <div className="flex justify-center gap-2" dir="ltr">
+                        {[0, 1, 2, 3].map((idx) => (
+                          <div
+                            key={idx}
+                            className={`w-10 h-11 border-2 rounded-lg flex items-center justify-center font-mono text-lg font-black transition-all ${
+                              switchPinError 
+                                ? 'border-rose-500 bg-rose-50 text-rose-600 animate-pulse' 
+                                : switchPinInput.length > idx 
+                                ? 'border-indigo-600 bg-indigo-50/50 text-indigo-700' 
+                                : 'border-slate-300'
+                            }`}
+                          >
+                            {switchPinInput.length > idx ? '●' : ''}
+                          </div>
+                        ))}
+                      </div>
+
+                      {switchPinError && (
+                        <p className="text-[10px] font-bold text-rose-500">
+                          ❌ {language === 'ar' ? 'الرمز السري خاطئ! حاول مجددا.' : 'Code PIN incorrect ! Réessayez.'}
+                        </p>
+                      )}
+
+                      {/* Numeric PIN Keypad */}
+                      <div className="grid grid-cols-3 gap-2 max-w-[210px] mx-auto pt-3" dir="ltr">
+                        {[1, 2, 3, 4, 5, 6, 7, 8, 9].map((val) => (
+                          <button
+                            key={val}
+                            type="button"
+                            onClick={() => {
+                              if (switchPinInput.length < 4) {
+                                const nextVal = switchPinInput + val;
+                                setSwitchPinInput(nextVal);
+                                setSwitchPinError(false);
+                                if (nextVal.length === 4) {
+                                  // Verify pin
+                                  if (nextVal === selectedSwitchUser.pin) {
+                                    setActiveUser(selectedSwitchUser);
+                                    safeLocalStorage.setItem('pos_active_user', JSON.stringify(selectedSwitchUser));
+                                    
+                                    // Custom redirect tab
+                                    if (selectedSwitchUser.role === 'sales') {
+                                      setActiveTab('pos');
+                                    } else if (selectedSwitchUser.role === 'inventory') {
+                                      setActiveTab('products');
+                                    } else {
+                                      setActiveTab('dashboard');
+                                    }
+
+                                    setShowUserSwitchModal(false);
+                                    
+                                    // Display toast
+                                    const welcomeMsg = language === 'ar'
+                                      ? `👋 أهلاً بك، تم تسجيل دخولك بنجاح كـ ${selectedSwitchUser.name}`
+                                      : `👋 Bienvenue, session active sous ${selectedSwitchUser.name} (${selectedSwitchUser.role.toUpperCase()})`;
+                                    
+                                    // Custom timeout toast
+                                    setTimeout(() => {
+                                      try {
+                                        const event = new CustomEvent('show-toast', {
+                                          detail: { message: welcomeMsg, type: 'success' }
+                                        });
+                                        window.dispatchEvent(event);
+                                      } catch(_) {}
+                                    }, 100);
+                                  } else {
+                                    setSwitchPinInput('');
+                                    setSwitchPinError(true);
+                                  }
+                                }
+                              }
+                            }}
+                            className="h-10 text-xs font-black text-slate-800 bg-slate-100 hover:bg-slate-200 active:scale-95 rounded-md flex items-center justify-center cursor-pointer transition-all border border-slate-200"
+                          >
+                            {val}
+                          </button>
+                        ))}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSwitchPinInput('');
+                            setSwitchPinError(false);
+                          }}
+                          className="h-10 text-[9px] font-extrabold text-rose-500 bg-rose-50 hover:bg-rose-100 active:scale-95 rounded-md flex items-center justify-center cursor-pointer transition-all border border-rose-150"
+                        >
+                          Clear
+                        </button>
+                        <button
+                          key={0}
+                          type="button"
+                          onClick={() => {
+                            if (switchPinInput.length < 4) {
+                              const nextVal = switchPinInput + '0';
+                              setSwitchPinInput(nextVal);
+                              setSwitchPinError(false);
+                              if (nextVal.length === 4) {
+                                if (nextVal === selectedSwitchUser.pin) {
+                                  setActiveUser(selectedSwitchUser);
+                                  safeLocalStorage.setItem('pos_active_user', JSON.stringify(selectedSwitchUser));
+                                  
+                                  if (selectedSwitchUser.role === 'sales') {
+                                    setActiveTab('pos');
+                                  } else if (selectedSwitchUser.role === 'inventory') {
+                                    setActiveTab('products');
+                                  } else {
+                                    setActiveTab('dashboard');
+                                  }
+
+                                  setShowUserSwitchModal(false);
+                                  const welcomeMsg = language === 'ar'
+                                    ? `👋 أهلاً بك، تم تسجيل دخولك بنجاح كـ ${selectedSwitchUser.name}`
+                                    : `👋 Bienvenue, session active sous ${selectedSwitchUser.name} (${selectedSwitchUser.role.toUpperCase()})`;
+                                  
+                                  setTimeout(() => {
+                                    try {
+                                      const event = new CustomEvent('show-toast', {
+                                        detail: { message: welcomeMsg, type: 'success' }
+                                      });
+                                      window.dispatchEvent(event);
+                                    } catch(_) {}
+                                  }, 100);
+                                } else {
+                                  setSwitchPinInput('');
+                                  setSwitchPinError(true);
+                                }
+                              }
+                            }
+                          }}
+                          className="h-10 text-xs font-black text-slate-800 bg-slate-100 hover:bg-slate-200 active:scale-95 rounded-md flex items-center justify-center cursor-pointer transition-all border border-slate-200"
+                        >
+                          0
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (switchPinInput.length > 0) {
+                              setSwitchPinInput(switchPinInput.slice(0, -1));
+                              setSwitchPinError(false);
+                            }
+                          }}
+                          className="h-10 text-xs text-slate-400 bg-slate-100 hover:bg-slate-200 active:scale-95 rounded-md flex items-center justify-center cursor-pointer transition-all border border-slate-200"
+                        >
+                          ⌫
+                        </button>
+                      </div>
+
+                    </div>
+                  </div>
+                )}
+              </div>
+            </motion.div>
+          </div>
         )}
       </AnimatePresence>
 

@@ -1,8 +1,9 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
+import { motion, AnimatePresence } from 'motion/react';
 import { DatabaseState, Product } from '../types';
 import { getProductVisual } from '../utils/db';
 import { useLanguage } from '../utils/LanguageContext';
-import { safeLocalStorage } from '../utils/storage';
+import { safeLocalStorage, checkIsIframe } from '../utils/storage';
 import { Html5Qrcode } from 'html5-qrcode';
 import { jsPDF } from 'jspdf';
 import { showToast } from '../utils/toast';
@@ -27,7 +28,8 @@ import {
   Barcode,
   Printer,
   FileText,
-  DollarSign
+  DollarSign,
+  History
 } from 'lucide-react';
 
 const COMMON_FOODS = [
@@ -55,6 +57,10 @@ export default function Products({ db, onUpdateDb }: ProductsProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('Tous');
   const [statusFilter, setStatusFilter] = useState<'all' | 'alert' | 'ok' | 'out'>('all');
+
+  // Pagination state
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 12; // Standard beautiful page limit
 
   // Form states (Add / Edit Modals)
   const [showFormModal, setShowFormModal] = useState(false);
@@ -84,6 +90,9 @@ export default function Products({ db, onUpdateDb }: ProductsProps) {
   const [editPriceProductId, setEditPriceProductId] = useState<string | null>(null);
   const [editPurchasePrice, setEditPurchasePrice] = useState<number>(0);
   const [editSellingPrice, setEditSellingPrice] = useState<number>(0);
+
+  // Price history modal state
+  const [historyProduct, setHistoryProduct] = useState<Product | null>(null);
 
   // 🏷️ Barcode Print states
   const [showBarcodeModal, setShowBarcodeModal] = useState(false);
@@ -238,10 +247,31 @@ export default function Products({ db, onUpdateDb }: ProductsProps) {
 
     const updatedProducts = db.products.map(p => {
       if (p.id === editPriceProductId) {
+        const oldSelling = p.sellingPrice;
+        const oldPurchase = p.purchasePrice;
+        const newSelling = Number(editSellingPrice);
+        const newPurchase = Number(editPurchasePrice);
+
+        let currentHistory = p.priceHistory || [];
+        if (oldSelling !== newSelling || oldPurchase !== newPurchase) {
+          currentHistory = [
+            {
+              id: `log-${Date.now()}`,
+              timestamp: new Date().toISOString(),
+              oldSellingPrice: oldSelling,
+              newSellingPrice: newSelling,
+              oldPurchasePrice: oldPurchase,
+              newPurchasePrice: newPurchase,
+            },
+            ...currentHistory
+          ];
+        }
+
         return {
           ...p,
-          purchasePrice: Number(editPurchasePrice),
-          sellingPrice: Number(editSellingPrice)
+          purchasePrice: newPurchase,
+          sellingPrice: newSelling,
+          priceHistory: currentHistory
         };
       }
       return p;
@@ -270,6 +300,14 @@ export default function Products({ db, onUpdateDb }: ProductsProps) {
       return matchSearch && matchCategory && matchStatus;
     });
   }, [db.products, searchQuery, categoryFilter, statusFilter]);
+
+  const totalPages = Math.ceil(filteredProducts.length / itemsPerPage);
+  const startIndex = (currentPage - 1) * itemsPerPage;
+  const endIndex = startIndex + itemsPerPage;
+
+  const paginatedProducts = useMemo(() => {
+    return filteredProducts.slice(startIndex, endIndex);
+  }, [filteredProducts, startIndex, endIndex]);
 
   // Open modal for new creation
   const handleOpenCreate = () => {
@@ -304,7 +342,7 @@ export default function Products({ db, onUpdateDb }: ProductsProps) {
     setMinAlertQty(prod.minAlertQty);
     setUnit(prod.unit);
     setImage(prod.image || '');
-    setExpiryDate((prod as any).expiryDate || '');
+    setExpiryDate(prod.dateExpiration || prod.expiryDate || '');
     setWeightVolume((prod as any).weightVolume || '');
     setIsFoodProduct(!!(prod as any).isFoodProduct);
     setTvaRate(prod.tvaRate !== undefined ? prod.tvaRate : 19);
@@ -324,22 +362,44 @@ export default function Products({ db, onUpdateDb }: ProductsProps) {
       // Edit mode
       updatedProducts = updatedProducts.map(p => {
         if (p.id === editingProduct.id) {
+          const oldSelling = p.sellingPrice;
+          const oldPurchase = p.purchasePrice;
+          const newSelling = Number(sellingPrice);
+          const newPurchase = Number(purchasePrice);
+
+          let currentHistory = p.priceHistory || [];
+          if (oldSelling !== newSelling || oldPurchase !== newPurchase) {
+            currentHistory = [
+              {
+                id: `log-${Date.now()}`,
+                timestamp: new Date().toISOString(),
+                oldSellingPrice: oldSelling,
+                newSellingPrice: newSelling,
+                oldPurchasePrice: oldPurchase,
+                newPurchasePrice: newPurchase,
+              },
+              ...currentHistory
+            ];
+          }
+
           return {
             ...p,
             code: code.trim() || `ref-${Date.now()}`,
             name: name.trim(),
             category: category.trim() || 'Divers',
-            purchasePrice: Number(purchasePrice),
-            sellingPrice: Number(sellingPrice),
+            purchasePrice: newPurchase,
+            sellingPrice: newSelling,
             stock: Number(stock),
             minAlertQty: Number(minAlertQty),
             unit,
             image: image.trim() || undefined,
-            expiryDate: isFoodProduct ? expiryDate : undefined,
+            expiryDate: expiryDate ? expiryDate : undefined,
+            dateExpiration: expiryDate ? expiryDate : undefined,
             weightVolume: isFoodProduct ? weightVolume : undefined,
             isFoodProduct: isFoodProduct,
             emailAlertsEnabled: emailAlertsEnabled,
-            tvaRate: Number(tvaRate)
+            tvaRate: Number(tvaRate),
+            priceHistory: currentHistory
           };
         }
         return p;
@@ -357,12 +417,21 @@ export default function Products({ db, onUpdateDb }: ProductsProps) {
         minAlertQty: Number(minAlertQty),
         unit,
         image: image.trim() || undefined,
-        expiryDate: isFoodProduct ? expiryDate : undefined,
+        expiryDate: expiryDate ? expiryDate : undefined,
+        dateExpiration: expiryDate ? expiryDate : undefined,
         weightVolume: isFoodProduct ? weightVolume : undefined,
         isFoodProduct: isFoodProduct,
         emailAlertsEnabled: emailAlertsEnabled,
-        tvaRate: Number(tvaRate)
-      } as any;
+        tvaRate: Number(tvaRate),
+        priceHistory: [{
+          id: `log-${Date.now()}`,
+          timestamp: new Date().toISOString(),
+          oldSellingPrice: 0,
+          newSellingPrice: Number(sellingPrice),
+          oldPurchasePrice: 0,
+          newPurchasePrice: Number(purchasePrice)
+        }]
+      };
       updatedProducts.unshift(newProd);
     }
 
@@ -811,7 +880,7 @@ export default function Products({ db, onUpdateDb }: ProductsProps) {
               type="text"
               placeholder="Chercher par nom ou code-barres..."
               value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
+              onChange={(e) => { setSearchQuery(e.target.value); setCurrentPage(1); }}
               onClick={(e) => { e.currentTarget.focus(); }}
               onTouchStart={(e) => { e.currentTarget.focus(); }}
               className="w-full pl-9 pr-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded focus:outline-hidden focus:border-blue-500 focus:bg-white transition-all font-mono"
@@ -820,7 +889,7 @@ export default function Products({ db, onUpdateDb }: ProductsProps) {
 
           <select
             value={categoryFilter}
-            onChange={(e) => setCategoryFilter(e.target.value)}
+            onChange={(e) => { setCategoryFilter(e.target.value); setCurrentPage(1); }}
             className="bg-slate-50 border border-slate-200 text-xs py-2 px-3 rounded focus:outline-hidden"
           >
             <option value="Tous">📁 Catégorie : Toutes</option>
@@ -833,7 +902,7 @@ export default function Products({ db, onUpdateDb }: ProductsProps) {
         {/* Status filter toggles */}
         <div className="flex space-x-1.5 self-stretch sm:self-auto overflow-x-auto pb-1 md:pb-0">
           <button
-            onClick={() => setStatusFilter('all')}
+            onClick={() => { setStatusFilter('all'); setCurrentPage(1); }}
             className={`px-3 py-1.5 rounded text-xs font-bold transition-all shrink-0 cursor-pointer ${
               statusFilter === 'all' ? 'bg-blue-600 text-white' : 'bg-slate-50 text-slate-600 hover:bg-slate-100'
             }`}
@@ -841,7 +910,7 @@ export default function Products({ db, onUpdateDb }: ProductsProps) {
             Tout ({db.products.length})
           </button>
           <button
-            onClick={() => setStatusFilter('ok')}
+            onClick={() => { setStatusFilter('ok'); setCurrentPage(1); }}
             className={`px-3 py-1.5 rounded text-xs font-bold transition-all shrink-0 cursor-pointer ${
               statusFilter === 'ok' ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' : 'bg-slate-50 text-slate-600 hover:bg-slate-100'
             }`}
@@ -849,7 +918,7 @@ export default function Products({ db, onUpdateDb }: ProductsProps) {
             Suffisant ({db.products.filter(p => p.stock > p.minAlertQty).length})
           </button>
           <button
-            onClick={() => setStatusFilter('alert')}
+            onClick={() => { setStatusFilter('alert'); setCurrentPage(1); }}
             className={`px-3 py-1.5 rounded text-xs font-bold transition-all shrink-0 cursor-pointer ${
               statusFilter === 'alert' ? 'bg-amber-50 text-amber-700 border border-amber-100' : 'bg-slate-50 text-slate-600 hover:bg-slate-100'
             }`}
@@ -857,7 +926,7 @@ export default function Products({ db, onUpdateDb }: ProductsProps) {
             Niveaux Bas ({db.products.filter(p => p.stock <= p.minAlertQty && p.stock > 0).length})
           </button>
           <button
-            onClick={() => setStatusFilter('out')}
+            onClick={() => { setStatusFilter('out'); setCurrentPage(1); }}
             className={`px-3 py-1.5 rounded text-xs font-bold transition-all shrink-0 cursor-pointer ${
               statusFilter === 'out' ? 'bg-rose-50 text-rose-700 border border-rose-100' : 'bg-slate-50 text-slate-600 hover:bg-slate-100'
             }`}
@@ -890,7 +959,7 @@ export default function Products({ db, onUpdateDb }: ProductsProps) {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {filteredProducts.map(prod => {
+                {paginatedProducts.map(prod => {
                   const profit = prod.sellingPrice - prod.purchasePrice;
                   const marginPercent = prod.purchasePrice > 0 ? (profit / prod.purchasePrice) * 100 : 0;
                   const isLow = prod.stock <= prod.minAlertQty && prod.stock > 0;
@@ -923,9 +992,9 @@ export default function Products({ db, onUpdateDb }: ProductsProps) {
                                   ⚖️ {(prod as any).weightVolume}
                                 </span>
                               )}
-                              {(prod as any).isFoodProduct && (prod as any).expiryDate && (
-                                <span className="bg-rose-105/50 text-rose-805 border border-rose-200 text-[8.5px] font-black uppercase px-1 rounded flex items-center gap-0.5 shrink-0">
-                                  📅 EXP: {(prod as any).expiryDate}
+                              {(prod.expiryDate || prod.dateExpiration) && (
+                                <span className="bg-rose-100 text-rose-800 border border-rose-200 text-[8.5px] font-black uppercase px-1 rounded flex items-center gap-0.5 shrink-0">
+                                  📅 EXP: {prod.dateExpiration || prod.expiryDate}
                                 </span>
                               )}
                             </div>
@@ -1010,6 +1079,13 @@ export default function Products({ db, onUpdateDb }: ProductsProps) {
                             <Barcode className="w-3.5 h-3.5" />
                           </button>
                           <button
+                            onClick={() => setHistoryProduct(prod)}
+                            className="p-1.5 bg-slate-100 hover:bg-indigo-50 hover:text-indigo-650 text-indigo-500 rounded text-slate-500 transition-colors cursor-pointer flex items-center justify-center"
+                            title={language === 'ar' ? 'سجل تغير الأسعار' : 'Historique des prix'}
+                          >
+                            <History className="w-3.5 h-3.5" />
+                          </button>
+                          <button
                             onClick={() => {
                               setEditPriceProductId(prod.id);
                               setEditPurchasePrice(prod.purchasePrice);
@@ -1041,6 +1117,48 @@ export default function Products({ db, onUpdateDb }: ProductsProps) {
                 })}
               </tbody>
             </table>
+
+            {/* Pagination Controls bar */}
+            {totalPages > 1 && (
+              <div className="p-4 border-t border-slate-205 bg-slate-50 flex flex-col sm:flex-row items-center justify-between gap-4 font-sans text-xs font-semibold text-slate-600 no-print">
+                <div>
+                  {language === 'ar' ? (
+                    <span>عرض {startIndex + 1} إلى {Math.min(endIndex, filteredProducts.length)} من {filteredProducts.length} منتج</span>
+                  ) : (
+                    <span>Affichage de {startIndex + 1} à {Math.min(endIndex, filteredProducts.length)} sur {filteredProducts.length} articles</span>
+                  )}
+                </div>
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <button
+                    onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                    disabled={currentPage === 1}
+                    className="px-3 py-1.5 rounded border border-slate-200 bg-white hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed select-none font-bold"
+                  >
+                    {language === 'ar' ? 'السابق' : 'Précédent'}
+                  </button>
+                  {Array.from({ length: totalPages }, (_, i) => i + 1).map(page => (
+                    <button
+                      key={page}
+                      onClick={() => setCurrentPage(page)}
+                      className={`px-3 py-1.5 rounded border font-bold select-none transition-colors ${
+                        currentPage === page
+                          ? 'bg-blue-600 border-blue-600 text-white'
+                          : 'border-slate-200 bg-white hover:bg-slate-50 text-slate-700'
+                      }`}
+                    >
+                      {page}
+                    </button>
+                  ))}
+                  <button
+                    onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                    disabled={currentPage === totalPages}
+                    className="px-3 py-1.5 rounded border border-slate-200 bg-white hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed select-none font-bold"
+                  >
+                    {language === 'ar' ? 'التالي' : 'Suivant'}
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -1307,8 +1425,37 @@ export default function Products({ db, onUpdateDb }: ProductsProps) {
                 </div>
               )}
 
-              {/* Food-specific details toggle block */}
-              <div className="bg-amber-50/30 p-3 rounded border border-amber-100/70 space-y-2 no-print">
+              {/* Date d'expiration - General Field */}
+              <div className="bg-rose-50/20 p-3.5 rounded-xl border border-rose-100/70 space-y-2 no-print">
+                <div className="flex items-start gap-2">
+                  <span className="text-sm">📅</span>
+                  <div>
+                    <span className="text-xs font-bold text-slate-800 block">
+                      {language === 'ar' ? 'تاريخ انتهاء الصلاحية' : "Date d'expiration / Péremption"}
+                    </span>
+                    <span className="text-[10px] text-slate-550 block">
+                      {language === 'ar' ? 'قم بتحديد تاريخ لتلقي تنبيهات تلقائية بانتهاء الصلاحية على لوحة التحكم.' : 'Indiquez une date pour déclencher automatiquement des alertes visuelles sur le tableau de bord.'}
+                    </span>
+                  </div>
+                </div>
+                <div className="pt-1.5 border-t border-rose-100/60 flex flex-col sm:flex-row items-center gap-3">
+                  <div className="w-full">
+                    <label htmlFor="dateExpirationInput" className="text-[9.5px] font-bold text-rose-900 block mb-1 uppercase tracking-wider">
+                      {language === 'ar' ? 'تحديد التاريخ (الملء اختياري)' : "Date limite de conservation / péremption (Facultatif)"}
+                    </label>
+                    <input
+                      type="date"
+                      id="dateExpirationInput"
+                      value={expiryDate}
+                      onChange={(e) => setExpiryDate(e.target.value)}
+                      className="w-full max-w-xs bg-white border border-rose-200/80 rounded py-1.5 px-3 focus:outline-hidden text-slate-800 font-bold font-mono transition-shadow focus:ring-1 focus:ring-rose-450"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Food-specific net details toggle block */}
+              <div className="bg-amber-50/20 p-3 rounded-lg border border-amber-100/50 space-y-2 no-print">
                 <label className="flex items-center gap-2 cursor-pointer select-none">
                   <input
                     type="checkbox"
@@ -1317,22 +1464,13 @@ export default function Products({ db, onUpdateDb }: ProductsProps) {
                     className="rounded border-slate-300 text-amber-600 focus:ring-amber-500 w-4.5 h-4.5 cursor-pointer"
                   />
                   <div>
-                    <span className="text-xs font-bold text-amber-950 block">🏷️ Ce produit est un produit alimentaire</span>
-                    <span className="text-[9.5px] text-slate-500 block">Permet d'ajouter une date d'expiration (DLC) et un poids net/volume.</span>
+                    <span className="text-xs font-bold text-amber-955 block">🍩 Ce produit est un produit alimentaire</span>
+                    <span className="text-[9.5px] text-slate-500 block">Permet d'ajouter des indications de contenance spécifique (poids net / volume).</span>
                   </div>
                 </label>
 
                 {isFoodProduct && (
-                  <div className="grid grid-cols-2 gap-4 pt-1.5 border-t border-amber-100/60 animate-fadeIn">
-                    <div>
-                      <label className="text-[10px] font-bold text-amber-900 block mb-1">📅 Date Limite de Consommation (DLC)</label>
-                      <input
-                        type="date"
-                        value={expiryDate}
-                        onChange={(e) => setExpiryDate(e.target.value)}
-                        className="w-full bg-white border border-amber-200/80 rounded py-1 px-2.5 focus:outline-hidden text-slate-800 font-bold font-mono"
-                      />
-                    </div>
+                  <div className="pt-2 border-t border-amber-100/60 animate-fadeIn">
                     <div>
                       <label className="text-[10px] font-bold text-amber-900 block mb-1">⚖️ Poids Net / Volume (Contenance)</label>
                       <input
@@ -1633,13 +1771,13 @@ export default function Products({ db, onUpdateDb }: ProductsProps) {
                   <button
                     type="button"
                     onClick={() => setEditPriceProductId(null)}
-                    className="px-4 py-2 bg-slate-50 border border-slate-200 text-slate-600 rounded text-xs font-bold cursor-pointer hover:bg-slate-100"
+                    className="px-4 py-2 bg-slate-50 border border-slate-200 text-slate-600 rounded text-xs font-bold cursor-pointer hover:bg-slate-100 font-sans"
                   >
                     {language === 'ar' ? 'إلغاء' : 'Annuler'}
                   </button>
                   <button
                     type="submit"
-                    className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded text-xs font-bold cursor-pointer transition-all shadow-xs"
+                    className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded text-xs font-bold cursor-pointer transition-all shadow-xs font-sans"
                   >
                     {language === 'ar' ? 'تحديث السعر' : 'Mettre à jour'}
                   </button>
@@ -1651,77 +1789,93 @@ export default function Products({ db, onUpdateDb }: ProductsProps) {
       })()}
 
       {/* DETAILED DELETE CONFIRMATION MODAL */}
-      {deleteProductId && (() => {
-        const product = db.products.find(p => p.id === deleteProductId);
-        if (!product) return null;
-        
-        return (
-          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md flex items-center justify-center p-3 md:p-4 z-50 overflow-y-auto">
-            <div className="bg-white rounded-2xl max-w-md w-full p-5 md:p-6 shadow-2xl space-y-4 border border-slate-200 text-start my-auto">
-              <div className="flex items-start gap-3">
-                <div className="p-2 bg-rose-50 rounded-full text-rose-600 shrink-0 animate-bounce">
-                  <AlertTriangle className="w-5 h-5" />
+      <AnimatePresence>
+        {deleteProductId && (() => {
+          const product = db.products.find(p => p.id === deleteProductId);
+          if (!product) return null;
+          
+          return (
+            <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-3 md:p-4 z-55 overflow-y-auto no-print" style={{ zIndex: 99999 }}>
+              <motion.div
+                initial={{ opacity: 0, scale: 0.95, y: 15 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.95, y: 15 }}
+                transition={{ duration: 0.15 }}
+                className="bg-white rounded-2xl max-w-md w-full p-5 md:p-6 shadow-2xl space-y-4 border border-rose-100 text-start my-auto relative font-sans"
+              >
+                {/* Visual warning background pattern */}
+                <div className="absolute top-0 right-0 w-32 h-32 bg-rose-50/40 rounded-full blur-3xl pointer-events-none"></div>
+                
+                <div className="flex items-start gap-3 relative">
+                  <div className="p-2.5 bg-rose-50 rounded-full text-rose-600 shrink-0">
+                    <AlertTriangle className="w-5 h-5 animate-pulse" />
+                  </div>
+                  <div className="space-y-1">
+                    <h3 className="text-base font-black text-rose-900 font-display">
+                      {language === 'ar' ? '⚠️ تنبيه: تأكيد حذف منتج' : '⚠️ ALERTE : Confirmer la suppression'}
+                    </h3>
+                    <p className="text-xs text-rose-700 font-bold font-sans">
+                      {language === 'ar' 
+                        ? 'تنبيه هام جداً: هذا الإجراء سيؤثر على التاريخ المحاسبي للمبيعات.' 
+                        : "Attention critique : la suppression définitive de cet article affectera vos archives."}
+                    </p>
+                  </div>
                 </div>
-                <div className="space-y-1">
-                  <h3 className="text-base font-bold text-slate-900">
-                    {language === 'ar' ? 'تأكيد حذف المنتج' : 'Confirmer la suppression'}
-                  </h3>
-                  <p className="text-xs text-rose-605 font-semibold">
-                    {language === 'ar' 
-                      ? '⚠️ انتبه: قد يؤدي حذف المنتج إلى تلف سجل الفواتير والمبيعات المرتبطة به.' 
-                      : "⚠️ Attention : la suppression de ce produit peut corrompre l'historique de vos factures si celui-ci a déjà été vendu."}
+
+                <div className="p-4 bg-slate-50 border border-slate-150 rounded-xl text-xs space-y-2.5 font-sans relative">
+                  <div className="flex justify-between items-center gap-2">
+                    <span className="text-slate-550 font-bold">{language === 'ar' ? 'اسم المنتج:' : 'Désignation :'}</span>
+                    <span className="font-extrabold text-slate-900 truncate max-w-[220px] bg-slate-200/50 px-2 py-0.5 rounded">{product.name}</span>
+                  </div>
+                  {product.code && (
+                    <div className="flex justify-between items-center gap-2">
+                      <span className="text-slate-550 font-bold">{language === 'ar' ? 'رمز الباركود / SKU:' : 'Code-barres / SKU :'}</span>
+                      <span className="font-mono text-slate-800 font-extrabold bg-blue-50 text-blue-800 px-1.5 py-0.5 rounded leading-none">{product.code}</span>
+                    </div>
+                  )}
+                  <div className="flex justify-between items-center gap-2">
+                    <span className="text-slate-550 font-bold">{language === 'ar' ? 'المخزون الحالي:' : 'Stock Actuel :'}</span>
+                    <span className="font-extrabold px-1.5 py-0.5 bg-slate-200/60 rounded text-slate-900">{product.stock} {product.unit}</span>
+                  </div>
+                  <div className="flex justify-between items-center gap-2">
+                    <span className="text-slate-550 font-bold">{language === 'ar' ? 'سعر البيع:' : 'Prix de vente :'}</span>
+                    <span className="font-bold text-slate-950 font-mono">{formatCurrency(product.sellingPrice)}</span>
+                  </div>
+                </div>
+
+                <div className="bg-rose-50 border border-rose-150 rounded-lg p-3 text-[10.5px] text-rose-950 leading-relaxed space-y-1 font-sans">
+                  <strong className="block font-black uppercase text-[10px] tracking-wide text-rose-900">
+                    📢 {language === 'ar' ? 'تبعات الحذف :' : 'IMPACT DE LA DELETION :'}
+                  </strong>
+                  <p>
+                    {language === 'ar'
+                      ? 'سيؤدي حذف هذا المنتج إلى إزالته كلياً من القوائم النشطة ونقاط البيع. السجلات المالية والمبيعات السابقة قد تفقد دقتها.'
+                      : 'La suppression déréférence cet article des rayons de vente. Les statistiques de ventes passées et l\'historique comptable des factures n\'afficheront plus son libellé.'}
                   </p>
                 </div>
-              </div>
 
-              <div className="p-4 bg-slate-50 border border-slate-150 rounded text-xs space-y-2">
-                <div className="flex justify-between items-center gap-2">
-                  <span className="text-slate-500">{language === 'ar' ? 'اسم المنتج:' : 'Désignation :'}</span>
-                  <span className="font-bold text-slate-900 truncate max-w-[200px]">{product.name}</span>
+                <div className="flex justify-end space-x-3 pt-3 border-t border-slate-100 font-sans">
+                  <button
+                    type="button"
+                    onClick={() => setDeleteProductId(null)}
+                    className="px-4 py-2 bg-slate-100 hover:bg-slate-200 border border-slate-250 text-slate-700 rounded-lg text-xs font-bold cursor-pointer transition-colors"
+                  >
+                    {language === 'ar' ? 'إلغاء' : 'Annuler'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={confirmDeleteProduct}
+                    className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-xs font-black cursor-pointer shadow-sm hover:shadow-md transition-all flex items-center gap-1.5"
+                  >
+                    <Trash2 className="w-3.5 h-3.5 shrink-0" />
+                    <span>{language === 'ar' ? 'نعم، احذف المنتج نهائياً' : 'Oui, Supprimer Définitivement'}</span>
+                  </button>
                 </div>
-                {product.code && (
-                  <div className="flex justify-between items-center gap-2">
-                    <span className="text-slate-500">{language === 'ar' ? 'رمز الباركود / SKU:' : 'Code-barres / SKU :'}</span>
-                    <span className="font-mono text-slate-800 font-semibold">{product.code}</span>
-                  </div>
-                )}
-                <div className="flex justify-between items-center gap-2">
-                  <span className="text-slate-500">{language === 'ar' ? 'المخزون الحالي:' : 'Stock Actuel :'}</span>
-                  <span className="font-bold text-slate-900">{product.stock} {product.unit}</span>
-                </div>
-                <div className="flex justify-between items-center gap-2">
-                  <span className="text-slate-500">{language === 'ar' ? 'سعر البيع:' : 'Prix de vente :'}</span>
-                  <span className="font-bold text-slate-900 font-mono">{formatCurrency(product.sellingPrice)}</span>
-                </div>
-              </div>
-
-              <p className="text-[11px] text-slate-500 leading-relaxed font-sans">
-                {language === 'ar'
-                  ? 'هل أنت متأكد من رغبتك في حذف هذا المنتج نهائياً من قاعدة البيانات والتطبيق؟'
-                  : 'Êtes-vous certain de vouloir retirer définitivement cet article de votre catalogue ? Cette opération est irréversible.'}
-              </p>
-
-              <div className="flex justify-end space-x-3 pt-3 border-t border-slate-100 font-sans">
-                <button
-                  type="button"
-                  onClick={() => setDeleteProductId(null)}
-                  className="px-4 py-2 bg-slate-50 border border-slate-200 text-slate-600 rounded text-xs font-bold cursor-pointer hover:bg-slate-100"
-                >
-                  {language === 'ar' ? 'إلغاء' : 'Annuler'}
-                </button>
-                <button
-                  type="button"
-                  onClick={confirmDeleteProduct}
-                  className="px-4 py-2 bg-rose-600 text-white rounded text-xs font-bold cursor-pointer hover:bg-rose-700 shadow-xs flex items-center gap-1.5"
-                >
-                  <Trash2 className="w-3.5 h-3.5" />
-                  <span>{language === 'ar' ? 'نعم، احذف المنتج' : 'Oui, Supprimer'}</span>
-                </button>
-              </div>
+              </motion.div>
             </div>
-          </div>
-        );
-      })()}
+          );
+        })()}
+      </AnimatePresence>
 
       {/* 🏷️ INTUITIVE DUAL-MODE BARCODE & STICKER PRINTER MODAL */}
       {showBarcodeModal && selectedBarcodeProduct && (() => {
@@ -1785,7 +1939,7 @@ export default function Products({ db, onUpdateDb }: ProductsProps) {
           try {
             const printContent = document.getElementById('print-barcode-area');
             const portal = document.getElementById('print-portal');
-            const isIframe = window.self !== window.top;
+            const isIframe = checkIsIframe();
 
             if (printContent && portal) {
               portal.innerHTML = `
@@ -2096,6 +2250,153 @@ export default function Products({ db, onUpdateDb }: ProductsProps) {
               </div>
             </div>
 
+          </div>
+        );
+      })()}
+
+      {/* PRICE HISTORY DIALOG MODAL */}
+      {historyProduct && (() => {
+        const historyLogs = historyProduct.priceHistory || [];
+
+        return (
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md flex items-center justify-center p-3 md:p-4 z-50 overflow-y-auto">
+            <div className="bg-white rounded-2xl max-w-lg w-full p-5 md:p-6 shadow-2xl border border-slate-200 text-start my-auto space-y-4">
+              <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                <h3 className="text-base font-bold text-slate-900 flex items-center gap-1.5 font-sans">
+                  <History className="w-5 h-5 text-indigo-505 animate-pulse" />
+                  <span>{language === 'ar' ? 'سجل أسعار المنتج' : 'Historique des prix du produit'}</span>
+                </h3>
+                <button 
+                  type="button" 
+                  onClick={() => setHistoryProduct(null)} 
+                  className="text-slate-400 hover:text-slate-600 cursor-pointer p-1 rounded-full hover:bg-slate-100 transition-colors"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              {/* Product Info Summary Box */}
+              <div className="p-3 bg-indigo-50/50 border border-indigo-100/60 rounded-xl flex items-center gap-3">
+                <div className="w-9 h-9 rounded bg-indigo-100 border border-indigo-200/50 text-indigo-750 flex items-center justify-center overflow-hidden shrink-0">
+                  <span className="text-xl">🏷️</span>
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="font-bold text-slate-900 text-sm truncate">{historyProduct.name}</p>
+                  <p className="font-mono text-[10px] text-slate-500 mt-0.5">Code: {historyProduct.code}</p>
+                </div>
+                <div className="text-right">
+                  <span className="text-[10px] text-slate-400 block uppercase font-bold tracking-wider">{language === 'ar' ? 'السعر الحالي' : 'Prix Actuel'}</span>
+                  <span className="font-mono text-xs font-bold text-indigo-700">{formatCurrency(historyProduct.sellingPrice)}</span>
+                </div>
+              </div>
+
+              {/* Logs Timeline */}
+              <div className="max-h-[320px] overflow-y-auto pr-1 space-y-3 scrollbar-thin">
+                {historyLogs.length === 0 ? (
+                  <div className="text-center py-8 text-slate-450 text-xs">
+                    <p className="font-bold">📅 {language === 'ar' ? 'لا يوجد سجل أسعار مدون بعد' : 'Aucun historique de prix pour le moment'}</p>
+                    <p className="text-[10px] mt-1 text-slate-400">{language === 'ar' ? 'سيتغير هذا السجل عند أي تعديل أو تحديث للأسعار.' : 'Les changements de prix futurs y seront inscrits.'}</p>
+                  </div>
+                ) : (
+                  <div className="relative border-l-2 border-slate-150 pl-4 ml-2.5 space-y-4">
+                    {historyLogs.map((log) => {
+                      const isInitial = log.oldSellingPrice === 0 && log.oldPurchasePrice === 0;
+                      
+                      // Calculate percentage changes
+                      const sellDiff = log.newSellingPrice - log.oldSellingPrice;
+                      const sellPct = log.oldSellingPrice > 0 ? (sellDiff / log.oldSellingPrice) * 100 : 0;
+                      
+                      const purchaseDiff = log.newPurchasePrice - log.oldPurchasePrice;
+                      const purchasePct = log.oldPurchasePrice > 0 ? (purchaseDiff / log.oldPurchasePrice) * 100 : 0;
+
+                      // Format timestamp
+                      const formattedDate = (() => {
+                        try {
+                          const d = new Date(log.timestamp);
+                          return d.toLocaleDateString(language === 'ar' ? 'ar-TN' : 'fr-FR', {
+                            day: 'numeric',
+                            month: 'short',
+                            year: 'numeric',
+                            hour: '2-digit',
+                            minute: '2-digit'
+                          });
+                        } catch {
+                          return log.timestamp;
+                        }
+                      })();
+
+                      return (
+                        <div key={log.id} className="relative">
+                          {/* Timeline dot marker */}
+                          <span className={`absolute -left-[21px] top-1 w-2.5 h-2.5 rounded-full border-2 bg-white transition-colors ${isInitial ? 'border-emerald-500 bg-emerald-550' : 'border-indigo-500'}`} />
+
+                          <div className="bg-slate-50/50 border border-slate-150/60 rounded-xl p-3 hover:bg-slate-50 transition-colors">
+                            <div className="flex items-center justify-between gap-2 border-b border-dashed border-slate-150 pb-1.5 mb-2">
+                              <span className="font-mono text-[9px] font-bold text-slate-400 uppercase">{formattedDate}</span>
+                              <span className={`text-[9px] font-black uppercase px-2 py-0.5 rounded-full ${isInitial ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' : 'bg-slate-100 text-slate-600'}`}>
+                                {isInitial 
+                                  ? (language === 'ar' ? 'إنشاء سلعة' : 'Création') 
+                                  : (language === 'ar' ? 'تعديل أسعار' : 'Modification')}
+                              </span>
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-4">
+                              {/* Purchase Price comparison */}
+                              <div className="space-y-0.5">
+                                <span className="text-[10px] text-slate-400 block">{language === 'ar' ? 'سعر الشراء' : "Prix d'achat"}</span>
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                  {!isInitial && (
+                                    <>
+                                      <span className="font-mono text-[10.5px] text-slate-500 line-through">{formatCurrency(log.oldPurchasePrice)}</span>
+                                      <span className="text-slate-400 font-bold">➔</span>
+                                    </>
+                                  )}
+                                  <span className="font-mono text-xs font-bold text-slate-800">{formatCurrency(log.newPurchasePrice)}</span>
+                                  {!isInitial && purchaseDiff !== 0 && (
+                                    <span className={`text-[8.5px] font-bold ${purchaseDiff > 0 ? 'text-rose-600' : 'text-emerald-605'}`}>
+                                      {purchaseDiff > 0 ? '▲' : '▼'} {Math.abs(purchasePct).toFixed(0)}%
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+
+                              {/* Selling Price comparison */}
+                              <div className="space-y-0.5">
+                                <span className="text-[10px] text-slate-400 block">{language === 'ar' ? 'سعر البيع' : "Prix de vente"}</span>
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                  {!isInitial && (
+                                    <>
+                                      <span className="font-mono text-[10.5px] text-slate-505 line-through">{formatCurrency(log.oldSellingPrice)}</span>
+                                      <span className="text-slate-400 font-bold">➔</span>
+                                    </>
+                                  )}
+                                  <span className="font-sans text-xs font-extrabold text-slate-900">{formatCurrency(log.newSellingPrice)}</span>
+                                  {!isInitial && sellDiff !== 0 && (
+                                    <span className={`text-[8.5px] font-bold ${sellDiff > 0 ? 'text-amber-600' : 'text-emerald-600'}`}>
+                                      {sellDiff > 0 ? '▲' : '▼'} {Math.abs(sellPct).toFixed(0)}%
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              <div className="flex justify-end pt-2 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setHistoryProduct(null)}
+                  className="px-4 py-2 bg-slate-900 border border-slate-800 text-white rounded-xl text-xs font-bold cursor-pointer hover:bg-slate-800 transition-all shadow-xs"
+                >
+                  {language === 'ar' ? 'إغلاق' : 'Fermer'}
+                </button>
+              </div>
+            </div>
           </div>
         );
       })()}

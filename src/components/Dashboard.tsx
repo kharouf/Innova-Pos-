@@ -4,6 +4,7 @@ import { DatabaseState, Product, DailyExpense } from '../types';
 import { getStockStatus, getTurnoverAndBenefits, getFinancialBalances, checkLowStockAlerts } from '../utils/db';
 import { useLanguage } from '../utils/LanguageContext';
 import { safeLocalStorage } from '../utils/storage';
+import { downloadPurchaseOrderPDF } from '../utils/pdfGenerator';
 import { 
   ResponsiveContainer, 
   AreaChart, 
@@ -41,7 +42,8 @@ import {
   Trash2,
   Settings,
   Clock,
-  Hourglass
+  Hourglass,
+  FileText
 } from 'lucide-react';
 
 interface DashboardProps {
@@ -53,6 +55,11 @@ interface DashboardProps {
 export default function Dashboard({ db, onNavigate, onUpdateDb }: DashboardProps) {
   const { language, t, formatCurrency } = useLanguage();
   const [showNotificationDetails, setShowNotificationDetails] = useState(false);
+  const [showExpirationDetails, setShowExpirationDetails] = useState(false);
+
+  // States for automatic supplier purchase order PDF generation
+  const [showOrderModal, setShowOrderModal] = useState(false);
+  const [orderSupplierId, setOrderSupplierId] = useState('');
 
   // 1. Business Profile Settings State
   const [isEditingSettings, setIsEditingSettings] = useState(false);
@@ -82,7 +89,7 @@ export default function Dashboard({ db, onNavigate, onUpdateDb }: DashboardProps
 
   // 4. Toast Feedback State & Helper
   const [toastMessage, setToastMessage] = useState<string | null>(null);
-  const [chartTab, setChartTab] = useState<'evolution' | 'dailyProfit' | 'compare'>('evolution');
+  const [chartTab, setChartTab] = useState<'evolution' | 'dailyProfit' | 'compare' | 'monthlyBenefits'>('evolution');
 
   // Date Range Filters for Dashboard trends
   const [dateFilter, setDateFilter] = useState<'7days' | 'thisMonth' | 'thisYear' | 'custom'>('7days');
@@ -94,7 +101,7 @@ export default function Dashboard({ db, onNavigate, onUpdateDb }: DashboardProps
   const [customEndDate, setCustomEndDate] = useState<string>(() => {
     return new Date().toISOString().split('T')[0];
   });
-  const showToast = (msg: string) => {
+  const showToast = (msg: string, type?: 'success' | 'error' | 'info') => {
     setToastMessage(msg);
     setTimeout(() => {
       setToastMessage(null);
@@ -179,7 +186,7 @@ export default function Dashboard({ db, onNavigate, onUpdateDb }: DashboardProps
     if (!onUpdateDb) return;
     const amount = parseFloat(expenseAmount);
     if (!expenseDesc.trim() || isNaN(amount) || amount <= 0) {
-      alert(language === 'ar' ? 'الرجاء إدخال تفاصيل ومبلغ صحيح!' : 'Veuillez saisir une description et un montant valide !');
+      showToast(language === 'ar' ? 'الرجاء إدخال تفاصيل ومبلغ صحيح!' : 'Veuillez saisir une description et un montant valide !', 'error');
       return;
     }
 
@@ -458,23 +465,47 @@ export default function Dashboard({ db, onNavigate, onUpdateDb }: DashboardProps
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     
-    const inSevenDays = new Date();
-    inSevenDays.setDate(today.getDate() + 7);
-    inSevenDays.setHours(23, 59, 59, 999);
+    const alertDays = db.settings?.expiryAlertDays || 7;
+    const inAlertWindow = new Date();
+    inAlertWindow.setDate(today.getDate() + alertDays);
+    inAlertWindow.setHours(23, 59, 59, 999);
 
     const filtered = db.products.filter(prod => {
-      if (!prod.isFoodProduct || !prod.expiryDate) return false;
-      const expDate = new Date(prod.expiryDate);
+      const expDateStr = prod.dateExpiration || prod.expiryDate;
+      if (!expDateStr) return false;
+      const expDate = new Date(expDateStr);
       if (isNaN(expDate.getTime())) return false;
-      return expDate <= inSevenDays;
+      return expDate <= inAlertWindow;
     });
 
     return [...filtered].sort((a, b) => {
-      const dateA = new Date(a.expiryDate!).getTime();
-      const dateB = new Date(b.expiryDate!).getTime();
+      const expAStr = a.dateExpiration || a.expiryDate || '';
+      const expBStr = b.dateExpiration || b.expiryDate || '';
+      const dateA = new Date(expAStr).getTime();
+      const dateB = new Date(expBStr).getTime();
       return dateA - dateB;
     });
-  }, [db.products]);
+  }, [db.products, db.settings?.expiryAlertDays]);
+
+  const { expiredCount, nearExpiryCount } = React.useMemo(() => {
+    let expired = 0;
+    let near = 0;
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    expiringFoodProducts.forEach(p => {
+      const expDateStr = p.dateExpiration || p.expiryDate || '';
+      const expDate = new Date(expDateStr);
+      expDate.setHours(0, 0, 0, 0);
+      if (expDate < today) {
+        expired++;
+      } else {
+        near++;
+      }
+    });
+
+    return { expiredCount: expired, nearExpiryCount: near };
+  }, [expiringFoodProducts]);
 
   const getRemainingDays = (expiryStr: string) => {
     const today = new Date();
@@ -660,6 +691,65 @@ export default function Dashboard({ db, onNavigate, onUpdateDb }: DashboardProps
     count: db.products.filter(p => p.category === cat).length
   })).sort((a, b) => b.count - a.count);
 
+  // Calculation of monthly revenue list vs expenses for the trailing 12 months
+  const monthlyCompareData = React.useMemo(() => {
+    const today = new Date();
+    const result = [];
+    
+    const monthsAr = ['جانفي', 'فيفري', 'مارس', 'أفريل', 'ماي', 'جوان', 'جويلية', 'أوت', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر'];
+    const monthsFr = ['Jan', 'Fév', 'Mar', 'Avr', 'Mai', 'Juin', 'Juil', 'Août', 'Sept', 'Oct', 'Nov', 'Déc'];
+
+    for (let i = 11; i >= 0; i--) {
+      const d = new Date(today.getFullYear(), today.getMonth() - i, 1);
+      const year = d.getFullYear();
+      const monthIndex = d.getMonth();
+
+      // Filter invoices for this specific year and month
+      const monthInvoices = db.invoices.filter(inv => {
+        const invDate = new Date(inv.date);
+        return invDate.getFullYear() === year && invDate.getMonth() === monthIndex;
+      });
+
+      // Filter expenses for this specific year and month
+      const monthExpenses = db.expenses.filter(exp => {
+        const expDate = new Date(exp.date);
+        return expDate.getFullYear() === year && expDate.getMonth() === monthIndex;
+      });
+
+      // Calculate Revenue
+      const revenue = monthInvoices.reduce((sum, inv) => sum + (inv.total || 0), 0);
+
+      // Calculate COGS
+      const cogs = monthInvoices.reduce((sum, inv) => {
+        let invCogs = 0;
+        (inv.items || []).forEach(it => {
+          invCogs += (it.qty || 0) * (it.purchasePrice || 0);
+        });
+        return sum + invCogs;
+      }, 0);
+
+      // Expenses
+      const expenses = monthExpenses.reduce((sum, exp) => sum + (exp.amount || 0), 0);
+
+      // Net profit
+      const netProfit = revenue - cogs - expenses;
+
+      const labelName = language === 'ar' ? monthsAr[monthIndex] : monthsFr[monthIndex];
+      const label = language === 'ar' ? `${labelName} ${year}` : `${labelName} ${String(year).slice(-2)}`;
+
+      result.push({
+        key: `${year}-${String(monthIndex + 1).padStart(2, '0')}`,
+        label,
+        year,
+        revenue: parseFloat(revenue.toFixed(3)),
+        expenses: parseFloat(expenses.toFixed(3)),
+        cogs: parseFloat(cogs.toFixed(3)),
+        netProfit: parseFloat(netProfit.toFixed(3))
+      });
+    }
+    return result;
+  }, [db.invoices, db.expenses, language]);
+
   return (
     <div className="space-y-6" dir={language === 'ar' ? 'rtl' : 'ltr'}>
       {/* Header Banner */}
@@ -808,6 +898,124 @@ export default function Dashboard({ db, onNavigate, onUpdateDb }: DashboardProps
           </div>
         )}
       </div>
+
+      {/* ⚠️ VISUAL EXPIRATION WARNING ALERTS BANNER */}
+      {expiringFoodProducts.length > 0 && (
+        <div className={`p-4 rounded border transition-all shadow-xs duration-200 no-print ${
+          expiredCount > 0 
+            ? 'bg-rose-50/90 border-rose-250 text-rose-950 font-sans' 
+            : 'bg-amber-50/90 border-amber-250 text-amber-955 font-sans'
+        }`}>
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div className="flex items-start gap-3">
+              <div className={`p-2 rounded shrink-0 ${
+                expiredCount > 0 ? 'bg-rose-200/85 text-rose-700' : 'bg-amber-200/80 text-amber-700'
+              }`}>
+                <Hourglass className={`w-5 h-5 ${expiredCount > 0 ? 'animate-pulse text-rose-600' : 'text-amber-600'}`} />
+              </div>
+              <div className="text-start">
+                <h3 className="text-xs font-bold uppercase tracking-wider mb-0.5 flex items-center gap-1.5 flex-wrap">
+                  <span>{language === 'ar' ? 'تنبيهات تواريخ الصلاحية والانتهاء' : 'Alertes de Dates d\'Expiration & Péremption'}</span>
+                  {expiredCount > 0 && (
+                    <span className="text-[9.5px] bg-rose-700 text-white font-mono px-2 py-0.5 rounded bg-rose-600 font-bold animate-pulse">
+                      {expiredCount} {language === 'ar' ? 'منتهي الصلاحية ⛔' : 'Périmé(s) ⛔'}
+                    </span>
+                  )}
+                  {nearExpiryCount > 0 && (
+                    <span className="text-[9.5px] bg-amber-650 text-white font-mono px-2 py-0.5 rounded bg-amber-600 font-bold">
+                      {nearExpiryCount} {language === 'ar' ? 'قريب الانتهاء ⏳' : 'Proche(s) d\'expiration ⏳'}
+                    </span>
+                  )}
+                </h3>
+                <p className="text-xs font-medium leading-relaxed">
+                  {language === 'ar' ? (
+                    expiredCount > 0 
+                      ? `⚠️ انتباه: لديك ${expiredCount} منتجات منتهية الصلاحية بالمستودع! يرجى سحبها فورًا لتفادي الإشكاليات.`
+                      : `⚠️ انتباه: لديك سلع تقترب من تاريخ انتهاء صلاحيتها في أقل من ${db.settings?.expiryAlertDays || 7} أيام.`
+                  ) : (
+                    expiredCount > 0 
+                      ? `⚠️ Attention: Vous avez ${expiredCount} article(s) déjà périmé(s) en stock ! Veuillez les retirer de la vente immédiatement.`
+                      : `⚠️ Attention: Certains articles (${nearExpiryCount}) approchent de leur date d'expiration dans les prochains ${db.settings?.expiryAlertDays || 7} jours.`
+                  )}
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2.5 self-end md:self-center shrink-0">
+              <button
+                type="button"
+                onClick={() => setShowExpirationDetails(!showExpirationDetails)}
+                className={`px-2.5 py-1.5 border rounded text-xs font-bold transition-colors flex items-center gap-1 cursor-pointer font-sans ${
+                  expiredCount > 0 
+                    ? 'hover:bg-rose-100/50 border-rose-200 text-rose-900 bg-white/70 shadow-3xs' 
+                    : 'hover:bg-amber-100/50 border-amber-200 text-amber-900 bg-white/70 shadow-3xs'
+                }`}
+              >
+                {showExpirationDetails ? (
+                  <>
+                    <span>{language === 'ar' ? 'إخفاء التفاصيل' : 'Masquer'}</span>
+                    <ChevronUp className="w-3.5 h-3.5" />
+                  </>
+                ) : (
+                  <>
+                    <span>{language === 'ar' ? 'عرض المنتجات المعنية' : 'Découvrir la liste'}</span>
+                    <ChevronDown className="w-3.5 h-3.5" />
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+
+          {/* Expandable critical details inside Expiration block */}
+          {showExpirationDetails && (
+            <div className="mt-4 pt-4 border-t border-slate-200/60 space-y-2 max-h-56 overflow-y-auto custom-scrollbar animate-fadeIn">
+              <span className="text-[10px] font-bold text-slate-500 uppercase block tracking-wider font-mono">
+                {language === 'ar' ? 'قائمة المنتجات المعنية بتواريخ الصلاحية :' : "LISTE DES ARTICLES EN PÉREMPTION & EXPIRED :"}
+              </span>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
+                {expiringFoodProducts.map(p => {
+                  const daysLeft = getRemainingDays(p.dateExpiration || p.expiryDate || '');
+                  const isExpired = daysLeft < 0;
+                  return (
+                    <div key={p.id} className={`p-2.5 bg-white rounded border flex items-center justify-between text-xs transition-all hover:shadow-2xs group relative ${
+                      isExpired ? 'border-rose-200 hover:border-rose-300 text-rose-950' : 'border-amber-200 hover:border-amber-300 text-slate-800'
+                    }`}>
+                      <div className="min-w-0 pr-2 text-start">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <p className="font-bold text-slate-900 truncate">{p.name}</p>
+                          <button
+                            type="button"
+                            onClick={() => handleStartEditProduct(p)}
+                            className="p-1 hover:bg-slate-100 rounded text-slate-705 cursor-pointer transition-colors"
+                            title={language === 'ar' ? 'تعديل الصنف' : 'Ajuster rapidement'}
+                          >
+                            <Edit2 className="w-3 h-3" />
+                          </button>
+                        </div>
+                        <p className="text-[9px] text-slate-400 font-mono mt-0.5">{p.category} | Réf: {p.code}</p>
+                      </div>
+                      <div className="shrink-0 text-end flex flex-col items-end">
+                        <span className={`px-2 py-0.5 rounded text-[9.5px] font-bold block ${
+                          isExpired ? 'bg-rose-100 text-rose-700 border border-rose-200' : 'bg-amber-100 text-amber-700 border border-amber-200'
+                        }`}>
+                          {daysLeft < 0 
+                            ? (language === 'ar' ? `منتهي (${Math.abs(daysLeft)} يوم)` : `Périmé (${Math.abs(daysLeft)}j)`) 
+                            : (daysLeft === 0 
+                                ? (language === 'ar' ? 'اليوم!' : 'Aujourd\'hui !') 
+                                : (language === 'ar' ? `خلال ${daysLeft} يوم` : `Dans ${daysLeft}j`))}
+                        </span>
+                        <span className="text-[8.5px] text-slate-450 font-mono mt-1 font-bold">
+                          📅 {p.dateExpiration || p.expiryDate}
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* ACTIVE SHIFT LIVE MONITOR & SPARKLINE */}
       <div className="bg-slate-50 border border-slate-200 p-5 rounded-lg mb-6 relative overflow-hidden font-sans no-print">
@@ -1204,6 +1412,8 @@ export default function Dashboard({ db, onNavigate, onUpdateDb }: DashboardProps
                 ? (language === 'ar' ? 'تحليل المبيعات وصافي الأرباح التراكمية' : 'Courbes des performances (Ventes vs Profit)')
                 : chartTab === 'dailyProfit'
                 ? (language === 'ar' ? 'أرباح السلع والبيع اليومية (المبيعات - التكلفة)' : 'Bénéfice Net Quotidien (Ventes - Coût d\'Achat)')
+                : chartTab === 'monthlyBenefits'
+                ? (language === 'ar' ? 'مقارنة المداخيل والمصاريف وصافي الأرباح شهرياً' : 'Comparaison mensuelle des revenus, dépenses et bénéfices')
                 : (language === 'ar' ? 'التوزيع المالي لبنود الميزانية' : 'Bilan synthétique global')}
             </span>
             <div className="flex bg-slate-100 p-1 rounded-lg border border-slate-200 gap-1 select-none flex-wrap">
@@ -1228,6 +1438,17 @@ export default function Dashboard({ db, onNavigate, onUpdateDb }: DashboardProps
                 }`}
               >
                 {language === 'ar' ? '💵 أرباح البيع' : 'Profit Quotidien (💵)'}
+              </button>
+              <button
+                type="button"
+                onClick={() => setChartTab('monthlyBenefits')}
+                className={`px-3 py-1 text-[10px] font-bold rounded-md cursor-pointer transition-all ${
+                  chartTab === 'monthlyBenefits'
+                    ? 'bg-slate-900 text-white shadow-xs scale-102'
+                    : 'text-slate-500 hover:text-slate-800 hover:bg-slate-200/50'
+                }`}
+              >
+                {language === 'ar' ? '📅 الأرباح الشهرية' : 'Bénéfices Mensuels (📅)'}
               </button>
               <button
                 type="button"
@@ -1402,6 +1623,104 @@ export default function Dashboard({ db, onNavigate, onUpdateDb }: DashboardProps
                 </AreaChart>
               </ResponsiveContainer>
             </div>
+          ) : chartTab === 'monthlyBenefits' ? (
+            /* Grouped Bar Chart comparing revenues, expenses and net profit monthly */
+            <div className="h-60 w-full bg-slate-900 rounded-xl p-4 flex flex-col justify-between border border-slate-855 shadow-xs relative" dir="ltr">
+              <div className="absolute top-2 right-3 flex flex-wrap items-center gap-3 z-10 bg-slate-900/80 px-2 py-0.5 rounded backdrop-blur-xs">
+                <span className="flex items-center gap-1">
+                  <span className="w-2.5 h-2.5 rounded bg-emerald-500" />
+                  <span className="text-[8px] font-bold text-slate-400 tracking-wider font-mono uppercase">
+                    {language === 'ar' ? 'المداخيل (الإيرادات)' : 'Revenus'}
+                  </span>
+                </span>
+                <span className="flex items-center gap-1">
+                  <span className="w-2.5 h-2.5 rounded bg-rose-500" />
+                  <span className="text-[8px] font-bold text-slate-400 tracking-wider font-mono uppercase">
+                    {language === 'ar' ? 'المصاريف' : 'Dépenses'}
+                  </span>
+                </span>
+                <span className="flex items-center gap-1">
+                  <span className="w-2.5 h-2.5 rounded bg-blue-500 animate-pulse" />
+                  <span className="text-[8px] font-bold text-slate-400 tracking-wider font-mono uppercase">
+                    {language === 'ar' ? 'صافي الربح' : 'Bénéfice Net'}
+                  </span>
+                </span>
+              </div>
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart
+                  data={monthlyCompareData}
+                  margin={{ top: 25, right: 10, left: -25, bottom: -5 }}
+                >
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#1e293b" />
+                  <XAxis 
+                    dataKey="label" 
+                    stroke="#64748b" 
+                    fontSize={9} 
+                    tickLine={false} 
+                    axisLine={false}
+                    dy={6}
+                  />
+                  <YAxis 
+                    stroke="#64748b" 
+                    fontSize={9} 
+                    tickLine={false} 
+                    axisLine={false}
+                    tickFormatter={(val) => `${val.toFixed(1)}`}
+                  />
+                  <Tooltip
+                    content={({ active, payload }: any) => {
+                      if (active && payload && payload.length) {
+                        const data = payload[0].payload;
+                        return (
+                          <div className="bg-slate-950 border border-slate-850 p-2.5 text-[10px] text-start font-mono leading-relaxed text-slate-200 rounded shadow-2xl">
+                            <p className="text-slate-400 font-sans font-bold mb-1 border-b border-slate-850 pb-1">
+                              {data.label}
+                            </p>
+                            <p className="text-emerald-400 font-semibold text-xs">
+                              {language === 'ar' ? 'الإيرادات: ' : 'Revenus: '}
+                              {formatCurrency(data.revenue)}
+                            </p>
+                            <p className="text-rose-400 font-semibold text-xs">
+                              {language === 'ar' ? 'المصاريف: ' : 'Dépenses: '}
+                              {formatCurrency(data.expenses)}
+                            </p>
+                            <p className="text-amber-400 font-semibold text-xs">
+                              {language === 'ar' ? 'تكلفة السلع: ' : 'Coût d\'Achat des Articles: '}
+                              {formatCurrency(data.cogs)}
+                            </p>
+                            <div className="border-t border-slate-850 mt-1 pt-1">
+                              <p className={`font-black text-xs ${data.netProfit >= 0 ? 'text-blue-400' : 'text-rose-500'}`}>
+                                {language === 'ar' ? 'صافي الربح: ' : 'Bénéfice Net: '}
+                                {formatCurrency(data.netProfit)}
+                              </p>
+                            </div>
+                          </div>
+                        );
+                      }
+                      return null;
+                    }}
+                  />
+                  <Bar 
+                    dataKey="revenue" 
+                    fill="#10b981" 
+                    radius={[3, 3, 0, 0]} 
+                    maxBarSize={15}
+                  />
+                  <Bar 
+                    dataKey="expenses" 
+                    fill="#f43f5e" 
+                    radius={[3, 3, 0, 0]} 
+                    maxBarSize={15}
+                  />
+                  <Bar 
+                    dataKey="netProfit" 
+                    fill="#3b82f6" 
+                    radius={[3, 3, 0, 0]} 
+                    maxBarSize={15}
+                  />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
           ) : (
             /* Simple Visual Bar charts layout using the selected period's stats */
             <div className="h-44 sm:h-48 w-full bg-slate-900 rounded p-4 flex flex-col justify-between border border-slate-800">
@@ -1533,6 +1852,19 @@ export default function Dashboard({ db, onNavigate, onUpdateDb }: DashboardProps
                   )}
                 </div>
               )}
+
+              {alertProducts.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setShowOrderModal(true)}
+                  className="w-full mt-4 bg-slate-900 border border-slate-800 hover:bg-slate-800 text-white font-sans text-[11px] font-bold py-2.5 px-3 rounded flex items-center justify-center gap-1.5 transition-all text-center cursor-pointer shadow-sm active:scale-[0.98]"
+                >
+                  <FileText className="w-3.5 h-3.5 shrink-0 text-slate-300" />
+                  <span>
+                    {language === 'ar' ? 'إنشاء طلب شراء للمزود (PDF)' : 'Bon de Commande Fournisseur (PDF)'}
+                  </span>
+                </button>
+              )}
             </div>
 
             <div className="pt-4 border-t border-slate-100 space-y-1.5 font-sans">
@@ -1651,13 +1983,13 @@ export default function Dashboard({ db, onNavigate, onUpdateDb }: DashboardProps
 
             <div className="pt-4 border-t border-slate-100 space-y-1 text-slate-400 text-[10px] font-sans">
               <p className="flex justify-between">
-                <span>{language === 'ar' ? 'إجمالي المنتجات الغذائية:' : 'Total produits alimentaires :'}</span>
+                <span>{language === 'ar' ? 'إجمالي المواد المراقبة بالصلاحية :' : 'Total articles suivis en péremption :'}</span>
                 <span className="font-bold text-slate-700 font-mono">
-                  {db.products.filter(p => p.isFoodProduct).length}
+                  {db.products.filter(p => p.dateExpiration || p.expiryDate).length}
                 </span>
               </p>
               <p className="flex justify-between">
-                <span>{language === 'ar' ? 'منتجات منتهية وسارية التنبيه:' : 'Total en alerte active (<7j) :'}</span>
+                <span>{language === 'ar' ? 'تنبيهات نشطة حالياً :' : 'Total en alerte active :'}</span>
                 <span className="font-bold text-rose-600 font-mono">
                   {expiringFoodProducts.length}
                 </span>
@@ -2407,6 +2739,125 @@ export default function Dashboard({ db, onNavigate, onUpdateDb }: DashboardProps
               >
                 <Save className="w-3.5 h-3.5" />
                 <span>{language === 'ar' ? 'تعديل وحفظ البيانات' : 'Appliquer l\'ajustement'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Automatic Supplier Purchase Order PDF Generator */}
+      {showOrderModal && (
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/60 backdrop-blur-md flex items-center justify-center p-3 md:p-4">
+          <div className="bg-white border text-start border-slate-100 rounded-2xl max-w-lg w-full p-5 md:p-6 space-y-4 shadow-2xl my-auto animate-fadeIn" dir={language === 'ar' ? 'rtl' : 'ltr'}>
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <h3 className="text-sm font-bold uppercase tracking-wider text-slate-900 flex items-center gap-1.5 font-display">
+                <FileText className="w-4 h-4 text-slate-700" />
+                <span>
+                  {language === 'ar' ? 'إعداد وثيقة طلب الشراء للمزود' : 'Créer un Bon de Commande Fournisseur'}
+                </span>
+              </h3>
+              <button
+                type="button"
+                onClick={() => setShowOrderModal(false)}
+                className="p-1 text-slate-400 hover:text-slate-600 rounded cursor-pointer transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <p className="text-[11px] text-slate-550 leading-normal font-medium">
+                {language === 'ar' 
+                  ? `سيقوم النظام تلقائياً بتضمين كل المنتجات (${alertProducts.length}) التي بلغت أو انخفضت عن حد التنبيه لطلبها وتأمين المخزون.` 
+                  : `Le système va générer automatiquement un bon de commande d'approvisionnement incluant les ${alertProducts.length} produit(s) actuellement en alerte stock critique.`}
+              </p>
+
+              {/* Supplier Selection */}
+              <div>
+                <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">
+                  {language === 'ar' ? 'اختر المزود المستهدف (اختياري) :' : 'Sélectionner le Fournisseur Partenaire :'}
+                </label>
+                
+                {db.partners?.filter(p => p.type === 'fournisseur').length === 0 ? (
+                  <div className="p-2.5 bg-slate-50 rounded border border-slate-200 text-[10.5px] text-slate-450 font-medium">
+                    {language === 'ar' 
+                      ? '⚠️ لا يوجد مزودين مسجلين في النظام حالياً. سيتم إصدار الوثيقة لمزود افتراضي.' 
+                      : '⚠️ Aucun fournisseur enregistré. Le bon de commande sera émis à un destinataire générique.'}
+                  </div>
+                ) : (
+                  <select
+                    value={orderSupplierId}
+                    onChange={(e) => setOrderSupplierId(e.target.value)}
+                    className="w-full text-xs font-semibold border border-slate-250 p-2.5 rounded bg-slate-100 focus:bg-white focus:outline-hidden focus:border-slate-400 transition-colors text-slate-800"
+                  >
+                    <option value="">
+                      -- {language === 'ar' ? 'مزود عام (افتراضي)' : 'Fournisseur Principal d\'Approvisionnement'} --
+                    </option>
+                    {db.partners
+                      ?.filter(p => p.type === 'fournisseur')
+                      .map(vendor => (
+                        <option key={vendor.id} value={vendor.id}>
+                          🏢 {vendor.name} ({vendor.phone || 'Pas de tél'})
+                        </option>
+                      ))}
+                  </select>
+                )}
+              </div>
+
+              {/* Quick Preview list of items being ordered */}
+              <div className="space-y-1.5">
+                <span className="text-[10px] font-bold text-slate-500 uppercase block tracking-wider font-mono">
+                  {language === 'ar' ? 'قائمة المواد المطلوبة وقيمها التقريبية :' : 'ARTICLES INCLUS DANS LA COMMANDE :'}
+                </span>
+                
+                <div className="max-h-40 overflow-y-auto border border-slate-150 rounded custom-scrollbar p-1.5 space-y-1.5 bg-slate-50/50">
+                  {alertProducts.map(prod => {
+                    const orderQty = Math.max(10, (prod.minAlertQty * 2) - prod.stock);
+                    const costEst = orderQty * prod.purchasePrice;
+                    return (
+                      <div key={prod.id} className="text-[11px] flex justify-between items-center bg-white p-1.5 rounded border border-slate-100">
+                        <div className="min-w-0 pr-1 text-start">
+                          <p className="font-bold text-slate-800 truncate text-[11.5px]">{prod.name}</p>
+                          <span className="text-[9px] text-slate-450 font-mono">Stock actuel : {prod.stock} / Seuil : {prod.minAlertQty}</span>
+                        </div>
+                        <div className="text-end shrink-0 font-mono">
+                          <span className="font-black text-blue-600 font-sans block">Qté : {orderQty} {prod.unit}</span>
+                          <span className="text-[9px] text-slate-450">Est : {formatCurrency(costEst)}</span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2.5 pt-3.5 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setShowOrderModal(false)}
+                className="py-2 px-4 rounded border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-bold transition-colors cursor-pointer"
+              >
+                {language === 'ar' ? 'إلغاء' : 'Fermer'}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const selectedVendor = db.partners?.find(p => p.id === orderSupplierId);
+                  downloadPurchaseOrderPDF({
+                    products: alertProducts,
+                    partner: selectedVendor,
+                    settings: db.settings,
+                    language,
+                    formatCurrency
+                  });
+                  setShowOrderModal(false);
+                }}
+                className="py-2 px-5 rounded bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer shadow-3xs"
+              >
+                <FileText className="w-3.5 h-3.5" />
+                <span>
+                  {language === 'ar' ? 'تصدير وتحميل PDF' : 'Générer & Télécharger PDF'}
+                </span>
               </button>
             </div>
           </div>

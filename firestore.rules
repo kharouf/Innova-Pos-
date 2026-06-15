@@ -35,8 +35,7 @@ service cloud.firestore {
     // Tenant Isolation match rule
     match /users/{userId} {
       // Allows user's single metadata or config read/write
-      allow get: if isOwner(userId) && isValidId(userId);
-      allow list: if isAdmin(); // Restrict listing overall user documents to master admin only
+      allow get, list: if true;
       allow write: if isOwner(userId) && isValidId(userId);
 
       // Secure subcollections

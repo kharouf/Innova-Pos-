@@ -51,3 +51,15 @@ export const safeLocalStorage = {
     }
   }
 };
+
+// Robust function to check if the app is embedded in an iframe (e.g. AI Studio preview)
+// Safe from cross-domain / cross-origin SecurityErrors by trapping standard compare exceptions
+export function checkIsIframe(): boolean {
+  try {
+    if (typeof window === 'undefined') return false;
+    return window.self !== window.top;
+  } catch (e) {
+    return true; // SecurityException indicates a cross-origin iframe environment
+  }
+}
+

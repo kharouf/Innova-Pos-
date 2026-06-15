@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { DatabaseState, Invoice } from '../types';
 import { useLanguage } from '../utils/LanguageContext';
+import { showToast } from '../utils/toast';
 import { 
   FileText, 
   Search, 
@@ -15,6 +16,7 @@ import {
   Download
 } from 'lucide-react';
 import { downloadInvoicePDF } from '../utils/pdfGenerator';
+import { checkIsIframe } from '../utils/storage';
 
 interface InvoicesListProps {
   db: DatabaseState;
@@ -27,6 +29,10 @@ export default function InvoicesList({ db, onUpdateDb }: InvoicesListProps) {
   const [typeFilter, setTypeFilter] = useState<'all' | 'facture' | 'bl' | 'return'>('all');
   const [statusFilter, setStatusFilter] = useState<'all' | 'paid' | 'unpaid'>('all');
 
+  // Pagination state
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 8; // Neat items count per page
+
   // Preview / Settle state
   const [selectedInvoice, setSelectedInvoice] = useState<Invoice | null>(null);
   const [paymentInput, setPaymentInput] = useState<string>('');
@@ -35,7 +41,7 @@ export default function InvoicesList({ db, onUpdateDb }: InvoicesListProps) {
   );
 
   const filteredInvoices = useMemo(() => {
-    return db.invoices.filter(inv => {
+    return (db.invoices || []).filter(inv => {
       const matchSearch = inv.number.toLowerCase().includes(searchQuery.toLowerCase()) || 
                           inv.partnerName.toLowerCase().includes(searchQuery.toLowerCase());
       
@@ -52,13 +58,21 @@ export default function InvoicesList({ db, onUpdateDb }: InvoicesListProps) {
     });
   }, [db.invoices, searchQuery, typeFilter, statusFilter]);
 
+  const totalPages = Math.ceil(filteredInvoices.length / itemsPerPage);
+  const startIndex = (currentPage - 1) * itemsPerPage;
+  const endIndex = startIndex + itemsPerPage;
+  
+  const paginatedInvoices = useMemo(() => {
+    return filteredInvoices.slice(startIndex, endIndex);
+  }, [filteredInvoices, startIndex, endIndex]);
+
   // Settle outstanding invoice balance remaining
   const handleSettleInvoiceBalance = (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedInvoice) return;
     const amountToPay = Number(paymentInput);
     if (isNaN(amountToPay) || amountToPay <= 0 || amountToPay > selectedInvoice.balance) {
-      alert("⚠️ Saisie invalide. Le montant doit être supérieur à 0 et inférieur ou égal au solde restant.");
+      showToast("⚠️ Saisie invalide. Le montant doit être supérieur à 0 et inférieur ou égal au solde restant.", 'error');
       return;
     }
 
@@ -66,7 +80,7 @@ export default function InvoicesList({ db, onUpdateDb }: InvoicesListProps) {
     const updatedPaid = selectedInvoice.paidAmount + amountToPay;
 
     // 1. Update the Invoice record directly
-    const updatedInvoices = db.invoices.map(inv => {
+    const updatedInvoices = (db.invoices || []).map(inv => {
       if (inv.id === selectedInvoice.id) {
         return {
           ...inv,
@@ -78,7 +92,7 @@ export default function InvoicesList({ db, onUpdateDb }: InvoicesListProps) {
     });
 
     // 2. Adjust partner/customer debits if invoice is bound to client
-    const updatedPartners = db.partners.map(p => {
+    const updatedPartners = (db.partners || []).map(p => {
       if (p.id === selectedInvoice.partnerId) {
         return {
           ...p,
@@ -105,12 +119,12 @@ export default function InvoicesList({ db, onUpdateDb }: InvoicesListProps) {
       ...db,
       invoices: updatedInvoices,
       partners: updatedPartners,
-      payments: [newPayment, ...db.payments]
+      payments: [newPayment, ...(db.payments || [])]
     });
 
     setSelectedInvoice(null);
     setPaymentInput('');
-    alert("✅ Le paiement partiel a été appliqué avec succès !");
+    showToast("✅ Le paiement partiel a été appliqué avec succès !", 'success');
   };
 
   const handlePrint = () => {
@@ -118,11 +132,16 @@ export default function InvoicesList({ db, onUpdateDb }: InvoicesListProps) {
       const printFormatToUse = printFormat;
       const printContent = document.getElementById('print-area');
       const portal = document.getElementById('print-portal');
-      const isIframe = window.self !== window.top;
+      const isIframe = checkIsIframe();
 
       if (printContent && portal) {
+        const s = db.settings;
+        const styleString = printFormatToUse === 'ticket'
+          ? `padding-top: ${s?.receiptMarginTop ?? 2}mm !important; padding-bottom: ${s?.receiptMarginBottom ?? 3}mm !important; padding-left: ${s?.receiptMarginLeft ?? 3}mm !important; padding-right: ${s?.receiptMarginRight ?? 3}mm !important;`
+          : `padding-top: ${s?.invoiceMarginTop ?? 8}mm !important; padding-bottom: ${s?.invoiceMarginBottom ?? 8}mm !important; padding-left: ${s?.invoiceMarginLeft ?? 8}mm !important; padding-right: ${s?.invoiceMarginRight ?? 8}mm !important;`;
+
         portal.innerHTML = `
-          <div class="${printFormatToUse === 'ticket' ? 'ticket-print-layout' : 'a4-print-layout'}" dir="${language === 'ar' ? 'rtl' : 'ltr'}">
+          <div class="${printFormatToUse === 'ticket' ? 'ticket-print-layout' : 'a4-print-layout'}" style="${styleString}" dir="${language === 'ar' ? 'rtl' : 'ltr'}">
             ${printContent.innerHTML}
           </div>
         `;
@@ -164,7 +183,7 @@ export default function InvoicesList({ db, onUpdateDb }: InvoicesListProps) {
       });
     } catch (error) {
       console.error("PDF generation error: ", error);
-      alert(language === 'ar' ? "⚠️ حدث خطأ أثناء تحميل ملف الـ PDF" : "⚠️ Échec du téléchargement du fichier PDF.");
+      showToast(language === 'ar' ? "⚠️ حدث خطأ أثناء تحميل ملف الـ PDF" : "⚠️ Échec du téléchargement du fichier PDF.", 'error');
     }
   };
 
@@ -179,7 +198,7 @@ export default function InvoicesList({ db, onUpdateDb }: InvoicesListProps) {
       });
     } catch (error) {
       console.error("Direct PDF generation error: ", error);
-      alert(language === 'ar' ? "⚠️ حدث خطأ أثناء تحميل ملف الـ PDF" : "⚠️ Échec du téléchargement du fichier PDF.");
+      showToast(language === 'ar' ? "⚠️ حدث خطأ أثناء تحميل ملف الـ PDF" : "⚠️ Échec du téléchargement du fichier PDF.", 'error');
     }
   };
 
@@ -202,7 +221,7 @@ export default function InvoicesList({ db, onUpdateDb }: InvoicesListProps) {
             type="text"
             placeholder="Chercher N° de pièce ou Nom Client..."
             value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
+            onChange={(e) => { setSearchQuery(e.target.value); setCurrentPage(1); }}
             className="w-full pl-9 pr-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded focus:outline-hidden focus:border-blue-500 focus:bg-white transition-all font-semibold"
           />
         </div>
@@ -211,7 +230,7 @@ export default function InvoicesList({ db, onUpdateDb }: InvoicesListProps) {
         <div className="flex space-x-2 overflow-x-auto self-stretch sm:self-auto pb-1 md:pb-0">
           <select 
             value={typeFilter}
-            onChange={(e) => setTypeFilter(e.target.value as any)}
+            onChange={(e) => { setTypeFilter(e.target.value as any); setCurrentPage(1); }}
             className="bg-slate-50 border border-slate-200 text-xs py-2 px-3 rounded focus:outline-hidden text-slate-700 font-bold"
           >
             <option value="all">📝 Tout Type de Document</option>
@@ -222,7 +241,7 @@ export default function InvoicesList({ db, onUpdateDb }: InvoicesListProps) {
 
           <select 
             value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value as any)}
+            onChange={(e) => { setStatusFilter(e.target.value as any); setCurrentPage(1); }}
             className="bg-slate-50 border border-slate-200 text-xs py-2 px-3 rounded focus:outline-hidden text-slate-700 font-bold"
           >
             <option value="all">💳 Tous Règlements</option>
@@ -256,7 +275,7 @@ export default function InvoicesList({ db, onUpdateDb }: InvoicesListProps) {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 font-mono">
-                {filteredInvoices.map(inv => {
+                {paginatedInvoices.map(inv => {
                   const isPaid = inv.balance === 0;
 
                   return (
@@ -327,6 +346,48 @@ export default function InvoicesList({ db, onUpdateDb }: InvoicesListProps) {
             </table>
           </div>
         )}
+
+        {/* Pagination Controls bar */}
+        {totalPages > 1 && (
+          <div className="p-4 border-t border-slate-200 bg-slate-50 flex flex-col sm:flex-row items-center justify-between gap-4 font-sans text-xs font-semibold text-slate-600 no-print">
+            <div>
+              {language === 'ar' ? (
+                <span>عرض {startIndex + 1} إلى {Math.min(endIndex, filteredInvoices.length)} من {filteredInvoices.length} وثيقة</span>
+              ) : (
+                <span>Affichage de {startIndex + 1} à {Math.min(endIndex, filteredInvoices.length)} sur {filteredInvoices.length} documents</span>
+              )}
+            </div>
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <button
+                onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                disabled={currentPage === 1}
+                className="px-3 py-1.5 rounded border border-slate-200 bg-white hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed select-none font-bold"
+              >
+                {language === 'ar' ? 'السابق' : 'Précédent'}
+              </button>
+              {Array.from({ length: totalPages }, (_, i) => i + 1).map(page => (
+                <button
+                  key={page}
+                  onClick={() => setCurrentPage(page)}
+                  className={`px-3 py-1.5 rounded border font-bold select-none transition-colors ${
+                    currentPage === page
+                      ? 'bg-blue-600 border-blue-600 text-white'
+                      : 'border-slate-200 bg-white hover:bg-slate-50 text-slate-700'
+                  }`}
+                >
+                  {page}
+                </button>
+              ))}
+              <button
+                onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                disabled={currentPage === totalPages}
+                className="px-3 py-1.5 rounded border border-slate-200 bg-white hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed select-none font-bold"
+              >
+                {language === 'ar' ? 'التالي' : 'Suivant'}
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
   {/* DETAIL DOCUMENT DETAILED MODAL VIEWER */}
@@ -338,11 +399,11 @@ export default function InvoicesList({ db, onUpdateDb }: InvoicesListProps) {
     const activitySector = db.settings?.activitySector ?? "superette";
 
     return (
-      <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md flex items-center justify-center p-3 md:p-4 z-50 overflow-y-auto print-only">
-        <div className="bg-white rounded-2xl w-full max-w-3xl p-5 md:p-6 border border-slate-200 shadow-2xl relative my-auto">
+      <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md flex items-start justify-center p-3 md:p-6 z-50 overflow-y-auto print-only">
+        <div className="bg-white rounded-2xl w-full max-w-3xl p-5 md:p-6 border border-slate-200 shadow-2xl relative my-4 sm:my-8 transition-all">
           
-          {/* Action Bar Header */}
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between border-b border-slate-200 pb-3 gap-3 no-print">
+          {/* Action Bar Header - Sticky to keep actions and Fermer button always reachable */}
+          <div className="sticky top-0 bg-white z-40 pb-3 mb-3 border-b border-slate-200 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 no-print">
             <h3 className="text-sm font-bold text-slate-850 flex items-center gap-1.5">
               <FileText className="w-5 h-5 text-blue-600 animate-pulse" />
               <span className="font-display">
@@ -372,7 +433,7 @@ export default function InvoicesList({ db, onUpdateDb }: InvoicesListProps) {
               <button
                 type="button"
                 onClick={handleDownloadPDF}
-                className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-xs font-bold flex items-center gap-1.5 cursor-pointer font-mono shadow-xs"
+                className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-xs font-bold flex items-center gap-1.5 cursor-pointer font-mono shadow-xs animate-fade-in"
               >
                 <Download className="w-3.5 h-3.5" />
                 <span>{language === 'ar' ? 'تحميل PDF مباشر' : 'Télécharger PDF'}</span>
@@ -381,7 +442,7 @@ export default function InvoicesList({ db, onUpdateDb }: InvoicesListProps) {
               <button
                 type="button"
                 onClick={handlePrint}
-                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded text-xs font-bold flex items-center gap-1.5 cursor-pointer font-mono shadow-xs"
+                className="px-4 py-2 bg-blue-600 hover:bg-blue-750 text-white rounded text-xs font-bold flex items-center gap-1.5 cursor-pointer font-mono shadow-xs"
               >
                 <Printer className="w-3.5 h-3.5" />
                 <span>{language === 'ar' ? 'طباعة / حفظ PDF' : 'Imprimer / Garder PDF'}</span>
@@ -390,7 +451,7 @@ export default function InvoicesList({ db, onUpdateDb }: InvoicesListProps) {
               <button 
                 type="button"
                 onClick={() => setSelectedInvoice(null)} 
-                className="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded text-xs font-bold cursor-pointer"
+                className="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded text-xs font-bold cursor-pointer transition-colors border border-slate-200 shadow-xs hover:border-slate-300"
               >
                 {language === 'ar' ? 'إغلاق' : 'Fermer'}
               </button>
@@ -410,26 +471,39 @@ export default function InvoicesList({ db, onUpdateDb }: InvoicesListProps) {
           {/* Core Invoice Area */}
           <div 
             id="print-area" 
-            className={`p-6 bg-white rounded border border-slate-205 overflow-y-auto max-h-[460px] shadow-inner ${
+            className={`bg-white rounded border border-slate-205 overflow-y-auto max-h-[460px] shadow-inner ${
               printFormat === 'ticket' ? 'max-w-[380px] mx-auto text-xs' : 'w-full'
             }`}
+            style={
+              printFormat === 'ticket' ? {
+                paddingTop: `${db.settings?.receiptMarginTop ?? 2}mm`,
+                paddingBottom: `${db.settings?.receiptMarginBottom ?? 3}mm`,
+                paddingLeft: `${db.settings?.receiptMarginLeft ?? 3}mm`,
+                paddingRight: `${db.settings?.receiptMarginRight ?? 3}mm`,
+              } : {
+                paddingTop: `${db.settings?.invoiceMarginTop ?? 8}mm`,
+                paddingBottom: `${db.settings?.invoiceMarginBottom ?? 8}mm`,
+                paddingLeft: `${db.settings?.invoiceMarginLeft ?? 8}mm`,
+                paddingRight: `${db.settings?.invoiceMarginRight ?? 8}mm`,
+              }
+            }
             dir={language === 'ar' ? 'rtl' : 'ltr'}
           >
             {printFormat === 'ticket' ? (
               /* ----------------- THERMAL TICKET FORMAT ----------------- */
               <div className={`text-center font-sans space-y-3 ${db.settings?.receiptCompactSize ? 'text-[10px] leading-tight space-y-2' : 'text-xs'}`}>
                 <div className="border-b border-dashed border-slate-300 pb-3">
-                  {db.settings?.receiptShowLogo !== false && db.settings?.storeLogo && (
-                    (db.settings.storeLogo.startsWith('data:') || db.settings.storeLogo.startsWith('http') || db.settings.storeLogo.startsWith('/') || db.settings.storeLogo.includes('.') || db.settings.storeLogo.length > 15) ? (
+                  {db.settings?.receiptShowLogo !== false && (db.settings?.receiptCustomLogo || db.settings?.storeLogo) && (
+                    ((db.settings.receiptCustomLogo || db.settings.storeLogo)!.startsWith('data:') || (db.settings.receiptCustomLogo || db.settings.storeLogo)!.startsWith('http') || (db.settings.receiptCustomLogo || db.settings.storeLogo)!.startsWith('/') || (db.settings.receiptCustomLogo || db.settings.storeLogo)!.includes('.') || (db.settings.receiptCustomLogo || db.settings.storeLogo)!.length > 15) ? (
                       <img 
-                        src={db.settings.storeLogo} 
+                        src={db.settings.receiptCustomLogo || db.settings.storeLogo} 
                         alt="Logo" 
                         className="w-20 h-20 rounded object-cover bg-white mx-auto mb-1.5 border border-slate-200" 
                         referrerPolicy="no-referrer"
                       />
                     ) : (
                       <div className="w-16 h-16 bg-slate-100 rounded border border-slate-200 flex items-center justify-center text-4xl mx-auto mb-1.5 shrink-0 select-none">
-                        {db.settings.storeLogo}
+                        {db.settings.receiptCustomLogo || db.settings.storeLogo}
                       </div>
                     )
                   )}
@@ -524,17 +598,17 @@ export default function InvoicesList({ db, onUpdateDb }: InvoicesListProps) {
                 {/* Header */}
                 <div className="flex justify-between items-start border-b border-slate-200 pb-4">
                   <div className="flex items-start gap-4">
-                    {db.settings?.storeLogo && (
-                      (db.settings.storeLogo.startsWith('data:') || db.settings.storeLogo.startsWith('http') || db.settings.storeLogo.startsWith('/') || db.settings.storeLogo.includes('.') || db.settings.storeLogo.length > 15) ? (
+                    {(db.settings?.invoiceCustomLogo || db.settings?.storeLogo) && (
+                      ((db.settings.invoiceCustomLogo || db.settings.storeLogo)!.startsWith('data:') || (db.settings.invoiceCustomLogo || db.settings.storeLogo)!.startsWith('http') || (db.settings.invoiceCustomLogo || db.settings.storeLogo)!.startsWith('/') || (db.settings.invoiceCustomLogo || db.settings.storeLogo)!.includes('.') || (db.settings.invoiceCustomLogo || db.settings.storeLogo)!.length > 15) ? (
                         <img 
-                          src={db.settings.storeLogo} 
+                          src={db.settings.invoiceCustomLogo || db.settings.storeLogo} 
                           alt="Logo" 
                           className="w-28 h-28 rounded-lg object-cover bg-white border border-slate-200 shadow-xs shrink-0" 
                           referrerPolicy="no-referrer"
                         />
                       ) : (
                         <div className="w-24 h-24 bg-slate-100 rounded-lg border border-slate-200 flex items-center justify-center text-5xl font-bold font-sans shrink-0 select-none">
-                          {db.settings.storeLogo}
+                          {db.settings.invoiceCustomLogo || db.settings.storeLogo}
                         </div>
                       )
                     )}

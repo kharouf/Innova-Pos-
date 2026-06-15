@@ -4,7 +4,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { DatabaseState, Product, Partner, Invoice, InvoiceItem } from '../types';
 import { getProductVisual } from '../utils/db';
 import { useLanguage } from '../utils/LanguageContext';
-import { safeLocalStorage } from '../utils/storage';
+import { safeLocalStorage, checkIsIframe } from '../utils/storage';
 import { Html5Qrcode } from 'html5-qrcode';
 import { showToast } from '../utils/toast';
 import { 
@@ -33,7 +33,10 @@ import {
   RefreshCw,
   Download,
   Maximize,
-  Minimize
+  Minimize,
+  Lock,
+  Unlock,
+  History
 } from 'lucide-react';
 import { downloadInvoicePDF } from '../utils/pdfGenerator';
 
@@ -73,6 +76,7 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
     }
   };
   const [cart, setCart] = useState<{ product: Product; qty: number; customPrice: number }[]>([]);
+  const [addedParticles, setAddedParticles] = useState<{ id: string; productId: string; text: string }[]>([]);
   const [selectedPartnerId, setSelectedPartnerId] = useState<string>('');
   const [isReturnMode, setIsReturnMode] = useState<boolean>(false);
   
@@ -82,7 +86,10 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
   
   // Dedicated rapid barcode scan input state & ref
   const [rapidScanValue, setRapidScanValue] = useState<string>('');
-  const [autoFocusScanField, setAutoFocusScanField] = useState<boolean>(true);
+  const [autoFocusScanField, setAutoFocusScanField] = useState<boolean>(() => {
+    const saved = safeLocalStorage.getItem('pos_autofocus_scan_field');
+    return saved === 'true'; // Default to false so touch screens do not get auto-refocused constantly
+  });
   const [isRapidScanFocused, setIsRapidScanFocused] = useState<boolean>(false);
   const rapidScanInputRef = useRef<HTMLInputElement | null>(null);
   
@@ -123,8 +130,143 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
   const [alphabeticType, setAlphabeticType] = useState<'azerty' | 'qwerty'>('azerty');
   const [isNumpadExpanded, setIsNumpadExpanded] = useState<boolean>(() => {
     const saved = safeLocalStorage.getItem('pos_numpad_expanded');
-    return saved !== 'false';
+    return saved === 'true'; // Default to false (closed by default)
   });
+
+  // 💵 Cash Drawer (Tiroir Caisse) State Management
+  const [isCashDrawerOpen, setIsCashDrawerOpen] = useState<boolean>(false);
+  const [showCashDrawerPanel, setShowCashDrawerPanel] = useState<boolean>(false);
+  const [cashDrawerLogs, setCashDrawerLogs] = useState<Array<{ id: string; time: string; action: string; user: string; amount?: number }>>(() => {
+    try {
+      const saved = safeLocalStorage.getItem('pos_cash_drawer_logs');
+      if (saved) return JSON.parse(saved);
+    } catch (_) {}
+    return [
+      { id: '1', time: new Date(Date.now() - 3600000).toLocaleTimeString(), action: 'Fonds de caisse initial configuré', user: 'Administrateur', amount: 150.0 }
+    ];
+  });
+
+  const [drawerCashComposition, setDrawerCashComposition] = useState<Record<string, number>>(() => {
+    try {
+      const saved = safeLocalStorage.getItem('pos_cash_drawer_composition');
+      if (saved) return JSON.parse(saved);
+    } catch (_) {}
+    return {
+      '50DT': 1,
+      '20DT': 3,
+      '10DT': 4,
+      '5DT': 5,
+      '1DT': 15,
+      '0.5DT': 20,
+      '0.2DT': 25,
+      '0.1DT': 30
+    };
+  });
+
+  // Calculate total cash inside the drawer based on banknote composition
+  const totalDrawerCash = useMemo(() => {
+    const values: Record<string, number> = {
+      '50DT': 50,
+      '20DT': 20,
+      '10DT': 10,
+      '5DT': 5,
+      '1DT': 1,
+      '0.5DT': 0.5,
+      '0.2DT': 0.2,
+      '0.1DT': 0.1
+    };
+    return Object.entries(drawerCashComposition).reduce((sum: number, [denom, qty]) => {
+      return sum + ((values[denom] || 0) * Number(qty || 0));
+    }, 0);
+  }, [drawerCashComposition]);
+
+  const expectedCashAmount = useMemo(() => {
+    const initialFund = 150.0;
+    const cashIn = (db.payments || [])
+      .filter((p: any) => p.type === 'payment_received')
+      .reduce((sum, current) => sum + current.amount, 0);
+    const cashOut = (db.payments || [])
+      .filter((p: any) => p.type === 'payment_sent')
+      .reduce((sum, current) => sum + current.amount, 0);
+    return initialFund + cashIn - cashOut;
+  }, [db]);
+
+  const cashDrawerDiscrepancy = totalDrawerCash - expectedCashAmount;
+
+  // Unified audio trigger for satisfying coin/drawer ringing sound
+  const playCashRegisterSound = () => {
+    try {
+      if (typeof window === 'undefined') return;
+      const AudioCtxClass = window.AudioContext || (window as any).webkitAudioContext;
+      if (!AudioCtxClass) return;
+      const audioCtx = new AudioCtxClass();
+      
+      const osc1 = audioCtx.createOscillator();
+      const gain1 = audioCtx.createGain();
+      osc1.type = 'sine';
+      osc1.frequency.setValueAtTime(1480, audioCtx.currentTime); 
+      osc1.frequency.exponentialRampToValueAtTime(800, audioCtx.currentTime + 0.35); 
+      
+      gain1.gain.setValueAtTime(0.15, audioCtx.currentTime);
+      gain1.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.35);
+      
+      osc1.connect(gain1);
+      gain1.connect(audioCtx.destination);
+      
+      const osc2 = audioCtx.createOscillator();
+      const gain2 = audioCtx.createGain();
+      osc2.type = 'triangle';
+      osc2.frequency.setValueAtTime(2400, audioCtx.currentTime);
+      osc2.frequency.exponentialRampToValueAtTime(1600, audioCtx.currentTime + 0.18);
+      
+      gain2.gain.setValueAtTime(0.08, audioCtx.currentTime);
+      gain2.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.18);
+      
+      osc2.connect(gain2);
+      gain2.connect(audioCtx.destination);
+      
+      osc1.start();
+      osc2.start();
+      osc1.stop(audioCtx.currentTime + 0.4);
+      osc2.stop(audioCtx.currentTime + 0.4);
+    } catch (e) {
+      console.warn("AudioContext tone blocked or unsupported", e);
+    }
+  };
+
+  const handleManualDrawerEject = () => {
+    let activeName = 'Administrateur';
+    try {
+      const savedUser = safeLocalStorage.getItem('pos_active_user');
+      if (savedUser) {
+        activeName = JSON.parse(savedUser).name || activeName;
+      }
+    } catch (_) {}
+
+    setIsCashDrawerOpen(true);
+    playCashRegisterSound();
+
+    const newLog = {
+      id: String(Date.now()),
+      time: new Date().toLocaleTimeString(),
+      action: language === 'ar' ? 'فتح يدوي لدرج النقود' : 'Ouverture manuelle du tiroir',
+      user: activeName
+    };
+
+    const nextLogs = [newLog, ...cashDrawerLogs];
+    setCashDrawerLogs(nextLogs);
+    safeLocalStorage.setItem('pos_cash_drawer_logs', JSON.stringify(nextLogs));
+
+    showToast(
+      language === 'ar' ? '🔓 تم فتح درج الكاشير بنجاح!' : '🔓 Tiroir caisse éjecté avec succès !',
+      'success'
+    );
+
+    // Auto close visual slider back in 4 seconds
+    setTimeout(() => {
+      setIsCashDrawerOpen(false);
+    }, 4500);
+  };
 
   const toggleNumpadExpanded = () => {
     setIsNumpadExpanded(prev => {
@@ -140,7 +282,7 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
 
     if (activeNumpadTarget === 'lastItemQty') {
       if (cart.length === 0) {
-        alert(language === 'ar' ? 'السلة فارغة' : 'Le panier est vide');
+        showToast(language === 'ar' ? 'السلة فارغة' : 'Le panier est vide', 'error');
         return;
       }
       const lastItemIndex = cart.length - 1;
@@ -220,53 +362,35 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
   });
   const [autoPrint, setAutoPrint] = useState<boolean>(() => {
     const saved = safeLocalStorage.getItem('pos_auto_print');
-    return saved === null ? true : saved === 'true';
+    // Default of autoPrint set to false to prevent blocking / freezing OS print dialogues during checkout validation
+    return saved === null ? false : saved === 'true';
   });
 
-  // Trigger robust clean auto print on print portal when printedInvoice is generated (ONLY if autoPrint is enabled)
-  useEffect(() => {
-    if (printedInvoice && autoPrint) {
-      const timer = setTimeout(() => {
-        try {
-          const printFormatToUse = printFormat;
-          const printContent = document.getElementById('print-area');
-          const portal = document.getElementById('print-portal');
-          const isIframe = window.self !== window.top;
+  const isMounted = useRef(true);
+  const closeTimeoutRef = useRef<any>(null);
 
-          if (printContent && portal) {
-            portal.innerHTML = `
-              <div class="${printFormatToUse === 'ticket' ? 'ticket-print-layout' : 'a4-print-layout'}" dir="${language === 'ar' ? 'rtl' : 'ltr'}">
-                ${printContent.innerHTML}
-              </div>
-            `;
-            if (!isIframe) {
-              try {
-                window.print();
-              } catch (printErr) {
-                console.warn("window.print call was blocked or failed, continuing gracefully", printErr);
-              }
-            } else {
-              console.log("[INNOVA PRINT] Direct print bypassed inside sandboxed iframe preview.");
-            }
-            setTimeout(() => {
-              portal.innerHTML = '';
-            }, 1000);
-          } else {
-            if (!isIframe) {
-              try {
-                window.print();
-              } catch (printErr) {
-                console.warn("window.print call was blocked or failed, continuing gracefully", printErr);
-              }
-            }
-          }
-        } catch (err) {
-          console.warn("Robust auto print failed", err);
-        }
-      }, 600);
-      return () => clearTimeout(timer);
-    }
-  }, [printedInvoice, printFormat, language, autoPrint]);
+  useEffect(() => {
+    isMounted.current = true;
+    return () => {
+      isMounted.current = false;
+      if (closeTimeoutRef.current) {
+        clearTimeout(closeTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  const closePrintModal = () => {
+    if (!isMounted.current) return;
+    setPrintedInvoice(null);
+    setSelectedPartnerId('');
+    setSearchQuery('');
+    setCart([]);
+    setPaidAmount('');
+    setGlobalDiscount(0);
+    setRedeemedPoints(0);
+    setIsReturnMode(false);
+    onNavigate('pos');
+  };
 
   // Ensure print-portal div exists in document.body
   useEffect(() => {
@@ -355,9 +479,10 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
 
     if (matched) {
       if (!isReturnMode && matched.stock <= 0) {
-        alert(language === 'ar' 
+        showToast(language === 'ar' 
           ? `⚠️ تحذير: السلعة "${matched.name}" نفدت من المخزون !` 
-          : `⚠️ Attention: Le produit "${matched.name}" est en rupture de stock !`
+          : `⚠️ Attention: Le produit "${matched.name}" est en rupture de stock !`,
+          'info'
         );
       }
       const qtyToAdd = isReturnMode ? -1 : 1;
@@ -400,9 +525,10 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
 
         if (matched) {
           if (!isReturnMode && matched.stock <= 0) {
-            alert(language === 'ar' 
+            showToast(language === 'ar' 
               ? `⚠️ تحذير: السلعة "${matched.name}" نفدت من المخزون !` 
-              : `⚠️ Attention: Le produit "${matched.name}" est en rupture de stock !`
+              : `⚠️ Attention: Le produit "${matched.name}" est en rupture de stock !`,
+              'info'
             );
           }
 
@@ -678,12 +804,12 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
 
   // Extract all categories
   const categories = useMemo(() => {
-    return ['Tous', ...Array.from(new Set(db.products.map(p => p.category)))];
+    return ['Tous', ...Array.from(new Set((db.products || []).map(p => p.category)))];
   }, [db.products]);
 
   // Filtered list of products for catalog grid
   const filteredProducts = useMemo(() => {
-    return db.products.filter(p => {
+    return (db.products || []).filter(p => {
       const matchSearch = p.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
                           p.code.includes(searchQuery);
       const matchCategory = selectedCategory === 'Tous' || p.category === selectedCategory;
@@ -692,13 +818,13 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
   }, [db.products, searchQuery, selectedCategory]);
 
   const clients = useMemo(() => {
-    return db.partners.filter(p => p.type === 'client');
+    return (db.partners || []).filter(p => p.type === 'client');
   }, [db.partners]);
 
   // Quick Action: Add item or increment
   const handleAddToCart = (product: Product) => {
     if (!isReturnMode && product.stock <= 0) {
-      alert(`⚠️ Attention: Le produit "${product.name}" est en rupture de stock !`);
+      showToast(`⚠️ Attention: Le produit "${product.name}" est en rupture de stock !`, 'info');
     }
     const qtyToAdd = isReturnMode ? -1 : 1;
     const existingIndex = cart.findIndex(item => item.product.id === product.id);
@@ -715,6 +841,14 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
       setCart([...cart, { product, qty: qtyToAdd, customPrice: product.sellingPrice }]);
     }
     
+    // Spawn a beautiful flying particle on cart addition
+    const particleId = `${product.id}-${Date.now()}-${Math.random()}`;
+    const text = isReturnMode ? '-1' : '+1';
+    setAddedParticles(prev => [...prev, { id: particleId, productId: product.id, text }]);
+    setTimeout(() => {
+      setAddedParticles(prev => prev.filter(p => p.id !== particleId));
+    }, 1000);
+    
     // Play the barcode scanner beep sound for audio confirmation
     playScanBeep();
   };
@@ -724,7 +858,7 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
     if (e) e.preventDefault();
     const price = parseFloat(customItemPrice);
     if (isNaN(price) || price <= 0) {
-      alert(language === 'ar' ? '⚠️ الرجاء إدخال سعر صحيح أكبر من الصفر' : '⚠️ Veuillez entrer un prix valide supérieur à zéro.');
+      showToast(language === 'ar' ? '⚠️ الرجاء إدخال سعر صحيح أكبر من الصفر' : '⚠️ Veuillez entrer un prix valide supérieur à zéro.', 'error');
       return;
     }
 
@@ -753,6 +887,14 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
   // Maintain focus on the rapid barcode scanner field if enabled
   useEffect(() => {
     if (!autoFocusScanField) return;
+
+    // Disable global physical focus-stealing click handler on touch/mobile devices to prevent 
+    // the virtual/on-screen keyboard from popping up unexpectedly when tapping around the POS.
+    const isTouchDevice = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+    if (isTouchDevice) {
+      console.log("[INNOVA FOCUS] Touch/mobile device detected. Bypassing global click focus stealer.");
+      return;
+    }
 
     // Focus immediately on mount / state activate
     const triggerFocus = () => {
@@ -855,10 +997,11 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
         return [newEntry, ...prev].slice(0, 5);
       });
 
-      alert(
+      showToast(
         language === 'ar'
           ? `⚠️ الرمز [${barcode}] غير مسجل بالمنظومة. الرجاء إضافته أو التثبت منه.`
-          : `⚠️ Le code-barres [${barcode}] n'est pas enregistré. Veuillez d'abord l'ajouter aux produits.`
+          : `⚠️ Le code-barres [${barcode}] n'est pas enregistré. Veuillez d'abord l'ajouter aux produits.`,
+        'error'
       );
       setRapidScanValue('');
     }
@@ -1003,7 +1146,7 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
 
     const updatedDb = {
       ...db,
-      partners: [newClient, ...db.partners]
+      partners: [newClient, ...(db.partners || [])]
     };
 
     onUpdateDb(updatedDb);
@@ -1019,14 +1162,14 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
   // Final confirmation of POS Sale
   const handleConfirmCheckout = () => {
     if (cart.length === 0) {
-      alert("⚠️ Votre panier est vide.");
+      showToast(language === 'ar' ? "⚠️ السلة فارغة." : "⚠️ Votre panier est vide.", 'error');
       return;
     }
 
     // Determine invoice numbering
     const prefix = isReturnMode ? 'RET' : (cashRegisterType === 'facture' ? 'FAC' : 'BL');
     const year = new Date().getFullYear();
-    const countThisType = db.invoices.filter(i => isReturnMode ? i.isReturn : (i.type === cashRegisterType && !i.isReturn)).length + 1;
+    const countThisType = (db.invoices || []).filter(i => isReturnMode ? i.isReturn : (i.type === cashRegisterType && !i.isReturn)).length + 1;
     const paddingNumber = String(countThisType).padStart(4, '0');
     const invoiceNumber = `${prefix}-${year}-${paddingNumber}`;
 
@@ -1074,7 +1217,7 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
     };
 
     // 1. Subtract products from stock levels (for return mode, subtracting negative cartItem.qty increases stock!)
-    const updatedProducts = db.products.map(p => {
+    const updatedProducts = (db.products || []).map(p => {
       const cartItem = cart.find(item => item.product.id === p.id);
       if (cartItem) {
         return {
@@ -1087,7 +1230,7 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
 
     // 2. If client had debt (remainingDebt > 0), add to client balance account.
     // In Return Mode, if paidAmount is 0 (direct credit), deduct from the outstanding debt of the client.
-    const updatedPartners = db.partners.map(p => {
+    const updatedPartners = (db.partners || []).map(p => {
       if (p.id === selectedPartnerId) {
         const originalPoints = p.loyaltyPoints || 0;
         const netPoints = originalPoints - redeemedPoints + pointsGained;
@@ -1111,12 +1254,12 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
     });
 
     // 3. Register payment transactional ledger
-    const newPayments = [...db.payments];
-    if (currentPay !== 0 && selectedPartnerId) {
+    const newPayments = [...(db.payments || [])];
+    if (currentPay !== 0) {
       newPayments.unshift({
         id: `pay-${Date.now()}`,
         date: new Date().toISOString(),
-        partnerId: selectedPartnerId,
+        partnerId: selectedPartnerId || 'anonymous',
         partnerName: clientName,
         partnerType: 'client',
         type: isReturnMode ? 'payment_sent' : 'payment_received',
@@ -1145,11 +1288,47 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
       ...db,
       products: updatedProducts,
       partners: updatedPartners,
-      invoices: [newInvoice, ...db.invoices],
+      invoices: [newInvoice, ...(db.invoices || [])],
       payments: newPayments
     };
 
     onUpdateDb(updatedDb);
+
+    // 💵 Auto Open Cash Drawer (Tiroir Caisse) during Cash checkout
+    if (currentPay >= 0) {
+      setIsCashDrawerOpen(true);
+      playCashRegisterSound();
+
+      let activeName = 'Administrateur';
+      try {
+        const savedUser = safeLocalStorage.getItem('pos_active_user');
+        if (savedUser) {
+          activeName = JSON.parse(savedUser).name || activeName;
+        }
+      } catch (_) {}
+
+      const newLog = {
+        id: String(Date.now()),
+        time: new Date().toLocaleTimeString(),
+        action: language === 'ar' 
+          ? `فتح تلقائي عند بيع ${invoiceNumber}` 
+          : `Ouverture automatique (Vente ${invoiceNumber})`,
+        user: activeName,
+        amount: currentPay
+      };
+
+      setCashDrawerLogs(prev => {
+        const next = [newLog, ...prev];
+        safeLocalStorage.setItem('pos_cash_drawer_logs', JSON.stringify(next));
+        return next;
+      });
+
+      // Automatically slide the visual drawer back in 4.5 seconds
+      setTimeout(() => {
+        setIsCashDrawerOpen(false);
+      }, 4500);
+    }
+
     setPrintedInvoice(newInvoice); // Mount invoice in print preview template trigger
     setCart([]); // Clear Cart
     setPaidAmount('');
@@ -1161,12 +1340,12 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
 
   const handleCheckoutClick = () => {
     if (cart.length === 0) {
-      alert(language === 'ar' ? "⚠️ السلة فارغة." : "⚠️ Votre panier est vide.");
+      showToast(language === 'ar' ? "⚠️ السلة فارغة." : "⚠️ Votre panier est vide.", 'error');
       return;
     }
     
     if (!selectedPartnerId && remainingDebt > 0) {
-      alert(language === 'ar' ? "⚠️ العميل مجهول: لا يمكن تسجيل دين." : "⚠️ Client anonyme: impossible de reporter un crédit.");
+      showToast(language === 'ar' ? "⚠️ العميل مجهول: لا يمكن تسجيل دين." : "⚠️ Client anonyme: impossible de reporter un crédit.", 'error');
       return;
     }
 
@@ -1192,37 +1371,11 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
 
   const handlePrint = () => {
     try {
-      const printFormatToUse = printFormat;
-      const printContent = document.getElementById('print-area');
-      const portal = document.getElementById('print-portal');
-      const isIframe = window.self !== window.top;
-
-      if (printContent && portal) {
-        portal.innerHTML = `
-          <div class="${printFormatToUse === 'ticket' ? 'ticket-print-layout' : 'a4-print-layout'}" dir="${language === 'ar' ? 'rtl' : 'ltr'}">
-            ${printContent.innerHTML}
-          </div>
-        `;
-        if (!isIframe) {
-          try {
-            window.print();
-          } catch (printErr) {
-            console.warn("window.print failed", printErr);
-          }
-        } else {
-          console.log("[INNOVA PRINT] Manual print triggered inside sandboxed preview.");
-        }
-        setTimeout(() => {
-          portal.innerHTML = '';
-        }, 1000);
+      const isIframe = checkIsIframe();
+      if (!isIframe) {
+        window.print();
       } else {
-        if (!isIframe) {
-          try {
-            window.print();
-          } catch (printErr) {
-            console.error(printErr);
-          }
-        }
+        console.log("[INNOVA PRINT ] Manual print triggered inside sandboxed preview.");
       }
     } catch (err) {
       console.warn("Robust print failed", err);
@@ -1239,11 +1392,44 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
         formatCurrency,
         format: printFormat
       });
+
+      // Keep the print window/modal open so the user can verify details or perform other actions before closing manually.
     } catch (error) {
       console.error("POS Invoice PDF download error: ", error);
-      alert(language === 'ar' ? "⚠️ حدث خطأ أثناء تحميل ملف الـ PDF" : "⚠️ Échec du téléchargement du fichier PDF.");
+      showToast(language === 'ar' ? "⚠️ حدث خطأ أثناء تحميل ملف الـ PDF" : "⚠️ Échec du téléchargement du fichier PDF.", 'error');
     }
   };
+
+  // Automatic printing effect when checkout succeeds and an invoice is generated
+  useEffect(() => {
+    if (printedInvoice && autoPrint) {
+      console.log("[INNOVA AUTO PRINT] Detected printedInvoice. Waiting for DOM to render...");
+      let checkTimer: any;
+      let attemptCount = 0;
+      
+      const checkAndTriggerPrint = () => {
+        const printContent = document.getElementById('print-area');
+        const portal = document.getElementById('print-portal');
+        
+        if (printContent && portal) {
+          console.log("[INNOVA AUTO PRINT] DOM Elements found! Initiating auto-print...");
+          handlePrint();
+        } else if (attemptCount < 10) {
+          attemptCount++;
+          checkTimer = setTimeout(checkAndTriggerPrint, 100);
+        } else {
+          console.warn("[INNOVA AUTO PRINT] Unable to find print-area DOM after several retries.");
+        }
+      };
+
+      // Initial buffer to let React build/mount the overlay
+      checkTimer = setTimeout(checkAndTriggerPrint, 250);
+
+      return () => {
+        if (checkTimer) clearTimeout(checkTimer);
+      };
+    }
+  }, [printedInvoice, autoPrint]);
 
   const handleSearchKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter') {
@@ -1585,7 +1771,10 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
                     type="checkbox"
                     id="autoFocusScanField"
                     checked={autoFocusScanField}
-                    onChange={(e) => setAutoFocusScanField(e.target.checked)}
+                    onChange={(e) => {
+                      setAutoFocusScanField(e.target.checked);
+                      safeLocalStorage.setItem('pos_autofocus_scan_field', String(e.target.checked));
+                    }}
                     className="w-3.5 h-3.5 rounded text-emerald-600 focus:ring-emerald-550 border-slate-300 cursor-pointer"
                   />
                   <label htmlFor="autoFocusScanField" className="text-[10px] font-black text-slate-600 cursor-pointer select-none">
@@ -1614,8 +1803,6 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
                     setKeyboardLayout('numeric');
                   }}
                   onBlur={() => setIsRapidScanFocused(false)}
-                  onClick={(e) => { e.currentTarget.focus(); }}
-                  onTouchStart={(e) => { e.currentTarget.focus(); }}
                   className={`w-full pl-9 pr-4 py-2.5 text-xs font-semibold font-mono bg-white border rounded-lg shadow-inner focus:outline-hidden transition-all placeholder:text-slate-400 ${
                     isRapidScanFocused
                       ? 'border-emerald-500 ring-2 ring-emerald-500/10 text-emerald-950'
@@ -1654,8 +1841,6 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
                   setActiveNumpadTarget('search');
                   setKeyboardLayout('alphabetic');
                 }}
-                onClick={(e) => { e.currentTarget.focus(); }}
-                onTouchStart={(e) => { e.currentTarget.focus(); }}
                 className="w-full pl-9 pr-24 py-2 text-xs bg-slate-55 border border-slate-205 rounded-lg focus:outline-hidden focus:border-indigo-600 focus:bg-white transition-colors"
                 autoComplete="off"
               />
@@ -1711,8 +1896,6 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
                 placeholder={language === 'ar' ? 'اسم السلعة المباشرة (اختياري)...' : "Nom de l'article libre (Optionnel)..."}
                 value={customItemName}
                 onChange={(e) => setCustomItemName(e.target.value)}
-                onClick={(e) => { e.currentTarget.focus(); }}
-                onTouchStart={(e) => { e.currentTarget.focus(); }}
                 className="w-full px-3 py-1.5 text-xs bg-white border border-slate-200 rounded-md focus:outline-hidden focus:border-sky-500 transition-colors"
                 autoComplete="off"
               />
@@ -1728,8 +1911,6 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
                     setActiveNumpadTarget('customPrice');
                     setKeyboardLayout('numeric');
                   }}
-                  onClick={(e) => { e.currentTarget.focus(); }}
-                  onTouchStart={(e) => { e.currentTarget.focus(); }}
                   className="w-full px-3 py-1.5 text-xs bg-white border border-slate-200 rounded-md focus:outline-hidden focus:border-sky-500 font-mono font-bold text-slate-850"
                   required
                 />
@@ -1907,13 +2088,38 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
                 const isOutOfStock = prod.stock <= 0;
                 const visual = getProductVisual(prod);
                 return (
-                  <button
+                  <motion.button
                     key={prod.id}
                     onClick={() => handleAddToCart(prod)}
+                    whileHover={isOutOfStock ? {} : { scale: 1.02, y: -2 }}
+                    whileTap={isOutOfStock ? {} : { scale: 0.96 }}
+                    transition={{ type: "spring", stiffness: 350, damping: 18 }}
                     className={`p-2.5 bg-white hover:bg-slate-50/40 hover:border-blue-400 text-left rounded-lg border border-slate-200 flex flex-col justify-between h-[195px] transition-all group relative cursor-pointer shadow-3xs hover:shadow-sm ${
                       isOutOfStock ? 'opacity-60 cursor-not-allowed border-dashed bg-slate-50/50' : ''
                     }`}
                   >
+                    {/* Flying particle animation feedback */}
+                    <AnimatePresence>
+                      {addedParticles.filter(p => p.productId === prod.id).map(p => (
+                        <motion.div
+                          key={p.id}
+                          initial={{ opacity: 1, scale: 0.6, y: 10 }}
+                          animate={{ opacity: 0, scale: 1.4, y: -65, rotate: [0, -12, 12, 0] }}
+                          exit={{ opacity: 0 }}
+                          transition={{ duration: 0.75, ease: "easeOut" }}
+                          className="absolute inset-0 flex items-center justify-center pointer-events-none z-30"
+                        >
+                          <span className={`text-xs font-black font-mono select-none px-2 py-0.5 rounded-full text-white shadow-md ${
+                            isReturnMode 
+                              ? "bg-rose-600 shadow-rose-900/30" 
+                              : "bg-emerald-600 shadow-emerald-900/30"
+                          }`}>
+                            {p.text}
+                          </span>
+                        </motion.div>
+                      ))}
+                    </AnimatePresence>
+
                     {/* Visual Image / Emoji Box */}
                     <div className="w-full h-24 bg-slate-50 border border-slate-150 rounded-md overflow-hidden relative flex items-center justify-center group-hover:bg-blue-50/10 transition-colors shrink-0">
                       {visual.type === 'image' ? (
@@ -1976,7 +2182,7 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
                         <Plus className="w-3 h-3 stroke-[2.5]" />
                       </div>
                     )}
-                  </button>
+                  </motion.button>
                 );
               })}
             </div>
@@ -2423,8 +2629,6 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
                       setActiveNumpadTarget('paidAmount');
                       setKeyboardLayout('numeric');
                     }}
-                    onClick={(e) => { e.currentTarget.focus(); }}
-                    onTouchStart={(e) => { e.currentTarget.focus(); }}
                     className="w-full bg-slate-50 border border-slate-205 rounded-lg py-2.5 pl-3 pr-10 text-xs font-black font-mono focus:bg-white focus:outline-none transition-colors text-slate-850"
                   />
                   <span className="font-black text-[10px] text-slate-400 absolute right-3.5 top-3">
@@ -2897,7 +3101,7 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
                       if (cart.length > 0) {
                         handleCheckoutClick();
                       } else {
-                        alert(language === 'ar' ? 'السلة فارغة' : 'Le panier est vide');
+                        showToast(language === 'ar' ? 'السلة فارغة' : 'Le panier est vide', 'error');
                       }
                     }}
                     className="bg-sky-600 hover:bg-sky-700 active:scale-95 py-2 rounded-lg text-white font-semibold text-[10px] uppercase flex items-center justify-center gap-1.5 transition-all text-center"
@@ -3012,10 +3216,27 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
         return (
           <>
             {/* Interactive Screen Preview Sheet */}
-            <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md flex items-center justify-center p-3 md:p-4 z-50 overflow-y-auto no-print">
-              <div className="bg-white rounded-2xl w-full max-w-3xl p-5 md:p-6 border border-slate-200 shadow-2xl relative my-auto">
+            <div 
+              onClick={closePrintModal}
+              className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-start justify-center p-3 md:p-6 z-50 overflow-y-auto no-print animate-fade-in"
+            >
+              <div 
+                onClick={(e) => e.stopPropagation()}
+                className="bg-white rounded-2xl w-full max-w-3xl p-5 md:p-6 border border-slate-200 shadow-2xl relative my-4 sm:my-8 transition-all"
+              >
                 
-                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between border-b border-slate-200 pb-4 mb-4 gap-3 no-print">
+                {/* Absolute Top-Right X Close Button */}
+                <button
+                  type="button"
+                  onClick={closePrintModal}
+                  className="absolute top-4 right-4 text-slate-400 hover:text-slate-600 bg-slate-50 hover:bg-slate-100 p-2 rounded-full cursor-pointer transition-colors no-print z-50 border border-slate-200 flex items-center justify-center focus:outline-hidden"
+                  title={language === 'ar' ? 'إغلاق' : 'Fermer (✕)'}
+                >
+                  <X className="w-4 h-4" />
+                </button>
+
+                {/* Sticky Header to ensure format selectors and close/print actions are always on screen and accessible */}
+                <div className="sticky top-0 bg-white z-40 pb-4 mb-4 border-b border-slate-200 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 no-print">
                   <span className="text-sm font-bold text-slate-900 flex items-center gap-1.5 font-display">
                     <Receipt className="w-5 h-5 text-blue-600 animate-pulse" />
                     <span>
@@ -3039,49 +3260,37 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
                     </button>
                   </div>
 
-                  <div className="flex items-center space-x-2">
+                   <div className="flex items-center space-x-2">
+                    {/* Manual print button to launch print dialog */}
                     <button
-                      onClick={handleDownloadPDF}
-                      className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-xs font-bold transition-all shadow-xs flex items-center gap-1 cursor-pointer font-mono"
+                      onClick={handlePrint}
+                      className="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded text-xs font-bold transition-all shadow-xs flex items-center gap-1 cursor-pointer font-mono"
                     >
-                      <Download className="w-3.5 h-3.5" />
-                      {language === 'ar' ? 'تحميل PDF مباشر' : 'Télécharger PDF'}
+                      📠 {language === 'ar' ? 'طباعة' : 'Imprimer'}
                     </button>
 
                     <button
-                      onClick={handlePrint}
-                      className="px-4 py-2 bg-blue-600 hover:bg-blue-750 text-white rounded text-xs font-bold transition-all shadow-xs flex items-center gap-1 cursor-pointer font-mono"
+                      onClick={handleDownloadPDF}
+                      className="px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-xs font-bold transition-all shadow-xs flex items-center gap-1 cursor-pointer font-mono"
                     >
-                      📠 {language === 'ar' ? 'طباعة / حفظ PDF' : 'Imprimer / Garder PDF'}
+                      <Download className="w-3.5 h-3.5" />
+                      {language === 'ar' ? 'تحميل مباشر' : 'PDF'}
                     </button>
+
+                    {/* Highly visible close button */}
                     <button
-                      type="button"
-                      onClick={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        
-                        // Clear active states instantly without any annoying confirmation pop-ups
-                        setPrintedInvoice(null);
-                        setSelectedPartnerId('');
-                        setSearchQuery('');
-                        setCart([]);
-                        setPaidAmount('');
-                        setGlobalDiscount(0);
-                        setRedeemedPoints(0);
-                        setIsReturnMode(false);
-                        
-                        // Explicitly navigate/return user to POS (caisse) tab to prevent exit or tab-reset
-                        onNavigate('pos');
-                      }}
-                      className="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded text-xs font-bold cursor-pointer transition-colors"
+                      onClick={closePrintModal}
+                      className="px-3 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded text-xs font-bold transition-all shadow-xs flex items-center gap-1 cursor-pointer font-sans"
                     >
-                      {language === 'ar' ? 'إغلاق' : 'Fermer'}
+                      <X className="w-3.5 h-3.5 shrink-0" />
+                      <span>{language === 'ar' ? 'إغلاق' : 'Fermer'}</span>
                     </button>
+
                   </div>
                 </div>
 
                 {/* High quality iframe sandboxing notification banner */}
-                {window.self !== window.top && (
+                {checkIsIframe() && (
                   <div className="bg-amber-50 border border-amber-200 text-amber-950 p-3 rounded-xl text-xs flex items-start gap-2 mb-4 leading-normal no-print">
                     <span className="text-sm shrink-0">⚠️</span>
                     <div>
@@ -3108,9 +3317,22 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
                 {/* Printable Document Area for Screen Preview */}
                 <div 
                   id="print-area" 
-                  className={`p-6 bg-white rounded border border-slate-200 overflow-y-auto max-h-[500px] shadow-inner ${
+                  className={`bg-white rounded border border-slate-200 overflow-y-auto max-h-[500px] shadow-inner ${
                     printFormat === 'ticket' ? 'max-w-[380px] mx-auto text-xs' : 'w-full'
                   }`}
+                  style={
+                    printFormat === 'ticket' ? {
+                      paddingTop: `${db.settings?.receiptMarginTop ?? 2}mm`,
+                      paddingBottom: `${db.settings?.receiptMarginBottom ?? 3}mm`,
+                      paddingLeft: `${db.settings?.receiptMarginLeft ?? 3}mm`,
+                      paddingRight: `${db.settings?.receiptMarginRight ?? 3}mm`,
+                    } : {
+                      paddingTop: `${db.settings?.invoiceMarginTop ?? 8}mm`,
+                      paddingBottom: `${db.settings?.invoiceMarginBottom ?? 8}mm`,
+                      paddingLeft: `${db.settings?.invoiceMarginLeft ?? 8}mm`,
+                      paddingRight: `${db.settings?.invoiceMarginRight ?? 8}mm`,
+                    }
+                  }
                   dir={language === 'ar' ? 'rtl' : 'ltr'}
                 >
                   
@@ -3118,17 +3340,17 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
                     /* ----------------- THERMAL TICKET FORMAT ----------------- */
                     <div className={`text-center font-sans space-y-3 ${db.settings?.receiptCompactSize ? 'text-[10px] leading-tight space-y-2' : 'text-xs'}`}>
                       <div className="border-b border-dashed border-slate-300 pb-3">
-                        {db.settings?.receiptShowLogo !== false && db.settings?.storeLogo && (
-                          (db.settings.storeLogo.startsWith('data:') || db.settings.storeLogo.startsWith('http') || db.settings.storeLogo.startsWith('/') || db.settings.storeLogo.includes('.') || db.settings.storeLogo.length > 15) ? (
+                        {db.settings?.receiptShowLogo !== false && (db.settings?.receiptCustomLogo || db.settings?.storeLogo) && (
+                          ((db.settings.receiptCustomLogo || db.settings.storeLogo)!.startsWith('data:') || (db.settings.receiptCustomLogo || db.settings.storeLogo)!.startsWith('http') || (db.settings.receiptCustomLogo || db.settings.storeLogo)!.startsWith('/') || (db.settings.receiptCustomLogo || db.settings.storeLogo)!.includes('.') || (db.settings.receiptCustomLogo || db.settings.storeLogo)!.length > 15) ? (
                             <img 
-                              src={db.settings.storeLogo} 
+                              src={db.settings.receiptCustomLogo || db.settings.storeLogo} 
                               alt="Logo" 
                               className="w-20 h-20 rounded object-cover bg-white mx-auto mb-1.5 border border-slate-200" 
                               referrerPolicy="no-referrer"
                             />
                           ) : (
                             <div className="w-16 h-16 bg-slate-100 rounded border border-slate-200 flex items-center justify-center text-4xl mx-auto mb-1.5 shrink-0 select-none">
-                              {db.settings.storeLogo}
+                              {db.settings.receiptCustomLogo || db.settings.storeLogo}
                             </div>
                           )
                         )}
@@ -3235,17 +3457,17 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
                       {/* Document Header */}
                       <div className="flex justify-between items-start border-b border-slate-200 pb-4">
                         <div className="flex items-start gap-4">
-                          {db.settings?.storeLogo && (
-                            (db.settings.storeLogo.startsWith('data:') || db.settings.storeLogo.startsWith('http') || db.settings.storeLogo.startsWith('/') || db.settings.storeLogo.includes('.') || db.settings.storeLogo.length > 15) ? (
+                          {(db.settings?.invoiceCustomLogo || db.settings?.storeLogo) && (
+                            ((db.settings.invoiceCustomLogo || db.settings.storeLogo)!.startsWith('data:') || (db.settings.invoiceCustomLogo || db.settings.storeLogo)!.startsWith('http') || (db.settings.invoiceCustomLogo || db.settings.storeLogo)!.startsWith('/') || (db.settings.invoiceCustomLogo || db.settings.storeLogo)!.includes('.') || (db.settings.invoiceCustomLogo || db.settings.storeLogo)!.length > 15) ? (
                               <img 
-                                src={db.settings.storeLogo} 
+                                src={db.settings.invoiceCustomLogo || db.settings.storeLogo} 
                                 alt="Logo" 
                                 className="w-28 h-28 rounded-lg object-cover bg-white border border-slate-200 shadow-xs shrink-0" 
                                 referrerPolicy="no-referrer"
                               />
                             ) : (
                               <div className="w-24 h-24 bg-slate-100 rounded-lg border border-slate-200 flex items-center justify-center text-5xl font-bold font-sans shrink-0 select-none">
-                                {db.settings.storeLogo}
+                                {db.settings.invoiceCustomLogo || db.settings.storeLogo}
                               </div>
                             )
                           )}
@@ -3372,30 +3594,43 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
               </div>
             </div>
 
-            {/* DECOUPLED FULL-FIDELITY PRINT PORTAL LAYER */}
-            {createPortal(
-              <div 
-                className={printFormat === 'ticket' ? 'ticket-print-layout' : 'a4-print-layout'} 
-                dir={language === 'ar' ? 'rtl' : 'ltr'}
-              >
-                {printFormat === 'ticket' ? (
-                  /* ----------------- THERMAL TICKET FORMAT FOR PORTAL ----------------- */
-                  <div className={`text-center space-y-3 ${db.settings?.receiptCompactSize ? 'text-[10px] leading-tight space-y-2' : 'text-xs'}`}>
-                    <div className="border-b border-dashed border-slate-300 pb-3">
-                      {db.settings?.receiptShowLogo !== false && db.settings?.storeLogo && (
-                        (db.settings.storeLogo.startsWith('data:') || db.settings.storeLogo.startsWith('http') || db.settings.storeLogo.startsWith('/') || db.settings.storeLogo.includes('.') || db.settings.storeLogo.length > 15) ? (
-                          <img 
-                            src={db.settings.storeLogo} 
-                            alt="Logo" 
-                            className="w-20 h-20 rounded object-cover bg-white mx-auto mb-1.5 border border-slate-200" 
-                            referrerPolicy="no-referrer"
-                          />
-                        ) : (
-                          <div className="w-16 h-16 bg-slate-100 rounded border border-slate-200 flex items-center justify-center text-4xl mx-auto mb-1.5 shrink-0 select-none">
-                            {db.settings.storeLogo}
-                          </div>
-                        )
-                      )}
+             {/* DECOUPLED FULL-FIDELITY PRINT PORTAL LAYER */}
+             {createPortal(
+               <div 
+                 className={printFormat === 'ticket' ? 'ticket-print-layout' : 'a4-print-layout'} 
+                 style={
+                   printFormat === 'ticket' ? {
+                     paddingTop: `${db.settings?.receiptMarginTop ?? 2}mm`,
+                     paddingBottom: `${db.settings?.receiptMarginBottom ?? 3}mm`,
+                     paddingLeft: `${db.settings?.receiptMarginLeft ?? 3}mm`,
+                     paddingRight: `${db.settings?.receiptMarginRight ?? 3}mm`,
+                   } : {
+                     paddingTop: `${db.settings?.invoiceMarginTop ?? 8}mm`,
+                     paddingBottom: `${db.settings?.invoiceMarginBottom ?? 8}mm`,
+                     paddingLeft: `${db.settings?.invoiceMarginLeft ?? 8}mm`,
+                     paddingRight: `${db.settings?.invoiceMarginRight ?? 8}mm`,
+                   }
+                 }
+                 dir={language === 'ar' ? 'rtl' : 'ltr'}
+               >
+                 {printFormat === 'ticket' ? (
+                   /* ----------------- THERMAL TICKET FORMAT FOR PORTAL ----------------- */
+                   <div className={`text-center space-y-3 ${db.settings?.receiptCompactSize ? 'text-[10px] leading-tight space-y-2' : 'text-xs'}`}>
+                     <div className="border-b border-dashed border-slate-300 pb-3">
+                       {db.settings?.receiptShowLogo !== false && (db.settings?.receiptCustomLogo || db.settings?.storeLogo) && (
+                         ((db.settings.receiptCustomLogo || db.settings.storeLogo)!.startsWith('data:') || (db.settings.receiptCustomLogo || db.settings.storeLogo)!.startsWith('http') || (db.settings.receiptCustomLogo || db.settings.storeLogo)!.startsWith('/') || (db.settings.receiptCustomLogo || db.settings.storeLogo)!.includes('.') || (db.settings.receiptCustomLogo || db.settings.storeLogo)!.length > 15) ? (
+                           <img 
+                             src={db.settings.receiptCustomLogo || db.settings.storeLogo} 
+                             alt="Logo" 
+                             className="w-20 h-20 rounded object-cover bg-white mx-auto mb-1.5 border border-slate-200" 
+                             referrerPolicy="no-referrer"
+                           />
+                         ) : (
+                           <div className="w-16 h-16 bg-slate-100 rounded border border-slate-200 flex items-center justify-center text-4xl mx-auto mb-1.5 shrink-0 select-none">
+                             {db.settings.receiptCustomLogo || db.settings.storeLogo}
+                           </div>
+                         )
+                       )}
                       
                       <h2 className="text-sm font-black text-slate-900 uppercase tracking-tight">{storeName}</h2>
                       
@@ -3499,17 +3734,17 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
                     {/* Document Header */}
                     <div className="flex justify-between items-start border-b border-slate-200 pb-4">
                       <div className="flex items-start gap-4">
-                        {db.settings?.storeLogo && (
-                          (db.settings.storeLogo.startsWith('data:') || db.settings.storeLogo.startsWith('http') || db.settings.storeLogo.startsWith('/') || db.settings.storeLogo.includes('.') || db.settings.storeLogo.length > 15) ? (
+                        {(db.settings?.invoiceCustomLogo || db.settings?.storeLogo) && (
+                          ((db.settings.invoiceCustomLogo || db.settings.storeLogo)!.startsWith('data:') || (db.settings.invoiceCustomLogo || db.settings.storeLogo)!.startsWith('http') || (db.settings.invoiceCustomLogo || db.settings.storeLogo)!.startsWith('/') || (db.settings.invoiceCustomLogo || db.settings.storeLogo)!.includes('.') || (db.settings.invoiceCustomLogo || db.settings.storeLogo)!.length > 15) ? (
                             <img 
-                              src={db.settings.storeLogo} 
+                              src={db.settings.invoiceCustomLogo || db.settings.storeLogo} 
                               alt="Logo" 
                               className="w-28 h-28 rounded-lg object-cover bg-white border border-slate-200 shadow-xs shrink-0" 
                               referrerPolicy="no-referrer"
                             />
                           ) : (
                             <div className="w-24 h-24 bg-slate-100 rounded-lg border border-slate-200 flex items-center justify-center text-5xl font-bold font-sans shrink-0 select-none">
-                              {db.settings.storeLogo}
+                              {db.settings.invoiceCustomLogo || db.settings.storeLogo}
                             </div>
                           )
                         )}
@@ -3726,7 +3961,7 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
                     type="button"
                     onClick={async () => {
                       if (!otpPhoneNumber || otpPhoneNumber.length < 5) {
-                        alert(language === 'ar' ? "⚠️ يرجى إدخال رقم هاتف صالح!" : "⚠️ Veuillez saisir un numéro de téléphone valide!");
+                        showToast(language === 'ar' ? "⚠️ يرجى إدخال رقم هاتف صالح!" : "⚠️ Veuillez saisir un numéro de téléphone valide!", 'error');
                         return;
                       }
                       setOtpSending(true);
@@ -3898,6 +4133,292 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
                   </div>
                 </div>
               )}
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+
+
+      {/* 💵 DETAILED CASH DRAWER AUDITING & CONTROL PANEL */}
+      <AnimatePresence>
+        {/* Cash Drawer features completely removed/disabled */}
+        {false && showCashDrawerPanel && (
+          <div className="fixed inset-0 z-55 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-xs no-print" style={{ zIndex: 9999 }}>
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="bg-white rounded-xl shadow-2xl border border-slate-205 w-full max-w-2xl overflow-hidden text-start font-sans flex flex-col max-h-[90vh]"
+              dir={language === 'ar' ? 'rtl' : 'ltr'}
+            >
+              {/* Modal Header */}
+              <div className="bg-slate-900 text-white p-5 flex justify-between items-center border-b border-slate-800 shrink-0">
+                <div className="flex items-center gap-2.5">
+                  <span className="text-2xl">💵</span>
+                  <div>
+                    <h3 className="text-sm font-black uppercase tracking-wide">
+                      {language === 'ar' ? 'نظام إدارة و عد درج النقود (Tiroir Caisse)' : 'Système de Comptage & Suivi du Tiroir Caisse'}
+                    </h3>
+                    <p className="text-[10px] text-emerald-400 font-extrabold uppercase font-mono tracking-wider leading-none mt-1">
+                      {language === 'ar' ? 'مراقبة السيولة النقدية والتدقيق اليومي' : 'CONCILIATION ET CONTROLE DE CAISSE EN DIRECT'}
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowCashDrawerPanel(false)}
+                  className="p-1.5 hover:bg-slate-800 text-slate-400 hover:text-white rounded transition-colors cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* Scrollable contents */}
+              <div className="p-6 overflow-y-auto space-y-6 flex-1">
+                
+                {/* 1. Upper Statistics: Expected Cash and Counted Cash */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  
+                  {/* Card A: Expected Liquid POS Balance */}
+                  <div className="bg-slate-50 border border-slate-200 p-4 rounded-xl space-y-1">
+                    <span className="text-[9px] font-black uppercase text-slate-500 tracking-wider block">
+                      {language === 'ar' ? 'السيولة المتوقعة بالنظام :' : 'SOLDE THÉORIQUE CAISSE :'}
+                    </span>
+                    <strong className="text-lg font-mono text-slate-900 block font-black">
+                      {formatCurrency(expectedCashAmount)}
+                    </strong>
+                    <span className="text-[8.5px] text-slate-400 font-bold block">
+                      {language === 'ar' ? 'تأسيس: 150.00 د.ت + المبيعات المستلمة' : 'Fonds de caisse (150 DT) + Ventes - Retours'}
+                    </span>
+                  </div>
+
+                  {/* Card B: Counted Physical Cash */}
+                  <div className="bg-emerald-50 border border-emerald-150 p-4 rounded-xl space-y-1">
+                    <span className="text-[9px] font-black uppercase text-emerald-700 tracking-wider block font-sans">
+                      {language === 'ar' ? 'النقود المعدودة بالفحص :' : 'MONTANT COMPTÉ (PHYSIQUE) :'}
+                    </span>
+                    <strong className="text-lg font-mono text-emerald-800 block font-extrabold">
+                      {formatCurrency(totalDrawerCash)}
+                    </strong>
+                    <span className="text-[8.5px] text-emerald-600 font-bold block">
+                      {language === 'ar' ? 'محسوبة بناء على فئات الأوراق النقدية' : 'Calculé selon le nombre de billets & pièces'}
+                    </span>
+                  </div>
+
+                  {/* Card C: Discrepancy (Écart de caisse) */}
+                  <div className={`p-4 rounded-xl border space-y-1 ${
+                    Math.abs(cashDrawerDiscrepancy) < 0.01
+                      ? 'bg-blue-50 border-blue-150 text-blue-900'
+                      : cashDrawerDiscrepancy > 0
+                      ? 'bg-amber-50 border-amber-150 text-amber-900'
+                      : 'bg-rose-50 border-rose-150 text-rose-900'
+                  }`}>
+                    <span className="text-[9px] font-black uppercase tracking-wider block opacity-90 font-sans">
+                      {language === 'ar' ? 'فرق عجز/زيادة الصندوق :' : 'ÉCART DE COMPTAGE / SOLDE :'}
+                    </span>
+                    <strong className="text-lg font-mono block font-black">
+                      {cashDrawerDiscrepancy > 0 ? '+' : ''}{formatCurrency(cashDrawerDiscrepancy)}
+                    </strong>
+                    <span className="text-[8.5px] font-bold block">
+                      {Math.abs(cashDrawerDiscrepancy) < 0.01
+                        ? (language === 'ar' ? 'طابق تام متطابق بنسبة 100% ✨' : 'Concordance parfaite ! Aucun écart. ✨')
+                        : cashDrawerDiscrepancy > 0
+                        ? (language === 'ar' ? '📈 فائض نقدي غير مسجل' : '📈 Excédent de caisse constaté')
+                        : (language === 'ar' ? '📉 عجز/نقص في الصندوق' : '📉 Déficit de caisse constaté')}
+                    </span>
+                  </div>
+
+                </div>
+
+                {/* 2. Double section grid layout */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
+                  
+                  {/* Left segment: Coins & bills detailed counting */}
+                  <div className="space-y-4">
+                    <h4 className="text-[10px] font-black uppercase tracking-wider text-slate-550 border-b pb-2 flex items-center gap-1.5 select-none font-sans">
+                      <span>🧮</span>
+                      <span>{language === 'ar' ? 'جرد وتعداد الأوراق النقدية والعملات المعدنية :' : 'COMPTAGE DÉTAILLÉ DE LA CAISSE :'}</span>
+                    </h4>
+
+                    {/* Denominations table count layout */}
+                    <div className="space-y-2 max-h-[300px] overflow-y-auto pr-1">
+                      {[
+                        { denom: '50DT', label: '50 DT', type: 'bill', val: 50 },
+                        { denom: '20DT', label: '20 DT', type: 'bill', val: 20 },
+                        { denom: '10DT', label: '10 DT', type: 'bill', val: 10 },
+                        { denom: '5DT', label: '5 DT', type: 'bill', val: 5 },
+                        { denom: '1DT', label: '1 DT', type: 'coin', val: 1 },
+                        { denom: '0.5DT', label: '500 mil', type: 'coin', val: 0.5 },
+                        { denom: '0.2DT', label: '200 mil', type: 'coin', val: 0.2 },
+                        { denom: '0.1DT', label: '100 mil', type: 'coin', val: 0.1 }
+                      ].map((item) => {
+                        const count = drawerCashComposition[item.denom] || 0;
+                        return (
+                          <div 
+                            key={item.denom}
+                            className="flex items-center justify-between p-2 rounded-lg bg-slate-50 border border-slate-200 hover:bg-slate-100/50 transition-colors"
+                          >
+                            <div className="flex items-center gap-2.5">
+                              <span className="text-base select-none">{item.type === 'bill' ? '💵' : '🪙'}</span>
+                              <div className="text-start">
+                                <span className="text-xs font-extrabold text-slate-800">{item.label}</span>
+                                <span className="block text-[8px] font-mono text-slate-400">
+                                  {formatCurrency(item.val * count)}
+                                </span>
+                              </div>
+                            </div>
+
+                            {/* Counters */}
+                            <div className="flex items-center gap-2">
+                              {/* Decrement */}
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setDrawerCashComposition(prev => {
+                                    const next = { ...prev, [item.denom]: Math.max(0, count - 1) };
+                                    safeLocalStorage.setItem('pos_cash_drawer_composition', JSON.stringify(next));
+                                    return next;
+                                  });
+                                }}
+                                className="w-6 h-6 rounded-md bg-white border border-slate-250 hover:bg-slate-150 text-slate-600 font-black text-xs flex items-center justify-center cursor-pointer transition-colors"
+                              >
+                                -
+                              </button>
+                              
+                              <input
+                                type="number"
+                                min="0"
+                                value={count}
+                                onChange={(e) => {
+                                  const val = Math.max(0, Number(e.target.value));
+                                  setDrawerCashComposition(prev => {
+                                    const next = { ...prev, [item.denom]: val };
+                                    safeLocalStorage.setItem('pos_cash_drawer_composition', JSON.stringify(next));
+                                    return next;
+                                  });
+                                }}
+                                className="w-12 h-6 text-center text-xs font-mono font-black bg-white border border-slate-200 rounded text-slate-900"
+                              />
+
+                              {/* Increment */}
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setDrawerCashComposition(prev => {
+                                    const next = { ...prev, [item.denom]: count + 1 };
+                                    safeLocalStorage.setItem('pos_cash_drawer_composition', JSON.stringify(next));
+                                    return next;
+                                  });
+                                }}
+                                className="w-6 h-6 rounded-md bg-white border border-slate-250 hover:bg-slate-150 text-slate-600 font-extrabold text-xs flex items-center justify-center cursor-pointer transition-colors"
+                              >
+                                +
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    {/* Manual Ejection Control Area */}
+                    <div className="pt-2">
+                      <button
+                        type="button"
+                        onClick={handleManualDrawerEject}
+                        className="w-full bg-emerald-600 hover:bg-emerald-700 text-white py-2.5 rounded-lg text-xs font-black uppercase tracking-wider shadow-sm flex items-center justify-center gap-2 cursor-pointer transition-all active:scale-95"
+                      >
+                        <Unlock className="w-4 h-4 text-emerald-250 animate-pulse" />
+                        <span>{language === 'ar' ? 'فتح وطرد درج النقود آلياً' : 'Ejecter le tiroir caisse 🔓'}</span>
+                      </button>
+                    </div>
+
+                  </div>
+
+                  {/* Right segment: Audit Logs history */}
+                  <div className="space-y-4 font-sans">
+                    <div className="flex justify-between items-center border-b pb-2 select-none">
+                      <h4 className="text-[10px] font-black uppercase tracking-wider text-slate-550 flex items-center gap-1.5">
+                        <span>📋</span>
+                        <span>{language === 'ar' ? 'سجل العمليات وحركات فتح الدرج :' : "LOG D'OUVERTURE DU TIROIR CAISSE :"}</span>
+                      </h4>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const initialLog = [
+                            { id: '1', time: new Date().toLocaleTimeString(), action: 'Fonds de caisse réinitialisé', user: 'Administrateur', amount: 150.0 }
+                          ];
+                          setCashDrawerLogs(initialLog);
+                          safeLocalStorage.setItem('pos_cash_drawer_logs', JSON.stringify(initialLog));
+                        }}
+                        className="text-[9px] font-bold text-rose-500 hover:underline uppercase cursor-pointer"
+                      >
+                        {language === 'ar' ? 'مسح السجل' : 'Vider Log'}
+                      </button>
+                    </div>
+
+                    <div className="space-y-2 max-h-[300px] overflow-y-auto pr-1">
+                      {cashDrawerLogs.length === 0 ? (
+                        <p className="text-[10px] text-slate-400 font-bold py-8 text-center bg-slate-50 border border-dashed rounded-lg">
+                          {language === 'ar' ? 'لا توجد حركات فتح مسجلة' : 'Aucun journal d\'ouverture disponible.'}
+                        </p>
+                      ) : (
+                        cashDrawerLogs.map((log) => (
+                          <div 
+                            key={log.id} 
+                            className="p-3 bg-slate-50 border border-slate-150 rounded-lg text-xs flex flex-col gap-1 text-slate-700 hover:bg-slate-100/50 transition-colors"
+                          >
+                            <div className="flex justify-between items-center font-bold">
+                              <span className="text-slate-900 font-extrabold flex items-center gap-1">
+                                <span className={log.action.includes('auto') || log.action.includes('تلقائي') ? 'text-blue-600' : 'text-emerald-600'}>●</span>
+                                {log.action}
+                              </span>
+                              <span className="text-[9px] font-mono text-slate-400">{log.time}</span>
+                            </div>
+                            <div className="flex justify-between items-center text-[10px] text-slate-500">
+                              <span>
+                                {language === 'ar' ? 'الوكيل: ' : 'Opérateur : '}
+                                <strong className="text-slate-700">{log.user}</strong>
+                              </span>
+                              {log.amount !== undefined && (
+                                <span className="font-mono text-emerald-700 font-extrabold uppercase bg-emerald-100/60 px-1.5 py-0.2 rounded text-[9px]">
+                                  +{formatCurrency(log.amount)}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        ))
+                      )}
+                    </div>
+
+                    <div className="p-3.5 bg-sky-50 border border-sky-150 rounded-lg text-[10px] text-sky-850 leading-relaxed space-y-1">
+                      <strong className="block font-black uppercase text-[10px] tracking-wider text-sky-950 block font-sans">
+                        📌 {language === 'ar' ? 'عن مطابقة السيولة اليومية :' : 'À PROPOS DU CASH MANAGING :'}
+                      </strong>
+                      <p>
+                        {language === 'ar' 
+                          ? 'يقدم هذا نظام جرد فوري وصحيح للسيولة لضمان كشف الفروقات والأخطاء أثناء تسليم الوردية ومطابقة النقدية تماشياً مع المعايير المحاسبية.'
+                          : 'Le comptage de fin de shift évite les écarts lors du passage de témoin. Conservez toujours un fond initial stable (e.g. 150 DT) pour délivrer la monnaie.'}
+                      </p>
+                    </div>
+
+                  </div>
+
+                </div>
+
+              </div>
+
+              {/* Modal Footer */}
+              <div className="bg-slate-50 p-4 border-t border-slate-150 flex justify-end gap-3 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setShowCashDrawerPanel(false)}
+                  className="px-4 py-2 bg-slate-900 text-white hover:bg-black font-extrabold text-[11px] uppercase tracking-wider rounded-lg shadow-sm transition-colors cursor-pointer"
+                >
+                  {language === 'ar' ? 'تأكيد وحفظ الإغلاق' : 'Fermer & Terminer ✔'}
+                </button>
+              </div>
+
             </motion.div>
           </div>
         )}
