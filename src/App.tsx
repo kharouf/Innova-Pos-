@@ -88,13 +88,17 @@ function AppContent() {
     const forced = safeLocalStorage.getItem('isWorkerMode') === 'true';
     if (forced) return 'pos';
     const saved = safeLocalStorage.getItem('pos_active_tab');
-    if (!saved || saved === 'backup' || saved === 'dashboard') return 'pos';
+    if (!saved) return 'pos';
     return saved;
   });
 
   useEffect(() => {
     safeLocalStorage.setItem('pos_active_tab', activeTab);
   }, [activeTab]);
+
+  useEffect(() => {
+    safeLocalStorage.setItem('isWorkerMode', isWorkerMode ? 'true' : 'false');
+  }, [isWorkerMode]);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   const [showPinModal, setShowPinModal] = useState(false);
@@ -450,10 +454,6 @@ function AppContent() {
       if (currentUser) {
         setDemoMode(false);
         setSyncingCloud(true);
-        const savedTab = safeLocalStorage.getItem('pos_active_tab');
-        if (!savedTab || savedTab === 'backup' || savedTab === 'dashboard') {
-          setActiveTab('pos');
-        }
         try {
           // Attempt loading this store's custom cloud database with a 4.5s safe timeout
           const cloudDb = await withTimeout(loadUserDatabase(currentUser.uid), 4500, null);

@@ -556,15 +556,15 @@ export function getDatabase(): DatabaseState {
     const parsed = JSON.parse(data);
     let settings = { ...DEFAULT_SETTINGS, ...(parsed.settings || {}) };
     
-    // Auto-migrate legacy name/logo to INNOVA POS PRO defaults
-    if (settings && (settings.storeName === 'Innova POS' || settings.storeName === 'Alimentation Générale El Hana (القناعة)' || settings.storeName === 'Alimentation Générale BEN ABDESELEM (بن عبد السلام)' || !settings.storeName || settings.storeLogo === '🛒' || settings.storePhone === '+216 22 999 888')) {
+    // Auto-migrate legacy name/logo to INNOVA POS PRO defaults only if it is completely empty or matches old preset names
+    if (settings && (!settings.storeName || settings.storeName === 'Innova POS' || settings.storeName === 'Alimentation Générale El Hana (القناعة)' || settings.storeName === 'Alimentation Générale BEN ABDESELEM (بن عبد السلام)')) {
       settings = {
         ...settings,
-        storeName: DEFAULT_SETTINGS.storeName,
-        storePhone: DEFAULT_SETTINGS.storePhone,
-        storeAddress: DEFAULT_SETTINGS.storeAddress,
+        storeName: settings.storeName && settings.storeName !== 'Innova POS' && settings.storeName !== 'Alimentation Générale El Hana (القناعة)' && settings.storeName !== 'Alimentation Générale BEN ABDESELEM (بن عبد السلام)' ? settings.storeName : DEFAULT_SETTINGS.storeName,
+        storePhone: settings.storePhone || DEFAULT_SETTINGS.storePhone,
+        storeAddress: settings.storeAddress || DEFAULT_SETTINGS.storeAddress,
         matriculeFiscal: settings.matriculeFiscal || DEFAULT_SETTINGS.matriculeFiscal,
-        storeLogo: DEFAULT_SETTINGS.storeLogo
+        storeLogo: settings.storeLogo && settings.storeLogo !== '🛒' ? settings.storeLogo : DEFAULT_SETTINGS.storeLogo
       };
       // Defer-save the migrated DB back into safeLocalStorage safely
       setTimeout(() => {
