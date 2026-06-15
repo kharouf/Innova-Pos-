@@ -464,7 +464,7 @@ const INITIAL_DATABASE: DatabaseState = {
 
 const STORAGE_KEY = 'commercial_management_db';
 
-const DEFAULT_SETTINGS = {
+export const DEFAULT_SETTINGS = {
   storeName: 'INNOVA POS PRO',
   storePhone: '+216 24260711',
   storeAddress: 'AVENU HABIB BORGIBA GHANNOUCHE GABES',
@@ -554,7 +554,7 @@ export function getDatabase(): DatabaseState {
   }
   try {
     const parsed = JSON.parse(data);
-    let settings = parsed.settings || DEFAULT_SETTINGS;
+    let settings = { ...DEFAULT_SETTINGS, ...(parsed.settings || {}) };
     
     // Auto-migrate legacy name/logo to INNOVA POS PRO defaults
     if (settings && (settings.storeName === 'Innova POS' || settings.storeName === 'Alimentation Générale El Hana (القناعة)' || settings.storeName === 'Alimentation Générale BEN ABDESELEM (بن عبد السلام)' || !settings.storeName || settings.storeLogo === '🛒' || settings.storePhone === '+216 22 999 888')) {

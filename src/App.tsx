@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { DatabaseState, SystemUpdate, Product, StoreSettings, AppUser } from './types';
-import { getDatabase, saveDatabase } from './utils/db';
+import { getDatabase, saveDatabase, DEFAULT_SETTINGS } from './utils/db';
 import { LanguageProvider, useLanguage } from './utils/LanguageContext';
 import { safeLocalStorage } from './utils/storage';
 import { auth } from './utils/firebase';
@@ -87,7 +87,9 @@ function AppContent() {
   const [activeTab, setActiveTab] = useState<string>(() => {
     const forced = safeLocalStorage.getItem('isWorkerMode') === 'true';
     if (forced) return 'pos';
-    return safeLocalStorage.getItem('pos_active_tab') || 'dashboard';
+    const saved = safeLocalStorage.getItem('pos_active_tab');
+    if (!saved || saved === 'backup' || saved === 'dashboard') return 'pos';
+    return saved;
   });
 
   useEffect(() => {
@@ -448,13 +450,27 @@ function AppContent() {
       if (currentUser) {
         setDemoMode(false);
         setSyncingCloud(true);
+        const savedTab = safeLocalStorage.getItem('pos_active_tab');
+        if (!savedTab || savedTab === 'backup' || savedTab === 'dashboard') {
+          setActiveTab('pos');
+        }
         try {
           // Attempt loading this store's custom cloud database with a 4.5s safe timeout
           const cloudDb = await withTimeout(loadUserDatabase(currentUser.uid), 4500, null);
           let dbInstance = cloudDb;
           if (cloudDb) {
-            setDb(cloudDb);
-            saveDatabase(cloudDb);
+            const mergedSettings = {
+              ...DEFAULT_SETTINGS,
+              ...(getDatabase().settings || {}),
+              ...(cloudDb.settings || {})
+            };
+            const finalizedDb = {
+              ...cloudDb,
+              settings: mergedSettings
+            };
+            dbInstance = finalizedDb;
+            setDb(finalizedDb);
+            saveDatabase(finalizedDb);
           } else {
             // New account or offline fallback: seed or use local cache
             const localFallback = getDatabase();

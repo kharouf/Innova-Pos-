@@ -460,7 +460,124 @@ export default function SaaSDeveloperConsole() {
                             />
                             <div className="text-[10px] text-slate-400 truncate">{t.email || 'Pas d\'email'}</div>
                             
-                            {/* Email notification features removed */}
+                            {/* 📧 Configurer l'Expéditeur SMTP pour ce Tenant */}
+                            <div className="mt-2.5 p-2 bg-slate-900 border border-slate-800 rounded text-slate-100 space-y-2 text-left">
+                              <span className="text-[9px] font-black uppercase text-amber-400 tracking-wider block">
+                                📩 {language === 'ar' ? 'إعدادات البريد للمرسل (SMTP)' : "CONFIG EXPÉDITEUR SMTP"}
+                              </span>
+                              
+                              <div className="space-y-1.5 text-[10px]">
+                                <div>
+                                  <label className="text-[8px] font-bold text-slate-400 block">
+                                    {language === 'ar' ? 'المستلم (Admin Email) :' : 'Receveur (Admin Email) :'}
+                                  </label>
+                                  <input
+                                    type="email"
+                                    value={editRemoteAdminEmail}
+                                    onChange={(e) => setEditRemoteAdminEmail(e.target.value)}
+                                    placeholder="Ex: admin@example.com"
+                                    className="w-full text-[10px] bg-slate-950 border border-slate-800 p-1 rounded font-mono text-white"
+                                  />
+                                </div>
+
+                                <div className="flex items-center gap-1.5 py-0.5">
+                                  <input
+                                    id={`remAlerts-${t.uid}`}
+                                    type="checkbox"
+                                    checked={editRemoteEnableEmailAlerts}
+                                    onChange={(e) => setEditRemoteEnableEmailAlerts(e.target.checked)}
+                                    className="w-3 h-3 rounded border-slate-700 bg-slate-950 accent-amber-500 cursor-pointer"
+                                  />
+                                  <label htmlFor={`remAlerts-${t.uid}`} className="text-[8.5px] font-bold text-slate-300 cursor-pointer select-none">
+                                    {language === 'ar' ? 'تفعيل تنبيهات البريد الإلكتروني' : 'Activer alertes stock bas'}
+                                  </label>
+                                </div>
+
+                                <div className="grid grid-cols-2 gap-1">
+                                  <div>
+                                    <label className="text-[8px] font-bold text-slate-400 block">Host SMTP :</label>
+                                    <input
+                                      type="text"
+                                      value={editRemoteSmtpHost}
+                                      onChange={(e) => setEditRemoteSmtpHost(e.target.value)}
+                                      placeholder="smtp.gmail.com"
+                                      className="w-full text-[10px] bg-slate-950 border border-slate-800 p-1 rounded font-mono text-white"
+                                    />
+                                  </div>
+                                  <div>
+                                    <label className="text-[8px] font-bold text-slate-400 block">Port :</label>
+                                    <input
+                                      type="number"
+                                      value={editRemoteSmtpPort}
+                                      onChange={(e) => setEditRemoteSmtpPort(Number(e.target.value))}
+                                      placeholder="465"
+                                      className="w-full text-[10px] bg-slate-950 border border-slate-800 p-1 rounded font-mono text-white"
+                                    />
+                                  </div>
+                                </div>
+
+                                <div>
+                                  <label className="text-[8px] font-bold text-slate-400 block">
+                                    {language === 'ar' ? 'البريد الإلكتروني للارسال :' : 'Email d\'envoi (Smtp User) :'}
+                                  </label>
+                                  <input
+                                    type="text"
+                                    value={editRemoteSmtpUser}
+                                    onChange={(e) => setEditRemoteSmtpUser(e.target.value)}
+                                    placeholder="sender@gmail.com"
+                                    className="w-full text-[10px] bg-slate-950 border border-slate-800 p-1 rounded font-mono text-white"
+                                  />
+                                </div>
+
+                                <div>
+                                  <label className="text-[8px] font-bold text-slate-400 block">
+                                    {language === 'ar' ? 'اسم المرسل الظاهري :' : 'Nom d\'expéditeur :'}
+                                  </label>
+                                  <input
+                                    type="text"
+                                    value={editRemoteSmtpSenderName}
+                                    onChange={(e) => setEditRemoteSmtpSenderName(e.target.value)}
+                                    placeholder="InnovaPos Alerts"
+                                    className="w-full text-[10px] bg-slate-950 border border-slate-800 p-1 rounded text-white"
+                                  />
+                                </div>
+
+                                <div>
+                                  <label className="text-[8px] font-bold text-slate-400 block">
+                                    {language === 'ar' ? 'كلمة سر التطبيقات :' : 'App Password :'}
+                                  </label>
+                                  <div className="relative">
+                                    <input
+                                      type={showConsoleSmtpPass ? 'text' : 'password'}
+                                      value={editRemoteSmtpPass}
+                                      onChange={(e) => setEditRemoteSmtpPass(e.target.value)}
+                                      placeholder="••••••••••••••••"
+                                      className="w-full text-[10px] bg-slate-950 border border-slate-800 p-1 pr-6 rounded font-mono text-white"
+                                    />
+                                    <button
+                                      type="button"
+                                      onClick={() => setShowConsoleSmtpPass(!showConsoleSmtpPass)}
+                                      className="absolute right-1 top-1 text-slate-400 hover:text-white"
+                                    >
+                                      {showConsoleSmtpPass ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
+                                    </button>
+                                  </div>
+                                </div>
+
+                                <div className="flex items-center gap-1.5 pt-0.5">
+                                  <input
+                                    id={`remSecure-${t.uid}`}
+                                    type="checkbox"
+                                    checked={editRemoteSmtpSecure}
+                                    onChange={(e) => setEditRemoteSmtpSecure(e.target.checked)}
+                                    className="w-3 h-3 rounded border-slate-700 bg-slate-950 accent-amber-500 cursor-pointer"
+                                  />
+                                  <label htmlFor={`remSecure-${t.uid}`} className="text-[8.5px] text-slate-300 cursor-pointer select-none">
+                                    {language === 'ar' ? 'اتصال آمن SSL (مثل 465)' : 'Chiffrement SSL/TLS sécurisé'}
+                                  </label>
+                                </div>
+                              </div>
+                            </div>
                           </div>
                         ) : (
                           <div>
@@ -497,6 +614,48 @@ export default function SaaSDeveloperConsole() {
                               >
                                 <Clipboard className="w-3 h-3 text-slate-400 inline" />
                               </button>
+                            </div>
+
+                            {/* 📧 Affichage de l'expéditeur configuration SMTP dans la liste */}
+                            <div className="mt-2.5 p-2 bg-slate-50 border border-slate-150 rounded text-[11px] text-slate-700 space-y-1">
+                              <div className="text-[9.5px] font-black uppercase text-slate-500 flex items-center gap-1">
+                                <span>📧 {language === 'ar' ? 'المرسل البريدي (SMTP) :' : 'Expéditeur Email SMTP :'}</span>
+                              </div>
+                              {t.remoteSmtpUser ? (
+                                <div className="space-y-0.5">
+                                  <div>
+                                    <span className="text-slate-400">{language === 'ar' ? 'الحساب المرسل :' : 'Compte :'}</span>{' '}
+                                    <span className="font-mono text-[10.5px] bg-slate-100 border border-slate-150 px-1 py-0.2 rounded text-slate-800 break-all select-all">{t.remoteSmtpUser}</span>
+                                  </div>
+                                  {t.remoteSmtpHost && (
+                                    <div>
+                                      <span className="text-slate-400">{language === 'ar' ? 'الخادم والمستلم :' : 'Host & Recipient :'}</span>{' '}
+                                      <span className="font-mono text-slate-650">{t.remoteSmtpHost}:{t.remoteSmtpPort || 465}</span>
+                                      {t.remoteAdminEmail && (
+                                        <span className="text-emerald-600 font-bold"> → {t.remoteAdminEmail}</span>
+                                      )}
+                                    </div>
+                                  )}
+                                  {t.remoteSmtpSenderName && (
+                                    <div>
+                                      <span className="text-slate-400">{language === 'ar' ? 'اسم الإرسال :' : 'Sender Name :'}</span>{' '}
+                                      <span className="font-semibold text-slate-700">"{t.remoteSmtpSenderName}"</span>
+                                    </div>
+                                  )}
+                                  <div className="text-[10px] flex items-center gap-1">
+                                    <span className="text-slate-400">{language === 'ar' ? 'حالة التنبيهات :' : 'Etat alertes :'}</span>
+                                    {t.remoteEnableCriticalStockEmailAlerts ? (
+                                      <span className="text-emerald-600 font-bold bg-emerald-50 px-1 rounded">✓ {language === 'ar' ? 'تنبيه نشط' : 'Alerte Active'}</span>
+                                    ) : (
+                                      <span className="text-slate-400 bg-slate-100 px-1 rounded">🔕 {language === 'ar' ? 'معطل' : 'Désactivé'}</span>
+                                    )}
+                                  </div>
+                                </div>
+                              ) : (
+                                <div className="text-[10px] text-slate-400 italic">
+                                  {language === 'ar' ? '⚠️ يستخدم إعدادات الخادم الافتراضي للنظام' : '⚠️ Utilise le serveur par défaut'}
+                                </div>
+                              )}
                             </div>
                           </div>
                         )}

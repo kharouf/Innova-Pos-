@@ -2269,79 +2269,7 @@ encryption_mode: High-Security Advanced
                     </div>
                   </div>
 
-                  {/* Bilingual SMTP configuration helper box */}
-                  <div className="mt-4 bg-amber-50/60 border border-amber-200/80 p-3.5 rounded-xl text-start">
-                    <h4 className="text-xs font-bold text-amber-850 flex items-center gap-1.5 mb-2">
-                      <span>💡 {language === 'ar' ? 'أمثلة لتكوين خادم البريد (SMTP Examples) :' : 'Exemples de configuration SMTP courantes :'}</span>
-                    </h4>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5 text-[11px] text-slate-700">
-                      {/* Example 1: Gmail */}
-                      <div className="bg-white/85 p-2.5 rounded-lg border border-amber-150 flex flex-col justify-between">
-                        <div>
-                          <span className="font-extrabold text-slate-805 block mb-1">📧 Gmail (Google Mail) :</span>
-                          <ul className="space-y-1 font-mono text-[10px] text-slate-650 mb-3">
-                            <li><span className="font-sans font-semibold text-slate-500">Host:</span> smtp.gmail.com</li>
-                            <li><span className="font-sans font-semibold text-slate-500">Port:</span> 587 <span className="text-slate-400">({language === 'ar' ? 'أو' : 'ou'} 465)</span></li>
-                            <li><span className="font-sans font-semibold text-slate-500">Utilisateur:</span> {user?.email || 'votre_adresse@gmail.com'}</li>
-                            <li><span className="font-sans font-semibold text-slate-500">Mot de passe:</span> <span className="text-amber-800 font-sans italic font-bold">App Password (16 chars)</span></li>
-                            <li className="font-sans text-[10px] text-amber-900 mt-1.5 leading-tight">
-                              🚨 {language === 'ar' 
-                                ? 'يرجى تفعيل التحقق بخطوتين على حساب Google، ثم إنشاء "كلمة كود مرور التطبيقات" (App Password) المكون من 16 حرفاً واستخدامه ككلمة مرور هنا.'
-                                : 'Veuillez activer la validation en 2 étapes sur votre compte Google, puis générer un "Mot de passe d\'application" (16 caractères) et le coller comme mot de passe.'}
-                            </li>
-                          </ul>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setSmtpHost('smtp.gmail.com');
-                            setSmtpPort(587);
-                            setSmtpSecure(false);
-                            setSmtpSenderName(storeName || 'INNOVA POS');
-                            if (user?.email) {
-                              setSmtpUser(user.email);
-                            }
-                          }}
-                          className="w-full bg-amber-600 hover:bg-amber-700 text-white font-bold py-1.5 px-3 rounded text-[10px] transition-all duration-150 shadow-xs cursor-pointer text-center"
-                        >
-                          {language === 'ar' ? '⚡ تطبيق إعدادات Gmail' : '⚡ Appliquer les réglages Gmail'}
-                        </button>
-                      </div>
 
-                      {/* Example 2: Outlook / Office 365 */}
-                      <div className="bg-white/85 p-2.5 rounded-lg border border-amber-150 flex flex-col justify-between">
-                        <div>
-                          <span className="font-extrabold text-slate-805 block mb-1">📧 Outlook & Hotmail :</span>
-                          <ul className="space-y-1 font-mono text-[10px] text-slate-650 mb-3">
-                            <li><span className="font-sans font-semibold text-slate-500">Host:</span> smtp.office365.com</li>
-                            <li><span className="font-sans font-semibold text-slate-500">Port:</span> 587</li>
-                            <li><span className="font-sans font-semibold text-slate-500">Utilisateur:</span> {user?.email || 'votre_adresse@outlook.com'}</li>
-                            <li><span className="font-sans font-semibold text-slate-500">Mot de passe:</span> <span className="text-amber-800 font-sans italic font-bold">Mot de passe du compte / App Password</span></li>
-                            <li className="font-sans text-[10px] text-slate-500 mt-1.5 leading-tight">
-                              🔒 {language === 'ar'
-                                ? 'قم بتمكين المنفذ TLS 587 الآمن للاتصال السلس دون حظر.'
-                                : 'Utilisez le port 587 pour garantir une livraison fluide avec chiffrement TLS.'}
-                            </li>
-                          </ul>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setSmtpHost('smtp.office365.com');
-                            setSmtpPort(587);
-                            setSmtpSecure(false);
-                            setSmtpSenderName(storeName || 'INNOVA POS');
-                            if (user?.email) {
-                              setSmtpUser(user.email);
-                            }
-                          }}
-                          className="w-full bg-slate-800 hover:bg-slate-900 text-white font-bold py-1.5 px-3 rounded text-[10px] transition-all duration-150 shadow-xs cursor-pointer text-center"
-                        >
-                          {language === 'ar' ? '⚡ تطبيق إعدادات Outlook' : '⚡ Appliquer les réglages Outlook'}
-                        </button>
-                      </div>
-                    </div>
-                  </div>
                 </div>
 
                 {/* 🔎 Live SMTP Connection & Email Diagnostic Tool */}
