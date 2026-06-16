@@ -1,7 +1,8 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { DatabaseState, Product } from '../types';
-import { getProductVisual } from '../utils/db';
+import { getProductVisual, isProductInPromo, getActiveProductPrice } from '../utils/db';
+import ProductPromotionsModal from './ProductPromotionsModal';
 import { useLanguage } from '../utils/LanguageContext';
 import { safeLocalStorage, checkIsIframe } from '../utils/storage';
 import { Html5Qrcode } from 'html5-qrcode';
@@ -29,7 +30,8 @@ import {
   Printer,
   FileText,
   DollarSign,
-  History
+  History,
+  Tag
 } from 'lucide-react';
 
 const COMMON_FOODS = [
@@ -93,6 +95,9 @@ export default function Products({ db, onUpdateDb }: ProductsProps) {
 
   // Price history modal state
   const [historyProduct, setHistoryProduct] = useState<Product | null>(null);
+
+  // Promotions modal state
+  const [showPromotionsModal, setShowPromotionsModal] = useState(false);
 
   // 🏷️ Barcode Print states
   const [showBarcodeModal, setShowBarcodeModal] = useState(false);
@@ -822,6 +827,15 @@ export default function Products({ db, onUpdateDb }: ProductsProps) {
             <span>{language === 'ar' ? 'تصدير المخزون (CSV)' : 'Exporter en CSV'}</span>
           </button>
 
+          {/* Promotions Manager Trigger */}
+          <button
+            onClick={() => setShowPromotionsModal(true)}
+            className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded text-xs font-bold transition-all shadow-xs flex items-center justify-center gap-1.5 cursor-pointer"
+          >
+            <Tag className="w-4 h-4" />
+            <span>{language === 'ar' ? 'الترويج والتخفيضات' : 'Promotions Produits'}</span>
+          </button>
+
           <button
             onClick={handleOpenCreate}
             className="px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded text-xs font-bold transition-all shadow-xs flex items-center justify-center gap-1.5 cursor-pointer"
@@ -1009,8 +1023,24 @@ export default function Products({ db, onUpdateDb }: ProductsProps) {
                       <td className="p-4 text-right font-mono font-medium text-slate-700">
                         {formatCurrency(prod.purchasePrice)}
                       </td>
-                      <td className="p-4 text-right font-mono font-bold text-slate-900">
-                        {formatCurrency(prod.sellingPrice)}
+                      <td className="p-4 text-right">
+                        {isProductInPromo(prod) ? (
+                          <div className="flex flex-col items-end">
+                            <span className="font-mono text-[10px] text-slate-400 line-through leading-none block" title="Saison normale">
+                              {formatCurrency(prod.sellingPrice)}
+                            </span>
+                            <span className="font-mono font-black text-rose-600 leading-tight block" title="Prix promotionnel actif">
+                              {formatCurrency(prod.promoPrice || 0)}
+                            </span>
+                            <span className="inline-block bg-rose-50 border border-rose-100 text-rose-700 font-bold text-[8px] px-1 rounded-sm mt-0.5 scale-90 origin-right">
+                              PROMO
+                            </span>
+                          </div>
+                        ) : (
+                          <span className="font-mono font-bold text-slate-900 block">
+                            {formatCurrency(prod.sellingPrice)}
+                          </span>
+                        )}
                       </td>
                       <td className="p-4 text-right whitespace-nowrap">
                         <div className="font-mono">
@@ -2400,6 +2430,14 @@ export default function Products({ db, onUpdateDb }: ProductsProps) {
           </div>
         );
       })()}
+
+      {/* 🏷️ Separate Product Promotions Form & Manager Modal */}
+      <ProductPromotionsModal
+        isOpen={showPromotionsModal}
+        onClose={() => setShowPromotionsModal(false)}
+        db={db}
+        onUpdateDb={onUpdateDb}
+      />
 
     </div>
   );

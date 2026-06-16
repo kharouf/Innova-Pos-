@@ -2,7 +2,7 @@ import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { DatabaseState, Product, Partner, Invoice, InvoiceItem } from '../types';
-import { getProductVisual } from '../utils/db';
+import { getProductVisual, isProductInPromo, getActiveProductPrice } from '../utils/db';
 import { useLanguage } from '../utils/LanguageContext';
 import { safeLocalStorage, checkIsIframe } from '../utils/storage';
 import { Html5Qrcode } from 'html5-qrcode';
@@ -501,7 +501,7 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
           };
           return updated;
         }
-        return [...prevCart, { product: matched!, qty: qtyToAdd, customPrice: matched!.sellingPrice }];
+        return [...prevCart, { product: matched!, qty: qtyToAdd, customPrice: getActiveProductPrice(matched!) }];
       });
       return { success: true, productName: matched.name, qty: qtyToAdd };
     }
@@ -532,9 +532,9 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
             );
           }
 
-          const unitPrice = matched.sellingPrice;
+          const unitPrice = getActiveProductPrice(matched);
           let calculatedQty = 1;
-          let customPriceToUse = matched.sellingPrice;
+          let customPriceToUse = getActiveProductPrice(matched);
 
           // Check if product unit represents weight (e.g., Kg, kg, g, Grammes, etc.)
           const isWeightUnit = matched.unit && (
@@ -548,12 +548,12 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
           if (isWeightUnit) {
             // It's a weight-embedded scale barcode (e.g. 01500 represents 1.500 Kg)
             calculatedQty = totalVal;
-            customPriceToUse = matched.sellingPrice;
+            customPriceToUse = getActiveProductPrice(matched);
           } else {
             // It's a price-embedded scale barcode (e.g. 02500 represents 2.500 DT total price)
             if (unitPrice > 0) {
               calculatedQty = Math.round((totalVal / unitPrice) * 1000) / 1000;
-              customPriceToUse = matched.sellingPrice;
+              customPriceToUse = getActiveProductPrice(matched);
             } else {
               // Unit price is 0, fall back to setting custom price directly
               customPriceToUse = totalVal;
@@ -838,7 +838,7 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
         setCart(newCart);
       }
     } else {
-      setCart([...cart, { product, qty: qtyToAdd, customPrice: product.sellingPrice }]);
+      setCart([...cart, { product, qty: qtyToAdd, customPrice: getActiveProductPrice(product) }]);
     }
     
     // Spawn a beautiful flying particle on cart addition
@@ -2161,9 +2161,20 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
                       </h3>
                       
                       <div className="pt-1.5 mt-1 border-t border-slate-100 flex items-center justify-between w-full select-none">
-                        <span className="font-extrabold font-mono text-[11px] text-slate-950 bg-slate-100 px-1.5 py-0.5 rounded-md">
-                          {formatCurrency(prod.sellingPrice)}
-                        </span>
+                        {isProductInPromo(prod) ? (
+                          <div className="flex flex-col items-start leading-none">
+                            <span className="text-[9px] text-slate-400 line-through leading-none decoration-rose-500/50">
+                              {formatCurrency(prod.sellingPrice)}
+                            </span>
+                            <span className="font-extrabold font-mono text-[11px] text-rose-600 bg-rose-50 px-1.5 py-0.5 rounded-md mt-0.5" title="Saison Promotionnelle">
+                              {formatCurrency(prod.promoPrice || 0)} 🏷️
+                            </span>
+                          </div>
+                        ) : (
+                          <span className="font-extrabold font-mono text-[11px] text-slate-950 bg-slate-100 px-1.5 py-0.5 rounded-md">
+                            {formatCurrency(prod.sellingPrice)}
+                          </span>
+                        )}
                         <span className={`text-[9.5px] font-bold font-mono px-1.5 py-0.5 rounded-full border ${
                           isOutOfStock 
                             ? 'bg-rose-50 text-rose-700 border-rose-100/50' 

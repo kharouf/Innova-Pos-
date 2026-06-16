@@ -786,3 +786,26 @@ export function getProductVisual(prod: { name: string; category?: string; image?
   return { type: 'emoji', value: '📦' };
 }
 
+/**
+ * Checks if a product has an active promotion based on today's local date.
+ */
+export function isProductInPromo(product: Product): boolean {
+  if (!product.promoPrice || product.promoPrice <= 0 || !product.promoStartDate || !product.promoEndDate) {
+    return false;
+  }
+  const today = new Date();
+  const todayStr = today.getFullYear() + '-' + String(today.getMonth() + 1).padStart(2, '0') + '-' + String(today.getDate()).padStart(2, '0');
+  return todayStr >= product.promoStartDate && todayStr <= product.promoEndDate;
+}
+
+/**
+ * Gets the current active selling price of a product, reverting to regular sellingPrice if no active promotion exists.
+ */
+export function getActiveProductPrice(product: Product): number {
+  if (isProductInPromo(product)) {
+    return product.promoPrice!;
+  }
+  return product.sellingPrice;
+}
+
+

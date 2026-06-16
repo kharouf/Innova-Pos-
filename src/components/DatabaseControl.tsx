@@ -1067,8 +1067,19 @@ encryption_mode: High-Security Advanced
         })
       });
 
-      const data = await response.json();
-      if (data.success) {
+      let data: any;
+      const contentType = response.headers.get("content-type");
+      if (contentType && contentType.includes("application/json")) {
+        data = await response.json();
+      } else {
+        const textResponse = await response.text();
+        const snippet = textResponse.length > 80 ? textResponse.substring(0, 80) + '...' : textResponse;
+        throw new Error(language === 'ar'
+          ? `خطأ من الخادم (الحالة ${response.status}): ${snippet}`
+          : `Erreur serveur (Status ${response.status}) : ${snippet}`);
+      }
+
+      if (data && data.success) {
         setTestStatus('success');
         let successStr = language === 'ar'
           ? `✅ نجح الاتصال والإرسال بنجاح! تم تلقي الرسالة وإصدار معرف الرسالة: ${data.messageId || 'OK'}`
@@ -1077,7 +1088,7 @@ encryption_mode: High-Security Advanced
         setTestMessage(successStr);
       } else {
         setTestStatus('failed');
-        const errDetail = data.message || data.error || '';
+        const errDetail = data ? (data.message || data.error || '') : '';
         setTestMessage(language === 'ar'
           ? `❌ فشل التوصيل: ${errDetail || 'يرجى مراجعة إعدادات المنفذ وكلمة مرور التطبيق (App Password)'}`
           : `❌ Échec SMTP : ${errDetail || "Veuillez vérifier l'hôte, le port, et créer un mot de passe d'application (App Password)."}`);

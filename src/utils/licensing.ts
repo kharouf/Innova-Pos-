@@ -5,6 +5,7 @@ export interface UserLicenseData {
   uid: string;
   email: string | null;
   registeredAt: string;
+  activationDate?: string; // Date d'activation de la licence active
   licenseExpiry: string;
   licenseStatus: 'trial' | 'active' | 'suspended' | 'expired';
   licenseKey: string;

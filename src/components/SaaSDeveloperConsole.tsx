@@ -38,9 +38,21 @@ export default function SaaSDeveloperConsole() {
   const [editingTenantId, setEditingTenantId] = useState<string | null>(null);
   const [editStatus, setEditStatus] = useState<'trial' | 'active' | 'suspended' | 'expired'>('trial');
   const [editExpiry, setEditExpiry] = useState('');
+  const [editActivationDate, setEditActivationDate] = useState('');
   const [editAnnouncement, setEditAnnouncement] = useState('');
   const [editStoreName, setEditStoreName] = useState('');
   const [editLocation, setEditLocation] = useState('');
+
+  // ➕ Pre-registration state declarations
+  const [showAddTenantForm, setShowAddTenantForm] = useState(false);
+  const [newTenantEmail, setNewTenantEmail] = useState('');
+  const [newTenantUid, setNewTenantUid] = useState('');
+  const [newTenantStoreName, setNewTenantStoreName] = useState('');
+  const [newTenantStatus, setNewTenantStatus] = useState<'trial' | 'active' | 'suspended' | 'expired'>('trial');
+  const [newTenantRegisteredAt, setNewTenantRegisteredAt] = useState('');
+  const [newTenantActivationDate, setNewTenantActivationDate] = useState('');
+  const [newTenantExpiry, setNewTenantExpiry] = useState('');
+  const [newTenantLocation, setNewTenantLocation] = useState('');
 
   // ⚙️ Remote client overrides states
   const [editRemoteAdminEmail, setEditRemoteAdminEmail] = useState('');
@@ -111,6 +123,7 @@ export default function SaaSDeveloperConsole() {
     setEditingTenantId(t.uid);
     setEditStatus(t.licenseStatus);
     setEditExpiry(t.licenseExpiry);
+    setEditActivationDate(t.activationDate || '');
     setEditAnnouncement(t.remoteAnnouncement || '');
     setEditStoreName(t.businessName || '');
     setEditLocation(t.location || '');
@@ -133,10 +146,17 @@ export default function SaaSDeveloperConsole() {
       // If the admin changes expiry or state, we automatically re-calculate and push a mathematically solid key to Firestore
       const newKey = generateLicenseKey(uid, editExpiry);
       
+      // Auto populate activation date if we mark active and none exists
+      let actDate = editActivationDate.trim();
+      if (editStatus === 'active' && !actDate) {
+        actDate = new Date().toISOString().split('T')[0];
+      }
+
       const updatedFields: Partial<UserLicenseData> = {
         licenseExpiry: editExpiry,
         licenseStatus: editStatus,
         licenseKey: newKey,
+        activationDate: actDate || undefined,
         remoteAnnouncement: editAnnouncement.trim() || undefined,
         businessName: editStoreName.trim() || undefined,
         location: editLocation.trim() || undefined,
@@ -160,6 +180,65 @@ export default function SaaSDeveloperConsole() {
     } catch (err) {
       console.error(err);
       showToast('❌ Critical error saving license update');
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const handleCreateNewTenant = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newTenantUid.trim() || !newTenantEmail.trim()) {
+      showToast(language === 'ar' ? '⚠️ يرجى إدخال البريد الإلكتروني و كود الـ UID' : '⚠️ L\'adresse email et l\'UID du client sont obligatoires !');
+      return;
+    }
+
+    const targetUid = newTenantUid.trim();
+    setActionLoading(targetUid);
+    try {
+      const regDate = newTenantRegisteredAt || new Date().toISOString().split('T')[0];
+      const expiryDate = newTenantExpiry || new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+      
+      let actDate = newTenantActivationDate.trim();
+      if (newTenantStatus === 'active' && !actDate) {
+        actDate = new Date().toISOString().split('T')[0];
+      }
+
+      const hashKey = generateLicenseKey(targetUid, expiryDate);
+
+      const payload: UserLicenseData = {
+        uid: targetUid,
+        email: newTenantEmail.trim(),
+        registeredAt: regDate,
+        activationDate: actDate || undefined,
+        licenseExpiry: expiryDate,
+        licenseStatus: newTenantStatus,
+        licenseKey: hashKey,
+        businessName: newTenantStoreName.trim() || 'محل تجاري معزول',
+        location: newTenantLocation.trim() || '',
+        remoteAnnouncement: newTenantStatus === 'trial' 
+          ? 'مرحباً بك في النسخة التجريبية لـ INNOVA POS. اتصل بنا للتنشيط النهائي.' 
+          : 'تم تفعيل حسابك السحابي وإعداد قاعدة بيانات معزولة بنجاح.'
+      };
+
+      await saveUserLicense(targetUid, payload);
+      
+      showToast(language === 'ar' ? '✅ تم تسجيل المشترك وجدولة رخصته بنجاح!' : '✅ Utilisateur pré-enregistré avec succès !');
+      
+      // Reset form variables
+      setNewTenantUid('');
+      setNewTenantEmail('');
+      setNewTenantStoreName('');
+      setNewTenantStatus('trial');
+      setNewTenantRegisteredAt('');
+      setNewTenantActivationDate('');
+      setNewTenantExpiry('');
+      setNewTenantLocation('');
+      setShowAddTenantForm(false);
+      
+      await fetchTenants();
+    } catch (err) {
+      console.error(err);
+      showToast('❌ Failed to register new tenant');
     } finally {
       setActionLoading(null);
     }
@@ -375,19 +454,37 @@ export default function SaaSDeveloperConsole() {
         </div>
 
         {/* Filters bar */}
-        <div className="p-4 bg-slate-50 border-b border-slate-200 flex flex-col sm:flex-row gap-3 items-center justify-between">
-          <div className="relative w-full sm:max-w-xs">
-            <Search className="absolute top-2.5 right-3 w-4 h-4 text-slate-400" />
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full text-xs font-medium border border-slate-200 pr-9 pl-3 py-2 bg-white rounded focus:outline-hidden focus:border-slate-400 transition-colors text-slate-800"
-              placeholder={language === 'ar' ? 'ابحث عبر البريد الإلكتروني، اسم المحل أو الـ ID...' : 'Rechercher email, boutique, UID...'}
-            />
+        <div className="p-4 bg-slate-50 border-b border-slate-200 flex flex-col md:flex-row gap-3 items-center justify-between">
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 w-full md:max-w-xl">
+            <div className="relative w-full sm:max-w-xs">
+              <Search className="absolute top-2.5 right-3 w-4 h-4 text-slate-400" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full text-xs font-medium border border-slate-200 pr-9 pl-3 py-2 bg-white rounded focus:outline-hidden focus:border-slate-400 transition-colors text-slate-800"
+                placeholder={language === 'ar' ? 'ابحث عبر البريد الإلكتروني، اسم المحل أو الـ ID...' : 'Rechercher email, boutique, UID...'}
+              />
+            </div>
+
+            <button
+              type="button"
+              onClick={() => {
+                setShowAddTenantForm(!showAddTenantForm);
+                if (!showAddTenantForm) {
+                  setNewTenantRegisteredAt(new Date().toISOString().split('T')[0]);
+                  setNewTenantExpiry(new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]); // Default 1 year
+                  setNewTenantActivationDate(new Date().toISOString().split('T')[0]);
+                }
+              }}
+              className="py-2 px-3.5 bg-rose-600 hover:bg-rose-700 text-white font-extrabold rounded text-xs shrink-0 flex items-center justify-center gap-1.5 cursor-pointer shadow-3xs transition-all"
+            >
+              <span>{showAddTenantForm ? '✕' : '➕'}</span>
+              <span>{language === 'ar' ? 'تسجيل مستخدم Gmail جديد' : 'Pré-enregistrer utilisateur Gmail'}</span>
+            </button>
           </div>
 
-          <div className="flex items-center gap-2 shrink-0 self-end sm:self-auto">
+          <div className="flex items-center gap-2 shrink-0 self-end md:self-auto">
             <span className="text-[10px] font-bold text-slate-500 uppercase">{language === 'ar' ? 'تصنيف الحالة :' : 'Filtrer :'}</span>
             <select
               value={filterStatus}
@@ -402,6 +499,156 @@ export default function SaaSDeveloperConsole() {
             </select>
           </div>
         </div>
+
+        {/* New Tenant Manual Setup and Pre-Registration Form */}
+        {showAddTenantForm && (
+          <form onSubmit={handleCreateNewTenant} className="bg-slate-900 border-b border-rose-500/15 text-white p-5 space-y-4 text-start animate-fadeIn">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-2.5">
+              <h4 className="text-xs font-black uppercase tracking-widest text-rose-400 font-mono flex items-center gap-1.5">
+                <span>➕ {language === 'ar' ? 'تسجيل مشترك Gmail جديد وحجز بياناته' : 'PRÉ-ENREGISTRER UN UTILISATEUR GMAIL (SaaS CONSOLE)'}</span>
+              </h4>
+              <span className="text-[8px] bg-rose-500/10 text-rose-400 border border-rose-500/20 px-2 py-0.5 font-bold font-mono rounded">SaaS CONFIGURATION</span>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              <div>
+                <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 block mb-1">
+                  {language === 'ar' ? 'البريد الإلكتروني للعميل Gmail *' : 'Adresse Email du Client (Gmail) *'}
+                </label>
+                <input
+                  type="email"
+                  required
+                  value={newTenantEmail}
+                  onChange={(e) => setNewTenantEmail(e.target.value)}
+                  placeholder="exemple@gmail.com"
+                  className="w-full text-xs font-bold border border-slate-800 bg-slate-950 p-2.5 rounded text-white focus:outline-hidden focus:border-rose-500"
+                />
+              </div>
+
+              <div>
+                <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 block mb-1">
+                  {language === 'ar' ? 'معرف المستخدم الفردي UID *' : 'Identifiant Unique UID (Firebase UID) *'}
+                </label>
+                <div className="flex gap-1">
+                  <input
+                    type="text"
+                    required
+                    value={newTenantUid}
+                    onChange={(e) => setNewTenantUid(e.target.value)}
+                    placeholder="Saisir ou générer un UID..."
+                    className="w-full text-xs font-bold font-mono border border-slate-800 bg-slate-950 p-2.5 rounded text-white focus:outline-hidden focus:border-rose-500"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setNewTenantUid('usr_' + Math.random().toString(36).substring(2, 11))}
+                    className="p-2 bg-slate-800 hover:bg-slate-750 border border-slate-700 text-[10px] rounded text-slate-300 font-mono cursor-pointer"
+                    title="Générer UID temporaire"
+                  >
+                    Gen
+                  </button>
+                </div>
+              </div>
+
+              <div>
+                <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 block mb-1">
+                  {language === 'ar' ? 'اسم المحل / الشركة' : 'Nom de la Boutique / Business Name'}
+                </label>
+                <input
+                  type="text"
+                  value={newTenantStoreName}
+                  onChange={(e) => setNewTenantStoreName(e.target.value)}
+                  placeholder="Ex: Superette Tunisienne"
+                  className="w-full text-xs font-bold border border-slate-800 bg-slate-950 p-2.5 rounded text-white focus:outline-hidden focus:border-rose-500"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              <div>
+                <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 block mb-1">
+                  {language === 'ar' ? 'نوع حالة الحساب *' : 'Type de Statut *'}
+                </label>
+                <select
+                  value={newTenantStatus}
+                  onChange={(e) => setNewTenantStatus(e.target.value as any)}
+                  className="w-full text-xs font-bold border border-slate-800 bg-slate-950 p-2.5 rounded text-white focus:outline-hidden focus:border-rose-500"
+                >
+                  <option value="trial">{language === 'ar' ? 'فترة تجريبية (Trial)' : 'Essai Gratuit'}</option>
+                  <option value="active">{language === 'ar' ? 'نشط مفعل (Active)' : 'Actif / Abonné'}</option>
+                  <option value="suspended">{language === 'ar' ? 'معطل ومحجوب (Suspended / Bloqué)' : 'Suspendu / Bloqué'}</option>
+                  <option value="expired">{language === 'ar' ? 'منتهي الترخيص (Expired)' : 'Expiré'}</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 block mb-1">
+                  {language === 'ar' ? 'تاريخ التفعيل (Activation Date)' : "Date d'activation"}
+                </label>
+                <input
+                  type="date"
+                  value={newTenantActivationDate}
+                  onChange={(e) => setNewTenantActivationDate(e.target.value)}
+                  className="w-full text-xs font-semibold border border-slate-800 bg-slate-950 p-2.5 rounded text-white focus:outline-hidden font-mono"
+                />
+              </div>
+
+              <div>
+                <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 block mb-1">
+                  {language === 'ar' ? 'تاريخ نهاية الترخيص' : "Date d'expiration"}
+                </label>
+                <input
+                  type="date"
+                  value={newTenantExpiry}
+                  onChange={(e) => setNewTenantExpiry(e.target.value)}
+                  className="w-full text-xs font-semibold border border-slate-800 bg-slate-950 p-2.5 rounded text-white focus:outline-hidden font-mono"
+                />
+              </div>
+
+              <div>
+                <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 block mb-1">
+                  {language === 'ar' ? 'تاريخ انضمام العميل' : "Date d'inscription"}
+                </label>
+                <input
+                  type="date"
+                  value={newTenantRegisteredAt}
+                  onChange={(e) => setNewTenantRegisteredAt(e.target.value)}
+                  className="w-full text-xs font-semibold border border-slate-800 bg-slate-950 p-2.5 rounded text-white focus:outline-hidden font-mono"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 block mb-1">
+                {language === 'ar' ? 'الموقع الجغرافي للنشاط (اختياري)' : 'Localisation ou URL Google Maps (Optionnel)'}
+              </label>
+              <input
+                type="text"
+                value={newTenantLocation}
+                onChange={(e) => setNewTenantLocation(e.target.value)}
+                placeholder="Ex: Tunis, Tunisie ou coordonnées GPS"
+                className="w-full text-xs font-medium border border-slate-800 bg-slate-950 p-2.5 rounded text-white focus:outline-hidden"
+              />
+            </div>
+
+            <div className="flex justify-end gap-2 pt-3 border-t border-slate-800">
+              <button
+                type="button"
+                onClick={() => setShowAddTenantForm(false)}
+                className="py-2 px-4 rounded text-xs bg-slate-850 hover:bg-slate-800 text-slate-300 cursor-pointer"
+              >
+                {language === 'ar' ? 'إلغاء' : 'Annuler'}
+              </button>
+              <button
+                type="submit"
+                disabled={actionLoading !== null}
+                className="py-2 px-5 rounded text-xs bg-rose-600 hover:bg-rose-700 text-white font-extrabold cursor-pointer transition-colors shadow-2xs flex items-center gap-1.5"
+              >
+                {actionLoading ? '...' : '🚀'}
+                <span>{language === 'ar' ? 'حفظ وحجز ترخيص المشترك' : 'Sauvegarder et Initialiser'}</span>
+              </button>
+            </div>
+          </form>
+        )}
 
         {/* Big list load */}
         {loading ? (

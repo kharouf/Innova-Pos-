@@ -17,6 +17,9 @@ export interface Product {
   dateExpiration?: string; // format YYYY-MM-DD
   weightVolume?: string;
   tvaRate?: number; // Taux de TVA: 0, 7, 19
+  promoPrice?: number; // Prix promotionnel s'il y a lieu
+  promoStartDate?: string; // format YYYY-MM-DD
+  promoEndDate?: string; // format YYYY-MM-DD
   priceHistory?: {
     id: string;
     timestamp: string;

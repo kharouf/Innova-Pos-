@@ -65,18 +65,6 @@ export async function loadUserDatabase(userId: string): Promise<DatabaseState | 
       getDoc(doc(db, 'users', userId))
     ]);
 
-    // If everything is empty, return null so we can seed with Tunisian superette default data
-    if (
-      productsSnap.empty &&
-      partnersSnap.empty &&
-      invoicesSnap.empty &&
-      paymentsSnap.empty &&
-      traitesSnap.empty &&
-      expensesSnap.empty
-    ) {
-      return null;
-    }
-
     const products: Product[] = [];
     productsSnap.forEach(doc => products.push(doc.data() as Product));
 
@@ -101,6 +89,19 @@ export async function loadUserDatabase(userId: string): Promise<DatabaseState | 
       if (userData && userData.storeSettings) {
         settings = userData.storeSettings;
       }
+    }
+
+    // If everything is empty AND there are no custom settings configured in Firestore, return null so we can seed with Tunisian superette default data
+    if (
+      productsSnap.empty &&
+      partnersSnap.empty &&
+      invoicesSnap.empty &&
+      paymentsSnap.empty &&
+      traitesSnap.empty &&
+      expensesSnap.empty &&
+      !settings
+    ) {
+      return null;
     }
 
     return {
@@ -258,6 +259,7 @@ export async function loadUserLicense(userId: string, email: string | null, stor
         uid: userId,
         email: data.email || email,
         registeredAt: data.registeredAt || new Date().toISOString().split('T')[0],
+        activationDate: data.activationDate || '',
         licenseExpiry: data.licenseExpiry || new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
         licenseStatus: data.licenseStatus || 'trial',
         licenseKey: data.licenseKey || '',
@@ -281,6 +283,7 @@ export async function loadUserLicense(userId: string, email: string | null, stor
         uid: userId,
         email: email,
         registeredAt: new Date().toISOString().split('T')[0],
+        activationDate: '',
         licenseExpiry: trialExpiryDate,
         licenseStatus: 'trial',
         licenseKey: generateLicenseKey(userId, trialExpiryDate),
@@ -300,6 +303,7 @@ export async function loadUserLicense(userId: string, email: string | null, stor
       uid: userId,
       email: email,
       registeredAt: new Date().toISOString().split('T')[0],
+      activationDate: '',
       licenseExpiry: trialExpiryDate,
       licenseStatus: 'trial',
       licenseKey: generateLicenseKey(userId, trialExpiryDate),
@@ -339,6 +343,7 @@ export async function loadAllTenantLicenses(): Promise<UserLicenseData[]> {
           uid: doc.id,
           email: data.email || null,
           registeredAt: data.registeredAt || '',
+          activationDate: data.activationDate || '',
           licenseExpiry: data.licenseExpiry || '',
           licenseStatus: data.licenseStatus || 'trial',
           licenseKey: data.licenseKey || '',
