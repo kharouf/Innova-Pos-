@@ -38,7 +38,21 @@ const extractFirebaseConfig = (rawText: string) => {
   return null;
 };
 
-export default function Auth({ onEnterDemo, isLockedState = false, user, db }: { onEnterDemo: () => void, isLockedState?: boolean, user?: any, db?: DatabaseState }) {
+export default function Auth({ 
+  onEnterDemo, 
+  isLockedState = false, 
+  user, 
+  db,
+  lockError = null,
+  clearLockError
+}: { 
+  onEnterDemo: () => void, 
+  isLockedState?: boolean, 
+  user?: any, 
+  db?: DatabaseState,
+  lockError?: string | null,
+  clearLockError?: () => void
+}) {
   const { language, toggleLanguage, t } = useLanguage();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<{ message: string; code?: string; isDomainError?: boolean } | null>(null);
@@ -68,18 +82,52 @@ export default function Auth({ onEnterDemo, isLockedState = false, user, db }: {
 
   const currentDb = db || localDb;
 
-  const storeName = currentDb?.settings?.storeName || 'INNOVA POS PRO';
-  const storeLogo = currentDb?.settings?.storeLogo || defaultPosLogo;
-  const storePhone = currentDb?.settings?.storePhone || '+216 24260711';
-  const storeAddress = currentDb?.settings?.storeAddress || 'AVENU HABIB BORGIBA GHANNOUCHE GABES';
+  // When logged out, are we back to standard defaults? Yes: use default brand name/logo as a pristine greeting.
+  const storeName = isLockedState && currentDb?.settings?.storeName ? currentDb.settings.storeName : 'INNOVA POS PRO';
+  const storeLogo = isLockedState && currentDb?.settings?.storeLogo ? currentDb.settings.storeLogo : defaultPosLogo;
+  const storePhone = isLockedState && currentDb?.settings?.storePhone ? currentDb.settings.storePhone : '+216 24260711';
+  const storeAddress = isLockedState && currentDb?.settings?.storeAddress ? currentDb.settings.storeAddress : 'AVENU HABIB BORGIBA GHANNOUCHE GABES';
+
+  // Handle auto-login block if dispatched from App.tsx onAuthStateChanged
+  React.useEffect(() => {
+    if (lockError) {
+      const savedFirstGmail = localStorage.getItem('FIRST_CONNECTED_GMAIL');
+      let errorMsg = language === 'ar'
+        ? `⚠️ تم رفض الدخول السحابي التلقائي: هذا المحل مغلق فقط لحساب Gmail الأول الذي تم تعيينه (${savedFirstGmail}). الحساب الحالي ليس له صلاحيات الوصول.`
+        : `⚠️ Accès Cloud automatique refusé : Cette superette est verrouillée uniquement pour le premier compte Gmail configuré (${savedFirstGmail}). Votre compte actif n'est pas autorisé.`;
+      setError({ message: errorMsg });
+    }
+  }, [lockError, language]);
 
   const handleGoogleLogin = async () => {
     setLoading(true);
     setError(null);
+    if (clearLockError) clearLockError();
+
     const provider = new GoogleAuthProvider();
     provider.setCustomParameters({ prompt: 'select_account' });
     try {
       const result = await signInWithPopup(auth, provider);
+      
+      // Perform strict local safety biological check immediately upon successful Google Login popup
+      const loggedUser = result.user;
+      if (loggedUser && loggedUser.email) {
+        const savedFirstGmail = localStorage.getItem('FIRST_CONNECTED_GMAIL');
+        const isDeveloper = loggedUser.email === 'kharoufwala24@gmail.com';
+        
+        if (savedFirstGmail && loggedUser.email !== savedFirstGmail && !isDeveloper) {
+          await auth.signOut();
+          let errorMsg = language === 'ar'
+            ? `⚠️ تم رفض الدخول: هذا المحل مغلق فقط لحساب Gmail الأول الذي تم ربطه (${savedFirstGmail}). الحساب الحالي (${loggedUser.email}) غير مصرح له.`
+            : `⚠️ Accès refusé : Cette superette est verrouillée uniquement pour le premier compte Gmail configuré (${savedFirstGmail}). Votre compte actuel (${loggedUser.email}) n'est pas autorisé.`;
+          setError({ message: errorMsg });
+          return;
+        } else if (!savedFirstGmail && loggedUser.email !== 'kharoufwala24@gmail.com') {
+          // Permanently lock this post/superette to this specific Google/Gmail address
+          localStorage.setItem('FIRST_CONNECTED_GMAIL', loggedUser.email);
+        }
+      }
+
       const credential = GoogleAuthProvider.credentialFromResult(result);
       if (credential?.accessToken) {
         setCachedAccessToken(credential.accessToken);
@@ -390,6 +438,32 @@ export default function Auth({ onEnterDemo, isLockedState = false, user, db }: {
                   ? 'يربط النظام بالإنترنت لمزامنة المبيعات ومخازن السلع تلقائياً.'
                   : 'Associe votre compte pour charger et sécuriser vos données de vente.'}
               </p>
+              {(() => {
+                const savedFirstGmail = localStorage.getItem('FIRST_CONNECTED_GMAIL');
+                if (savedFirstGmail) {
+                  return (
+                    <div className="mt-2.5 p-2 bg-emerald-500/10 border border-emerald-500/20 rounded-lg text-[9.5px] font-mono text-emerald-300 flex items-center justify-center gap-1.5 select-text">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse shrink-0"></span>
+                      <span>
+                        {language === 'ar'
+                          ? `🔐 مرتبط بالمالك الـمخوّل : ${savedFirstGmail}`
+                          : `🔐 Lié au propriétaire autorisé : ${savedFirstGmail}`}
+                      </span>
+                    </div>
+                  );
+                } else {
+                  return (
+                    <div className="mt-2.5 p-2 bg-amber-500/10 border border-amber-500/20 rounded-lg text-[9px] font-mono text-amber-300 flex items-center justify-center gap-1.5 select-none">
+                      <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse shrink-0"></span>
+                      <span>
+                        {language === 'ar'
+                          ? '👉 أول حساب Gmail يتم ربطه سيكون مالك النظام الدائم'
+                          : '👉 Le premier Gmail connecté sera lié définitivement'}
+                      </span>
+                    </div>
+                  );
+                }
+              })()}
             </div>
 
             {/* Elegant Divider */}

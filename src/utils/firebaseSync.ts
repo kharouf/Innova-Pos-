@@ -337,35 +337,63 @@ export async function loadAllTenantLicenses(): Promise<UserLicenseData[]> {
     const licenses: UserLicenseData[] = [];
     snap.forEach(doc => {
       const data = doc.data();
-      // Skip if it doesn't look like a user document (by checking if registeredAt or licenseStatus exists)
-      if (data.registeredAt || data.licenseStatus) {
-        licenses.push({
-          uid: doc.id,
-          email: data.email || null,
-          registeredAt: data.registeredAt || '',
-          activationDate: data.activationDate || '',
-          licenseExpiry: data.licenseExpiry || '',
-          licenseStatus: data.licenseStatus || 'trial',
-          licenseKey: data.licenseKey || '',
-          remoteAnnouncement: data.remoteAnnouncement || '',
-          businessName: data.businessName || '',
-          location: data.location || '',
-          
-          remoteAdminEmail: data.remoteAdminEmail || '',
-          remoteEnableCriticalStockEmailAlerts: data.remoteEnableCriticalStockEmailAlerts ?? undefined,
-          remoteSmtpHost: data.remoteSmtpHost || '',
-          remoteSmtpPort: data.remoteSmtpPort || undefined,
-          remoteSmtpUser: data.remoteSmtpUser || '',
-          remoteSmtpPass: data.remoteSmtpPass || '',
-          remoteSmtpSecure: data.remoteSmtpSecure ?? undefined,
-          remoteSmtpSenderName: data.remoteSmtpSenderName || ''
-        });
-      }
+      const storeSettings = data.storeSettings || {};
+      
+      licenses.push({
+        uid: doc.id,
+        email: data.email || storeSettings.email || null,
+        registeredAt: data.registeredAt || '24/05/2026',
+        activationDate: data.activationDate || '',
+        licenseExpiry: data.licenseExpiry || new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+        licenseStatus: data.licenseStatus || 'trial',
+        licenseKey: data.licenseKey || '',
+        remoteAnnouncement: data.remoteAnnouncement || '',
+        businessName: data.businessName || storeSettings.storeName || 'Superette',
+        location: data.location || storeSettings.storeAddress || '',
+        
+        remoteAdminEmail: data.remoteAdminEmail || '',
+        remoteEnableCriticalStockEmailAlerts: data.remoteEnableCriticalStockEmailAlerts ?? undefined,
+        remoteSmtpHost: data.remoteSmtpHost || '',
+        remoteSmtpPort: data.remoteSmtpPort || undefined,
+        remoteSmtpUser: data.remoteSmtpUser || '',
+        remoteSmtpPass: data.remoteSmtpPass || '',
+        remoteSmtpSecure: data.remoteSmtpSecure ?? undefined,
+        remoteSmtpSenderName: data.remoteSmtpSenderName || ''
+      });
     });
     return licenses;
   } catch (error) {
     console.log("[FIRESTORE SYSTEM INFO] Failed to load global tenant list. Returning empty list.", error);
     return [];
+  }
+}
+
+/**
+ * Deletes a tenant and all of their subcollections from Firestore completely (Supprimer de SaaS console).
+ */
+export async function deleteTenantCompletely(userId: string): Promise<void> {
+  const baseUserPath = `users/${userId}`;
+  const subdirs = ['products', 'partners', 'invoices', 'payments', 'traites', 'expenses'];
+  
+  try {
+    const batch = writeBatch(db);
+    
+    // 1. Queue all products, partners, invoices, etc. for deletion
+    for (const sub of subdirs) {
+      const snap = await getDocs(collection(db, baseUserPath, sub));
+      snap.forEach(docSnap => {
+        batch.delete(docSnap.ref);
+      });
+    }
+    
+    // 2. Queue the main user document for deletion
+    batch.delete(doc(db, 'users', userId));
+    
+    // 3. Commit the deletions
+    await batch.commit();
+  } catch (error) {
+    console.error(`Failed to delete tenant completely for uid ${userId}:`, error);
+    throw error;
   }
 }
 

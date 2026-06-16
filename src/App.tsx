@@ -61,6 +61,7 @@ function AppContent() {
   const [loadingAuth, setLoadingAuth] = useState(true);
   const [demoMode, setDemoMode] = useState(false);
   const [syncingCloud, setSyncingCloud] = useState(false);
+  const [authLockError, setAuthLockError] = useState<string | null>(null);
   const [isAppScreenLocked, setIsAppScreenLocked] = useState<boolean>(false);
 
   // SaaS Subscription & Cloud Licensing protection hooks
@@ -211,6 +212,60 @@ function AppContent() {
       }
     }
   }, [activeUser, activeTab]);
+
+  // ⏱️ Security Compliance: Automatic Session Inactivity Timeout per User Role
+  useEffect(() => {
+    if (isAppScreenLocked || !activeUser || !db?.settings) return;
+
+    // Get timeout duration based on active user role (minutes to milliseconds)
+    const role = activeUser.role;
+    let timeoutMinutes = 0;
+    
+    if (role === 'admin') {
+      timeoutMinutes = db.settings.adminSessionTimeout ?? 30;
+    } else if (role === 'sales') {
+      timeoutMinutes = db.settings.salesSessionTimeout ?? 15;
+    } else if (role === 'inventory') {
+      timeoutMinutes = db.settings.inventorySessionTimeout ?? 10;
+    }
+
+    // 0 means timeout is disabled
+    if (timeoutMinutes <= 0) return;
+
+    const timeoutMs = timeoutMinutes * 60 * 1000;
+    let lastActivityTime = Date.now();
+
+    const updateActivity = () => {
+      lastActivityTime = Date.now();
+    };
+
+    // Track user inputs to reset timer
+    window.addEventListener('mousemove', updateActivity);
+    window.addEventListener('keydown', updateActivity);
+    window.addEventListener('click', updateActivity);
+    window.addEventListener('scroll', updateActivity);
+    window.addEventListener('touchstart', updateActivity);
+
+    // Dynamic interval check for security compliance
+    const interval = setInterval(() => {
+      const inactiveDuration = Date.now() - lastActivityTime;
+      if (inactiveDuration >= timeoutMs) {
+        console.warn(`[SECURITY COMPLIANCE] Automatic session timeout triggered for role: ${role} (${timeoutMinutes} min inactive)`);
+        setIsAppScreenLocked(true);
+        // Prompt user switch modal on screen restart
+        setShowUserSwitchModal(true);
+      }
+    }, 5000); // Check every 5 seconds for precise safety tracking
+
+    return () => {
+      window.removeEventListener('mousemove', updateActivity);
+      window.removeEventListener('keydown', updateActivity);
+      window.removeEventListener('click', updateActivity);
+      window.removeEventListener('scroll', updateActivity);
+      window.removeEventListener('touchstart', updateActivity);
+      clearInterval(interval);
+    };
+  }, [activeUser, isAppScreenLocked, db?.settings]);
 
   const handlePerformSystemUpdate = async () => {
     setIsPerformingUpdate(true);
@@ -448,6 +503,22 @@ function AppContent() {
     };
 
     const unsubscribe = auth.onAuthStateChanged(async (currentUser) => {
+      if (currentUser) {
+        const savedFirstGmail = localStorage.getItem('FIRST_CONNECTED_GMAIL');
+        const isDeveloper = currentUser.email === 'kharoufwala24@gmail.com';
+        if (savedFirstGmail && currentUser.email && currentUser.email !== savedFirstGmail && !isDeveloper) {
+          console.warn(`[INNOVA POS PRO SYSTEM BIOLOGICAL CHECK] Blocked access for account ${currentUser.email}. Device locked to master account keys: ${savedFirstGmail}`);
+          setAuthLockError(currentUser.email);
+          setUser(null);
+          setLoadingAuth(false);
+          await auth.signOut();
+          return;
+        } else if (!savedFirstGmail && currentUser.email && currentUser.email !== 'kharoufwala24@gmail.com') {
+          // Permanently lock this post/cabinet to this specific Google/Gmail address
+          localStorage.setItem('FIRST_CONNECTED_GMAIL', currentUser.email);
+        }
+      }
+
       setUser(currentUser);
       setLoadingAuth(false);
       
@@ -822,7 +893,15 @@ function AppContent() {
 
   // Show authentication gate if not logged in and not in guest demo mode
   if (!user && !demoMode) {
-    return <Auth onEnterDemo={handleEnterDemo} user={user} db={db || undefined} />;
+    return (
+      <Auth 
+        onEnterDemo={handleEnterDemo} 
+        user={user} 
+        db={db || undefined} 
+        lockError={authLockError}
+        clearLockError={() => setAuthLockError(null)}
+      />
+    );
   }
 
   // Show beautiful lock screen if explicitly locked by cashier or owner

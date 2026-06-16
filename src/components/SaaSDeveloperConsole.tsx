@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { UserLicenseData, generateLicenseKey, verifyLicenseKey } from '../utils/licensing';
-import { loadAllTenantLicenses, saveUserLicense, loadSystemUpdates, saveSystemUpdate } from '../utils/firebaseSync';
-import { SystemUpdate } from '../types';
+import { UserLicenseData, generateLicenseKey } from '../utils/licensing';
+import { loadAllTenantLicenses, saveUserLicense, deleteTenantCompletely } from '../utils/firebaseSync';
 import { useLanguage } from '../utils/LanguageContext';
 import { 
   ShieldAlert, 
@@ -13,17 +12,12 @@ import {
   RefreshCw, 
   UserX, 
   KeyRound, 
-  Send, 
   Calendar, 
   CheckCircle, 
   AlertTriangle, 
-  Lock, 
-  Sparkles, 
-  CornerDownRight,
   Clipboard,
   ExternalLink,
-  Eye,
-  EyeOff
+  MessageSquare
 } from 'lucide-react';
 
 export default function SaaSDeveloperConsole() {
@@ -34,8 +28,9 @@ export default function SaaSDeveloperConsole() {
   const [filterStatus, setFilterStatus] = useState<string>('all');
   const [actionLoading, setActionLoading] = useState<string | null>(null);
 
-  // Form states for active editing row
+  // Editing tenant inline row state
   const [editingTenantId, setEditingTenantId] = useState<string | null>(null);
+  const [deletingTenantId, setDeletingTenantId] = useState<string | null>(null);
   const [editStatus, setEditStatus] = useState<'trial' | 'active' | 'suspended' | 'expired'>('trial');
   const [editExpiry, setEditExpiry] = useState('');
   const [editActivationDate, setEditActivationDate] = useState('');
@@ -43,7 +38,7 @@ export default function SaaSDeveloperConsole() {
   const [editStoreName, setEditStoreName] = useState('');
   const [editLocation, setEditLocation] = useState('');
 
-  // ➕ Pre-registration state declarations
+  // Pre-registration state
   const [showAddTenantForm, setShowAddTenantForm] = useState(false);
   const [newTenantEmail, setNewTenantEmail] = useState('');
   const [newTenantUid, setNewTenantUid] = useState('');
@@ -54,38 +49,12 @@ export default function SaaSDeveloperConsole() {
   const [newTenantExpiry, setNewTenantExpiry] = useState('');
   const [newTenantLocation, setNewTenantLocation] = useState('');
 
-  // ⚙️ Remote client overrides states
-  const [editRemoteAdminEmail, setEditRemoteAdminEmail] = useState('');
-  const [editRemoteEnableEmailAlerts, setEditRemoteEnableEmailAlerts] = useState<boolean>(false);
-  const [editRemoteSmtpHost, setEditRemoteSmtpHost] = useState('');
-  const [editRemoteSmtpPort, setEditRemoteSmtpPort] = useState<number>(587);
-  const [editRemoteSmtpUser, setEditRemoteSmtpUser] = useState('');
-  const [editRemoteSmtpPass, setEditRemoteSmtpPass] = useState('');
-  const [showConsoleSmtpPass, setShowConsoleSmtpPass] = useState(false);
-  const [editRemoteSmtpSecure, setEditRemoteSmtpSecure] = useState<boolean>(false);
-  const [editRemoteSmtpSenderName, setEditRemoteSmtpSenderName] = useState('');
-
-  // Console tab & updates states
-  const [consoleTab, setConsoleTab] = useState<'tenants' | 'updates'>('tenants');
-  const [updates, setUpdates] = useState<SystemUpdate[]>([]);
-  const [updatesLoading, setUpdatesLoading] = useState(false);
-
-  // New Update Form states
-  const [showNewUpdateForm, setShowNewUpdateForm] = useState(false);
-  const [newUpdateId, setNewUpdateId] = useState('');
-  const [newUpdateDate, setNewUpdateDate] = useState('');
-  const [newUpdateTitleFr, setNewUpdateTitleFr] = useState('');
-  const [newUpdateTitleAr, setNewUpdateTitleAr] = useState('');
-  const [newUpdateDescFr, setNewUpdateDescFr] = useState('');
-  const [newUpdateDescAr, setNewUpdateDescAr] = useState('');
-  const [newUpdateType, setNewUpdateType] = useState<'major' | 'feature' | 'patch'>('patch');
-
   // Floating Toast State
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   const showToast = (msg: string) => {
     setToastMessage(msg);
-    setTimeout(() => setToastMessage(null), 3000);
+    setTimeout(() => setToastMessage(null), 3050);
   };
 
   const fetchTenants = async () => {
@@ -101,22 +70,8 @@ export default function SaaSDeveloperConsole() {
     }
   };
 
-  const fetchUpdates = async () => {
-    setUpdatesLoading(true);
-    try {
-      const data = await loadSystemUpdates();
-      setUpdates(data);
-    } catch (err) {
-      console.error(err);
-      showToast('❌ Failed to fetch system updates history');
-    } finally {
-      setUpdatesLoading(false);
-    }
-  };
-
   useEffect(() => {
     fetchTenants();
-    fetchUpdates();
   }, []);
 
   const handleStartEdit = (t: UserLicenseData) => {
@@ -127,26 +82,13 @@ export default function SaaSDeveloperConsole() {
     setEditAnnouncement(t.remoteAnnouncement || '');
     setEditStoreName(t.businessName || '');
     setEditLocation(t.location || '');
-    
-    // Populate remote fields
-    setEditRemoteAdminEmail(t.remoteAdminEmail || '');
-    setEditRemoteEnableEmailAlerts(t.remoteEnableCriticalStockEmailAlerts ?? false);
-    setEditRemoteSmtpHost(t.remoteSmtpHost || '');
-    setEditRemoteSmtpPort(t.remoteSmtpPort || 587);
-    setEditRemoteSmtpUser(t.remoteSmtpUser || '');
-    setEditRemoteSmtpPass(t.remoteSmtpPass || '');
-    setEditRemoteSmtpSecure(t.remoteSmtpSecure ?? false);
-    setEditRemoteSmtpSenderName(t.remoteSmtpSenderName || '');
   };
 
   const handleSaveTenantLicense = async (uid: string) => {
     setActionLoading(uid);
     try {
-      // 1. Validate hash activation key
-      // If the admin changes expiry or state, we automatically re-calculate and push a mathematically solid key to Firestore
       const newKey = generateLicenseKey(uid, editExpiry);
       
-      // Auto populate activation date if we mark active and none exists
       let actDate = editActivationDate.trim();
       if (editStatus === 'active' && !actDate) {
         actDate = new Date().toISOString().split('T')[0];
@@ -160,31 +102,34 @@ export default function SaaSDeveloperConsole() {
         remoteAnnouncement: editAnnouncement.trim() || undefined,
         businessName: editStoreName.trim() || undefined,
         location: editLocation.trim() || undefined,
-        
-        // Save remote configurations managed by admin
-        remoteAdminEmail: editRemoteAdminEmail.trim() || undefined,
-        remoteEnableCriticalStockEmailAlerts: editRemoteEnableEmailAlerts,
-        remoteSmtpHost: editRemoteSmtpHost.trim() || undefined,
-        remoteSmtpPort: Number(editRemoteSmtpPort) || undefined,
-        remoteSmtpUser: editRemoteSmtpUser.trim() || undefined,
-        remoteSmtpPass: editRemoteSmtpPass.trim() || undefined,
-        remoteSmtpSecure: editRemoteSmtpSecure,
-        remoteSmtpSenderName: editRemoteSmtpSenderName.trim() || undefined
       };
 
       await saveUserLicense(uid, updatedFields);
-      
-      showToast(language === 'ar' ? '✅ تم تحديث ترخيص الشركة بنجاح فوري!' : '✅ Licence mise à jour avec succès !');
+      showToast(language === 'ar' ? '✅ تم تحديث ترخيص المشترك بنجاح!' : '✅ Licence mise à jour avec succès !');
       setEditingTenantId(null);
       await fetchTenants();
     } catch (err) {
       console.error(err);
-      showToast('❌ Critical error saving license update');
+      showToast('❌ Error saving license update');
     } finally {
       setActionLoading(null);
     }
   };
 
+  const handleDeleteTenant = async (uid: string) => {
+    setActionLoading(uid);
+    try {
+      await deleteTenantCompletely(uid);
+      showToast(language === 'ar' ? '🗑️ تم حذف حساب المشترك وقاعدة بياناته بالكامل بنجاح!' : '🗑️ Compte utilisateur et base de données supprimés avec succès !');
+      setDeletingTenantId(null);
+      await fetchTenants();
+    } catch (err) {
+      console.error(err);
+      showToast('❌ Error deleting tenant database');
+    } finally {
+      setActionLoading(null);
+    }
+  };
   const handleCreateNewTenant = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newTenantUid.trim() || !newTenantEmail.trim()) {
@@ -196,7 +141,7 @@ export default function SaaSDeveloperConsole() {
     setActionLoading(targetUid);
     try {
       const regDate = newTenantRegisteredAt || new Date().toISOString().split('T')[0];
-      const expiryDate = newTenantExpiry || new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+      const expiryDate = newTenantExpiry || new Date(Date.now() + 365 * 24 * 60 * 60 * 1050).toISOString().split('T')[0]; // 1 Year default
       
       let actDate = newTenantActivationDate.trim();
       if (newTenantStatus === 'active' && !actDate) {
@@ -213,18 +158,17 @@ export default function SaaSDeveloperConsole() {
         licenseExpiry: expiryDate,
         licenseStatus: newTenantStatus,
         licenseKey: hashKey,
-        businessName: newTenantStoreName.trim() || 'محل تجاري معزول',
+        businessName: newTenantStoreName.trim() || 'Superette Tunisienne',
         location: newTenantLocation.trim() || '',
         remoteAnnouncement: newTenantStatus === 'trial' 
-          ? 'مرحباً بك في النسخة التجريبية لـ INNOVA POS. اتصل بنا للتنشيط النهائي.' 
-          : 'تم تفعيل حسابك السحابي وإعداد قاعدة بيانات معزولة بنجاح.'
+          ? 'Bienvenue sur INNOVA POS PRO. Version démonstration active.' 
+          : 'Votre abonnement annuel Innova POS a été configuré avec succès.'
       };
 
       await saveUserLicense(targetUid, payload);
-      
       showToast(language === 'ar' ? '✅ تم تسجيل المشترك وجدولة رخصته بنجاح!' : '✅ Utilisateur pré-enregistré avec succès !');
       
-      // Reset form variables
+      // Reset variables
       setNewTenantUid('');
       setNewTenantEmail('');
       setNewTenantStoreName('');
@@ -244,54 +188,6 @@ export default function SaaSDeveloperConsole() {
     }
   };
 
-  const handleCreateSystemUpdate = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newUpdateId.trim() || !newUpdateTitleFr.trim() || !newUpdateTitleAr.trim()) {
-      showToast(language === 'ar' ? '⚠️ يرجى ملء الحقول الإلزامية الأساسية' : '⚠️ Veuillez renseigner les champs requis.');
-      return;
-    }
-
-    try {
-      const descFrArray = newUpdateDescFr
-        .split('\n')
-        .map(line => line.trim())
-        .filter(line => line.length > 0);
-      
-      const descArArray = newUpdateDescAr
-        .split('\n')
-        .map(line => line.trim())
-        .filter(line => line.length > 0);
-
-      const updateObj: SystemUpdate = {
-        id: newUpdateId.trim(),
-        date: newUpdateDate.trim() || new Date().toISOString().replace('T', ' ').substring(0, 16),
-        titleFr: newUpdateTitleFr.trim(),
-        titleAr: newUpdateTitleAr.trim(),
-        descriptionFr: descFrArray.length > 0 ? descFrArray : [newUpdateTitleFr.trim()],
-        descriptionAr: descArArray.length > 0 ? descArArray : [newUpdateTitleAr.trim()],
-        type: newUpdateType
-      };
-
-      await saveSystemUpdate(updateObj);
-      showToast(language === 'ar' ? '✅ تم نشر تحديث النظام بنجاح !' : '✅ Tâche de mise à jour envoyée avec succès !');
-      
-      setNewUpdateId('');
-      setNewUpdateDate('');
-      setNewUpdateTitleFr('');
-      setNewUpdateTitleAr('');
-      setNewUpdateDescFr('');
-      setNewUpdateDescAr('');
-      setNewUpdateType('patch');
-      setShowNewUpdateForm(false);
-
-      await fetchUpdates();
-    } catch (error) {
-      console.error(error);
-      showToast('❌ Failed to publish system update');
-    }
-  };
-
-  // Helper to copy text to clipboard
   const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text);
     showToast(language === 'ar' ? '📋 تم نسخ الرمز إلى الحافظة!' : '📋 Code d\'activation copié !');
@@ -307,131 +203,96 @@ export default function SaaSDeveloperConsole() {
     return matchesSearch && t.licenseStatus === filterStatus;
   });
 
-  // KPI Calculations
   const totalCount = tenants.length;
   const activeCount = tenants.filter(t => t.licenseStatus === 'active').length;
   const trialCount = tenants.filter(t => t.licenseStatus === 'trial').length;
   const suspendedCount = tenants.filter(t => t.licenseStatus === 'suspended' || t.licenseStatus === 'expired').length;
 
   return (
-    <div className="space-y-6 font-sans p-1" dir={language === 'ar' ? 'rtl' : 'ltr'}>
+    <div className="space-y-6 font-sans p-1 text-slate-800" dir={language === 'ar' ? 'rtl' : 'ltr'}>
       
       {/* Floating feedback */}
       {toastMessage && (
-        <div className="fixed bottom-6 right-6 z-50 bg-slate-900 border border-slate-800 text-white font-sans text-xs font-bold py-3 px-5 rounded shadow-lg animate-bounce flex items-center gap-2">
-          <span className="text-emerald-400">●</span>
+        <div className="fixed bottom-6 right-6 z-50 bg-slate-900 border border-slate-800 text-white font-sans text-xs font-bold py-3 px-5 rounded shadow-lg flex items-center gap-2">
+          <span className="text-emerald-400 animate-pulse">●</span>
           <span>{toastMessage}</span>
         </div>
       )}
 
       {/* Primary Banner Header */}
-      <div className="bg-slate-900 text-white p-6 rounded border border-slate-800 flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <div className="flex items-center gap-2 mb-2">
-            <span className="p-1 px-2.5 bg-rose-500/10 text-rose-400 border border-rose-500/20 text-[9px] uppercase font-mono font-black rounded-sm">
-              Developer SaaS Gate • مشرف السيرفر والمطور
+      <div className="bg-slate-900 text-white p-6 rounded border border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div className="text-start">
+          <div className="flex items-center gap-2 mb-1.5">
+            <span className="p-1 px-2 bg-rose-500/10 text-rose-400 border border-rose-500/20 text-[9px] uppercase font-mono font-black rounded-sm">
+              SaaS Console • Administrateur
             </span>
           </div>
-          <h1 className="text-xl md:text-2xl font-display font-black tracking-tight flex items-center gap-2">
-            <ShieldAlert className="w-6 h-6 text-rose-500" />
-            <span>{language === 'ar' ? 'لوحة التحكم السحابية وتراخيص الشركات والمشتركين' : 'Console de Licenciement SaaS & Tenants'}</span>
+          <h1 className="text-xl font-display font-black tracking-tight flex items-center gap-2">
+            <ShieldAlert className="w-55 h-5 text-rose-500" />
+            <span>{language === 'ar' ? 'إدارة تراخيص محلات Superette والمشتركين' : 'Gestion des Licences Superettes & Tenants'}</span>
           </h1>
-          <p className="text-slate-400 mt-1 text-xs md:text-sm">
+          <p className="text-slate-400 mt-1 text-xs">
             {language === 'ar' 
-              ? 'بوابة المطور الفنية والتحكم عن بعد في الأجهزة المبيعة، تتيح لك إيقاف الحسابات، تمديد الفترات التجريبية، وتوجيه تحديثات وتنبيهات مباشرة.' 
-              : 'Gérez à distance vos abonnements clients locaux, visualisez les connexions actives, suspendez les impayés et attribuez des clés de licence.'}
+              ? 'مراقبة تراخيص البيع السحابية للمحلات النشطة والتحكم المباشر في قفل أو تمديد حساباتهم.' 
+              : 'Gérez à distance vos points de vente abonnés, suspendez les impayés et attribuez des clés de licence.'}
           </p>
-          <div className="mt-4 flex flex-wrap items-center gap-2 text-[11px] bg-slate-800/80 border border-slate-700/60 rounded p-2 text-slate-300 w-fit max-w-full">
-            <span className="font-bold text-amber-400">⚡ {language === 'ar' ? 'آخر تحديث للنظام :' : 'Dernière Mise à Jour :'}</span>
-            <span className="font-mono bg-slate-950 border border-slate-800 px-1.5 py-0.5 rounded text-white text-[10px]">24/05/2026 - 15:40</span>
-            <span className="text-slate-600 hidden sm:inline">|</span>
-            <span className="font-medium text-slate-200">
-              {language === 'ar' ? 'تحديث النظام البرمجي الأساسي للمشتركين' : 'Partie pour mise à jour de système'}
-            </span>
-          </div>
         </div>
 
         <button
           onClick={fetchTenants}
           disabled={loading}
-          className="self-start md:self-auto flex items-center justify-center gap-1.5 py-2 px-4 rounded border border-slate-700 bg-slate-800 hover:bg-slate-750 text-xs font-bold text-white transition-all cursor-pointer"
+          className="self-start sm:self-auto flex items-center justify-center gap-1.5 py-1.5 px-3 mb-1.5 rounded border border-slate-700 bg-slate-800 hover:bg-slate-755 text-xs font-bold text-white transition-all cursor-pointer"
         >
           <RefreshCw className={`w-3.5 h-3.5 text-blue-400 ${loading ? 'animate-spin' : ''}`} />
-          <span>{language === 'ar' ? 'تحديث قاعدة الشركات' : 'Rafraîchir'}</span>
+          <span>{language === 'ar' ? 'تحديث البيانات' : 'Rafraîchir'}</span>
         </button>
       </div>
 
-      {/* Tab Switcher */}
-      <div className="flex border-b border-slate-200 gap-2">
-        <button
-          onClick={() => setConsoleTab('tenants')}
-          className={`px-5 py-3 text-xs font-bold transition-all border-b-2 hover:bg-slate-50 cursor-pointer ${
-            consoleTab === 'tenants'
-              ? 'border-rose-500 text-rose-600'
-              : 'border-transparent text-slate-500 hover:text-slate-700'
-          }`}
-        >
-          👤 {language === 'ar' ? 'الحسابات المسجلة في Firestore' : 'Comptes Firestore / Tenants'} ({tenants.length})
-        </button>
-        <button
-          onClick={() => setConsoleTab('updates')}
-          className={`px-5 py-3 text-xs font-bold transition-all border-b-2 hover:bg-slate-50 cursor-pointer ${
-            consoleTab === 'updates'
-              ? 'border-rose-500 text-rose-600'
-              : 'border-transparent text-slate-500 hover:text-slate-700'
-          }`}
-        >
-          🚀 {language === 'ar' ? 'سجل تحديثات النظام' : 'Mises à jour Système'} ({updates.length})
-        </button>
-      </div>
-
-      {consoleTab === 'tenants' && (
-        <>
-          {/* KPI Overviews */}
+      {/* KPI Overviews (Exactly as shown in your layout) */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="bg-white border border-slate-200 p-4 rounded text-start">
-          <div className="text-[9px] font-black uppercase text-slate-400 tracking-wider flex items-center gap-1">
+        <div className="bg-white border border-slate-200 p-4 rounded text-start shadow-3xs">
+          <div className="text-[9px] font-black uppercase text-slate-450 tracking-wider flex items-center gap-1">
             <Users className="w-3.5 h-3.5 text-slate-500" />
-            <span>{language === 'ar' ? 'إجمالي المحلات المسجلة' : 'Total Boutiques'}</span>
+            <span>{language === 'ar' ? 'إجمالي المحلات' : 'TOTAL BOUTIQUES'}</span>
           </div>
           <div className="text-2xl font-mono font-black text-slate-900 mt-1">{totalCount}</div>
-          <div className="text-[10px] text-slate-400 font-bold mt-0.5">{language === 'ar' ? 'قاعدة عملاء نظام INNOVA POS' : 'Comptes enregistrés sur Firestore'}</div>
+          <div className="text-[10px] text-slate-400 font-bold mt-0.5">{language === 'ar' ? 'الحسابات المسجلة في السحابة' : 'Comptes enregistrés sur Firestore'}</div>
         </div>
 
-        <div className="bg-white border border-slate-200 p-4 rounded text-start">
+        <div className="bg-white border border-slate-200 p-4 rounded text-start shadow-3xs">
           <div className="text-[9px] font-black uppercase text-emerald-500 tracking-wider flex items-center gap-1">
             <UserCheck className="w-3.5 h-3.5 text-emerald-500" />
-            <span>{language === 'ar' ? 'الاشتراكات المفعلة حالياً' : 'Abonnements Actifs'}</span>
+            <span>{language === 'ar' ? 'اشتراكات نشطة' : 'ABONNEMENTS ACTIFS'}</span>
           </div>
           <div className="text-2xl font-mono font-black text-emerald-600 mt-1">{activeCount}</div>
           <div className="text-[10px] text-slate-400 font-bold mt-0.5">
-            {totalCount > 0 ? `${((activeCount / totalCount) * 100).toFixed(1)}%` : 0} {language === 'ar' ? 'معدل التحويل المالي' : 'du total'}
+            {activeCount} {language === 'ar' ? 'مفعلين حالياً' : 'du total'}
           </div>
         </div>
 
-        <div className="bg-white border border-slate-200 p-4 rounded text-start">
+        <div className="bg-white border border-slate-200 p-4 rounded text-start shadow-3xs">
           <div className="text-[9px] font-black uppercase text-blue-500 tracking-wider flex items-center gap-1">
             <Clock className="w-3.5 h-3.5 text-blue-500" />
-            <span>{language === 'ar' ? 'الفترات التجريبية النشطة' : 'Périodes d\'Essai'}</span>
+            <span>{language === 'ar' ? 'فترات تجريبية' : 'PÉRIODES D\'ESSAI'}</span>
           </div>
           <div className="text-2xl font-mono font-black text-blue-600 mt-1">{trialCount}</div>
-          <div className="text-[10px] text-slate-400 font-bold mt-0.5">{language === 'ar' ? 'حسابات في فترة 14 يوماً الأولى' : 'En phase de démonstration'}</div>
+          <div className="text-[10px] text-slate-400 font-bold mt-0.5">{language === 'ar' ? 'تحت العرض والتجريب' : 'En phase de démonstration'}</div>
         </div>
 
-        <div className="bg-white border border-slate-200 p-4 rounded text-start">
+        <div className="bg-white border border-slate-200 p-4 rounded text-start shadow-3xs">
           <div className="text-[9px] font-black uppercase text-rose-500 tracking-wider flex items-center gap-1">
             <UserX className="w-3.5 h-3.5 text-rose-500" />
-            <span>{language === 'ar' ? 'محلات مقفلة / منتهية' : 'Comptes Verrouillés'}</span>
+            <span>{language === 'ar' ? 'حسابات مغلقة' : 'COMPTES VERROUILLÉS'}</span>
           </div>
           <div className="text-2xl font-mono font-black text-rose-600 mt-1">{suspendedCount}</div>
-          <div className="text-[10px] text-slate-400 font-bold mt-0.5">{language === 'ar' ? 'تجاوزوا آجال الدفع أو تم تعليقهم' : 'Accès bloqué ou expiré'}</div>
+          <div className="text-[10px] text-slate-400 font-bold mt-0.5">{language === 'ar' ? 'الدخول معلق للتراخيص المنتهية' : 'Accès bloqué ou expiré'}</div>
         </div>
       </div>
 
-      {/* CONTROL TABLE SECTION */}
-      <div className="bg-white border border-slate-200 rounded overflow-hidden">
+      {/* Main Table section */}
+      <div className="bg-white border border-slate-200 rounded overflow-hidden shadow-3xs">
         
-        {/* Firestore Registered Accounts Header Banner */}
+        {/* Table Banner Header in Dark Theme matches the screenshot */}
         <div className="p-4 bg-slate-900 border-b border-rose-500/10 flex items-center justify-between text-white flex-wrap gap-2 text-start">
           <div className="flex items-center gap-2">
             <div className="p-2 bg-rose-500/10 rounded-lg text-rose-400">
@@ -439,21 +300,18 @@ export default function SaaSDeveloperConsole() {
             </div>
             <div>
               <h2 className="text-xs font-black uppercase tracking-wider font-mono text-slate-100 flex items-center gap-1.5">
-                <span>{language === 'ar' ? '🗂️ الحسابات المسجلة في السحابة' : '🗂️ Comptes enregistrés sur Firestore'}</span>
+                <span>{language === 'ar' ? '📁 ملفات المشتركين والمحلات المسجلة في السحابة' : '📁 COMPTES ENREGISTRÉS SUR FIRESTORE'}</span>
               </h2>
               <p className="text-[10px] text-slate-400 font-semibold mt-0.5">
                 {language === 'ar' 
-                  ? 'بوابة المبيعات والتراخيص النشطة للمشتركين للتحكم الفوري عن بعد والتعديل' 
+                  ? 'قائمة التراخيص وعناوين البريد المسجلة والتحكم الفوري بآجالها' 
                   : 'Fiches d\'identification, dates de souscription et contrôle d\'accès cloud des boutiques'}
               </p>
             </div>
           </div>
-          <span className="text-[9px] bg-red-500/10 text-red-400 border border-red-500/20 px-2.5 py-0.5 font-bold font-mono rounded-md uppercase tracking-wide">
-            Firestore Master List
-          </span>
         </div>
 
-        {/* Filters bar */}
+        {/* Filters and search area */}
         <div className="p-4 bg-slate-50 border-b border-slate-200 flex flex-col md:flex-row gap-3 items-center justify-between">
           <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 w-full md:max-w-xl">
             <div className="relative w-full sm:max-w-xs">
@@ -462,8 +320,8 @@ export default function SaaSDeveloperConsole() {
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full text-xs font-medium border border-slate-200 pr-9 pl-3 py-2 bg-white rounded focus:outline-hidden focus:border-slate-400 transition-colors text-slate-800"
-                placeholder={language === 'ar' ? 'ابحث عبر البريد الإلكتروني، اسم المحل أو الـ ID...' : 'Rechercher email, boutique, UID...'}
+                className="w-full text-xs font-medium border border-slate-200 pr-9 pl-3 py-2 bg-white rounded focus:outline-hidden focus:border-slate-400 transition-colors text-slate-800 text-start"
+                placeholder={language === 'ar' ? 'بحث عن بريد إلكتروني، محل...' : 'Rechercher par email, boutique, UID...'}
               />
             </div>
 
@@ -473,19 +331,19 @@ export default function SaaSDeveloperConsole() {
                 setShowAddTenantForm(!showAddTenantForm);
                 if (!showAddTenantForm) {
                   setNewTenantRegisteredAt(new Date().toISOString().split('T')[0]);
-                  setNewTenantExpiry(new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]); // Default 1 year
+                  setNewTenantExpiry(new Date(Date.now() + 365 * 24 * 60 * 60 * 1050).toISOString().split('T')[0]);
                   setNewTenantActivationDate(new Date().toISOString().split('T')[0]);
                 }
               }}
               className="py-2 px-3.5 bg-rose-600 hover:bg-rose-700 text-white font-extrabold rounded text-xs shrink-0 flex items-center justify-center gap-1.5 cursor-pointer shadow-3xs transition-all"
             >
               <span>{showAddTenantForm ? '✕' : '➕'}</span>
-              <span>{language === 'ar' ? 'تسجيل مستخدم Gmail جديد' : 'Pré-enregistrer utilisateur Gmail'}</span>
+              <span>{language === 'ar' ? 'تسجيل مشترك جديد' : 'Pré-enregistrer utilisateur Gmail'}</span>
             </button>
           </div>
 
           <div className="flex items-center gap-2 shrink-0 self-end md:self-auto">
-            <span className="text-[10px] font-bold text-slate-500 uppercase">{language === 'ar' ? 'تصنيف الحالة :' : 'Filtrer :'}</span>
+            <span className="text-[10px] font-bold text-slate-500 uppercase">{language === 'ar' ? 'تصفية :' : 'Filtrer :'}</span>
             <select
               value={filterStatus}
               onChange={(e) => setFilterStatus(e.target.value)}
@@ -494,23 +352,23 @@ export default function SaaSDeveloperConsole() {
               <option value="all">{language === 'ar' ? 'الكل' : 'Tous'}</option>
               <option value="active">{language === 'ar' ? 'مشترك مفعل' : 'Actifs'}</option>
               <option value="trial">{language === 'ar' ? 'تجريبي' : 'Essai'}</option>
-              <option value="suspended">{language === 'ar' ? 'معلق كلياً' : 'Suspendus'}</option>
-              <option value="expired">{language === 'ar' ? 'منتهية الصلاحية' : 'Expirés'}</option>
+              <option value="suspended">{language === 'ar' ? 'معطل' : 'Suspendus'}</option>
+              <option value="expired">{language === 'ar' ? 'منتهي الصلاحية' : 'Expirés'}</option>
             </select>
           </div>
         </div>
 
-        {/* New Tenant Manual Setup and Pre-Registration Form */}
+        {/* Pre-registration Form */}
         {showAddTenantForm && (
           <form onSubmit={handleCreateNewTenant} className="bg-slate-900 border-b border-rose-500/15 text-white p-5 space-y-4 text-start animate-fadeIn">
             <div className="flex items-center justify-between border-b border-slate-800 pb-2.5">
-              <h4 className="text-xs font-black uppercase tracking-widest text-rose-400 font-mono flex items-center gap-1.5">
+              <h4 className="text-xs font-black uppercase tracking-widest text-rose-450 font-mono flex items-center gap-1.5">
                 <span>➕ {language === 'ar' ? 'تسجيل مشترك Gmail جديد وحجز بياناته' : 'PRÉ-ENREGISTRER UN UTILISATEUR GMAIL (SaaS CONSOLE)'}</span>
               </h4>
               <span className="text-[8px] bg-rose-500/10 text-rose-400 border border-rose-500/20 px-2 py-0.5 font-bold font-mono rounded">SaaS CONFIGURATION</span>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div>
                 <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 block mb-1">
                   {language === 'ar' ? 'البريد الإلكتروني للعميل Gmail *' : 'Adresse Email du Client (Gmail) *'}
@@ -521,7 +379,7 @@ export default function SaaSDeveloperConsole() {
                   value={newTenantEmail}
                   onChange={(e) => setNewTenantEmail(e.target.value)}
                   placeholder="exemple@gmail.com"
-                  className="w-full text-xs font-bold border border-slate-800 bg-slate-950 p-2.5 rounded text-white focus:outline-hidden focus:border-rose-500"
+                  className="w-full text-xs font-bold border border-slate-800 bg-slate-950 p-2.5 rounded text-white focus:outline-hidden focus:border-rose-500 text-start"
                 />
               </div>
 
@@ -536,13 +394,12 @@ export default function SaaSDeveloperConsole() {
                     value={newTenantUid}
                     onChange={(e) => setNewTenantUid(e.target.value)}
                     placeholder="Saisir ou générer un UID..."
-                    className="w-full text-xs font-bold font-mono border border-slate-800 bg-slate-950 p-2.5 rounded text-white focus:outline-hidden focus:border-rose-500"
+                    className="w-full text-xs font-bold font-mono border border-slate-800 bg-slate-950 p-2.5 rounded text-white focus:outline-hidden focus:border-rose-500 text-start"
                   />
                   <button
                     type="button"
                     onClick={() => setNewTenantUid('usr_' + Math.random().toString(36).substring(2, 11))}
                     className="p-2 bg-slate-800 hover:bg-slate-750 border border-slate-700 text-[10px] rounded text-slate-300 font-mono cursor-pointer"
-                    title="Générer UID temporaire"
                   >
                     Gen
                   </button>
@@ -558,7 +415,7 @@ export default function SaaSDeveloperConsole() {
                   value={newTenantStoreName}
                   onChange={(e) => setNewTenantStoreName(e.target.value)}
                   placeholder="Ex: Superette Tunisienne"
-                  className="w-full text-xs font-bold border border-slate-800 bg-slate-950 p-2.5 rounded text-white focus:outline-hidden focus:border-rose-500"
+                  className="w-full text-xs font-bold border border-slate-800 bg-slate-950 p-2.5 rounded text-white focus:outline-hidden focus:border-rose-500 text-start"
                 />
               </div>
             </div>
@@ -575,7 +432,7 @@ export default function SaaSDeveloperConsole() {
                 >
                   <option value="trial">{language === 'ar' ? 'فترة تجريبية (Trial)' : 'Essai Gratuit'}</option>
                   <option value="active">{language === 'ar' ? 'نشط مفعل (Active)' : 'Actif / Abonné'}</option>
-                  <option value="suspended">{language === 'ar' ? 'معطل ومحجوب (Suspended / Bloqué)' : 'Suspendu / Bloqué'}</option>
+                  <option value="suspended">{language === 'ar' ? 'معطل ومحجوب' : 'Suspendu / Bloqué'}</option>
                   <option value="expired">{language === 'ar' ? 'منتهي الترخيص (Expired)' : 'Expiré'}</option>
                 </select>
               </div>
@@ -626,7 +483,7 @@ export default function SaaSDeveloperConsole() {
                 value={newTenantLocation}
                 onChange={(e) => setNewTenantLocation(e.target.value)}
                 placeholder="Ex: Tunis, Tunisie ou coordonnées GPS"
-                className="w-full text-xs font-medium border border-slate-800 bg-slate-950 p-2.5 rounded text-white focus:outline-hidden"
+                className="w-full text-xs font-medium border border-slate-800 bg-slate-950 p-2.5 rounded text-white focus:outline-hidden text-start"
               />
             </div>
 
@@ -650,18 +507,18 @@ export default function SaaSDeveloperConsole() {
           </form>
         )}
 
-        {/* Big list load */}
+        {/* Loading Spinner / Void states */}
         {loading ? (
           <div className="py-20 text-center space-y-4">
             <div className="w-10 h-10 border-4 border-rose-500 border-t-transparent rounded-full animate-spin mx-auto"></div>
             <p className="text-xs text-slate-400 font-bold uppercase tracking-wider">{language === 'ar' ? 'جاري تحميل هويات المشتركين وتراخيصهم...' : 'Chargement des licences cloud...'}</p>
           </div>
         ) : filteredTenants.length === 0 ? (
-          <div className="py-20 text-center space-y-2">
-            <Users className="w-12 h-12 text-slate-300 mx-auto" />
-            <p className="text-sm font-bold text-slate-800">{language === 'ar' ? 'لم يتم العثور على مشتركين بعد' : 'Aucun tenant trouvé'}</p>
+          <div className="py-20 text-center space-y-2 bg-white">
+            <Users className="w-12 h-12 text-slate-200 mx-auto" />
+            <p className="text-sm font-bold text-slate-700">{language === 'ar' ? 'لم يتم العثور على مشتركين بعد' : 'Aucun tenant trouvé'}</p>
             <p className="text-xs text-slate-400 max-w-sm mx-auto">
-              {language === 'ar' ? 'لم يسجل أي عميل حساباً جديداً على هذا الخادم السحابي حتى الآن.' : 'Aucun client n\'est encore enregistré avec ce filtre.'}
+              {language === 'ar' ? 'لا يوجد أي حساب متصل أو محجوز يطابق فلتر البحث حالياً.' : 'Aucun client n\'est enregistré avec ce filtre pour le moment.'}
             </p>
           </div>
         ) : (
@@ -672,9 +529,9 @@ export default function SaaSDeveloperConsole() {
                   <th className="p-4">{language === 'ar' ? 'الشركة / المحل' : 'Boutique'}</th>
                   <th className="p-4">{language === 'ar' ? 'تاريخ التسجيل' : 'Enregistrement'}</th>
                   <th className="p-4">{language === 'ar' ? 'آجال الترخيص والانتهاء' : 'Expiration'}</th>
-                  <th className="p-4 text-center">{language === 'ar' ? 'رمز الترخيص الحالي' : 'Clef de Signature'}</th>
+                  <th className="p-4 text-center">{language === 'ar' ? 'رمز الترخيص السحابي' : 'Clef de Signature'}</th>
                   <th className="p-4">{language === 'ar' ? 'الحالة الحالية' : 'Statut'}</th>
-                  <th className="p-4 text-center">{language === 'ar' ? 'التحكم الإداري الفوري' : 'Action'}</th>
+                  <th className="p-4 text-center">{language === 'ar' ? 'التحكم والتعديل' : 'Action'}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-150">
@@ -682,153 +539,33 @@ export default function SaaSDeveloperConsole() {
                   const isEditing = editingTenantId === t.uid;
                   const isTrial = t.licenseStatus === 'trial';
                   const isActiveStatus = t.licenseStatus === 'active';
-                  const isLocked = t.licenseStatus === 'suspended' || t.licenseStatus === 'expired';
 
                   return (
                     <tr key={t.uid} className={`hover:bg-slate-50/50 transition-colors ${isEditing ? 'bg-amber-50/20' : ''}`}>
                       
-                      {/* Store name and basic identifier fields */}
-                      <td className="p-4">
+                      {/* Store detail block */}
+                      <td className="p-4 text-start">
                         {isEditing ? (
                           <div className="space-y-1.5 max-w-xs">
                             <input
                               type="text"
                               value={editStoreName}
                               onChange={(e) => setEditStoreName(e.target.value)}
-                              className="w-full text-xs font-bold border border-slate-250 p-1.5 rounded bg-white"
-                              placeholder="Store Name"
+                              className="w-full text-xs font-bold border border-slate-250 p-1.5 rounded bg-white text-slate-850"
+                              placeholder="Nom du commerce"
                             />
                             <input
                               type="text"
                               value={editLocation}
                               onChange={(e) => setEditLocation(e.target.value)}
-                              className="w-full text-xs font-medium border border-slate-250 p-1.5 rounded bg-white"
+                              className="w-full text-xs font-medium border border-slate-250 p-1.5 rounded bg-white text-slate-850"
                               placeholder={language === 'ar' ? 'الموقع الجغرافي أو رابط خرائط جوجل' : 'Localisation ou URL Google Maps'}
                             />
-                            <div className="text-[10px] text-slate-400 truncate">{t.email || 'Pas d\'email'}</div>
-                            
-                            {/* 📧 Configurer l'Expéditeur SMTP pour ce Tenant */}
-                            <div className="mt-2.5 p-2 bg-slate-900 border border-slate-800 rounded text-slate-100 space-y-2 text-left">
-                              <span className="text-[9px] font-black uppercase text-amber-400 tracking-wider block">
-                                📩 {language === 'ar' ? 'إعدادات البريد للمرسل (SMTP)' : "CONFIG EXPÉDITEUR SMTP"}
-                              </span>
-                              
-                              <div className="space-y-1.5 text-[10px]">
-                                <div>
-                                  <label className="text-[8px] font-bold text-slate-400 block">
-                                    {language === 'ar' ? 'المستلم (Admin Email) :' : 'Receveur (Admin Email) :'}
-                                  </label>
-                                  <input
-                                    type="email"
-                                    value={editRemoteAdminEmail}
-                                    onChange={(e) => setEditRemoteAdminEmail(e.target.value)}
-                                    placeholder="Ex: admin@example.com"
-                                    className="w-full text-[10px] bg-slate-950 border border-slate-800 p-1 rounded font-mono text-white"
-                                  />
-                                </div>
-
-                                <div className="flex items-center gap-1.5 py-0.5">
-                                  <input
-                                    id={`remAlerts-${t.uid}`}
-                                    type="checkbox"
-                                    checked={editRemoteEnableEmailAlerts}
-                                    onChange={(e) => setEditRemoteEnableEmailAlerts(e.target.checked)}
-                                    className="w-3 h-3 rounded border-slate-700 bg-slate-950 accent-amber-500 cursor-pointer"
-                                  />
-                                  <label htmlFor={`remAlerts-${t.uid}`} className="text-[8.5px] font-bold text-slate-300 cursor-pointer select-none">
-                                    {language === 'ar' ? 'تفعيل تنبيهات البريد الإلكتروني' : 'Activer alertes stock bas'}
-                                  </label>
-                                </div>
-
-                                <div className="grid grid-cols-2 gap-1">
-                                  <div>
-                                    <label className="text-[8px] font-bold text-slate-400 block">Host SMTP :</label>
-                                    <input
-                                      type="text"
-                                      value={editRemoteSmtpHost}
-                                      onChange={(e) => setEditRemoteSmtpHost(e.target.value)}
-                                      placeholder="smtp.gmail.com"
-                                      className="w-full text-[10px] bg-slate-950 border border-slate-800 p-1 rounded font-mono text-white"
-                                    />
-                                  </div>
-                                  <div>
-                                    <label className="text-[8px] font-bold text-slate-400 block">Port :</label>
-                                    <input
-                                      type="number"
-                                      value={editRemoteSmtpPort}
-                                      onChange={(e) => setEditRemoteSmtpPort(Number(e.target.value))}
-                                      placeholder="465"
-                                      className="w-full text-[10px] bg-slate-950 border border-slate-800 p-1 rounded font-mono text-white"
-                                    />
-                                  </div>
-                                </div>
-
-                                <div>
-                                  <label className="text-[8px] font-bold text-slate-400 block">
-                                    {language === 'ar' ? 'البريد الإلكتروني للارسال :' : 'Email d\'envoi (Smtp User) :'}
-                                  </label>
-                                  <input
-                                    type="text"
-                                    value={editRemoteSmtpUser}
-                                    onChange={(e) => setEditRemoteSmtpUser(e.target.value)}
-                                    placeholder="sender@gmail.com"
-                                    className="w-full text-[10px] bg-slate-950 border border-slate-800 p-1 rounded font-mono text-white"
-                                  />
-                                </div>
-
-                                <div>
-                                  <label className="text-[8px] font-bold text-slate-400 block">
-                                    {language === 'ar' ? 'اسم المرسل الظاهري :' : 'Nom d\'expéditeur :'}
-                                  </label>
-                                  <input
-                                    type="text"
-                                    value={editRemoteSmtpSenderName}
-                                    onChange={(e) => setEditRemoteSmtpSenderName(e.target.value)}
-                                    placeholder="InnovaPos Alerts"
-                                    className="w-full text-[10px] bg-slate-950 border border-slate-800 p-1 rounded text-white"
-                                  />
-                                </div>
-
-                                <div>
-                                  <label className="text-[8px] font-bold text-slate-400 block">
-                                    {language === 'ar' ? 'كلمة سر التطبيقات :' : 'App Password :'}
-                                  </label>
-                                  <div className="relative">
-                                    <input
-                                      type={showConsoleSmtpPass ? 'text' : 'password'}
-                                      value={editRemoteSmtpPass}
-                                      onChange={(e) => setEditRemoteSmtpPass(e.target.value)}
-                                      placeholder="••••••••••••••••"
-                                      className="w-full text-[10px] bg-slate-950 border border-slate-800 p-1 pr-6 rounded font-mono text-white"
-                                    />
-                                    <button
-                                      type="button"
-                                      onClick={() => setShowConsoleSmtpPass(!showConsoleSmtpPass)}
-                                      className="absolute right-1 top-1 text-slate-400 hover:text-white"
-                                    >
-                                      {showConsoleSmtpPass ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
-                                    </button>
-                                  </div>
-                                </div>
-
-                                <div className="flex items-center gap-1.5 pt-0.5">
-                                  <input
-                                    id={`remSecure-${t.uid}`}
-                                    type="checkbox"
-                                    checked={editRemoteSmtpSecure}
-                                    onChange={(e) => setEditRemoteSmtpSecure(e.target.checked)}
-                                    className="w-3 h-3 rounded border-slate-700 bg-slate-950 accent-amber-500 cursor-pointer"
-                                  />
-                                  <label htmlFor={`remSecure-${t.uid}`} className="text-[8.5px] text-slate-300 cursor-pointer select-none">
-                                    {language === 'ar' ? 'اتصال آمن SSL (مثل 465)' : 'Chiffrement SSL/TLS sécurisé'}
-                                  </label>
-                                </div>
-                              </div>
-                            </div>
+                            <div className="text-[10px] text-slate-400 font-mono font-bold truncate select-all">{t.email || 'Pas d\'email'}</div>
                           </div>
                         ) : (
                           <div>
-                            <p className="font-bold text-slate-850 text-sm">{t.businessName || 'محل تجاري جديد'}</p>
+                            <p className="font-bold text-slate-850 text-sm">{t.businessName || 'Superette Tunisienne'}</p>
                             <p className="text-[11px] text-slate-500 font-semibold">{t.email || 'Email non fourni'}</p>
                             
                             {t.location && (
@@ -840,9 +577,9 @@ export default function SaaSDeveloperConsole() {
                                     target="_blank" 
                                     rel="noopener noreferrer"
                                     referrerPolicy="no-referrer"
-                                    className="hover:underline flex items-center gap-1"
+                                    className="hover:underline flex items-center gap-1.5"
                                   >
-                                    <span>{language === 'ar' ? 'موقع الشركة على الخريطة 🗺️' : 'Localisation de la boutique 🗺️'}</span>
+                                    <span>{language === 'ar' ? 'مربع الموقع الجغرافي 🗺️' : 'Localisation boutique 🗺️'}</span>
                                     <ExternalLink className="w-2.5 h-2.5" />
                                   </a>
                                 ) : (
@@ -856,64 +593,22 @@ export default function SaaSDeveloperConsole() {
                               <span className="bg-slate-100 p-0.5 px-1.5 rounded uppercase select-all font-bold">{t.uid}</span>
                               <button 
                                 onClick={() => copyToClipboard(t.uid)} 
-                                className="hover:text-slate-800 p-0.5 hover:bg-slate-205 rounded cursor-pointer"
+                                className="hover:text-slate-800 p-0.5 hover:bg-slate-200 rounded cursor-pointer"
                                 title="Copy UID"
                               >
                                 <Clipboard className="w-3 h-3 text-slate-400 inline" />
                               </button>
                             </div>
-
-                            {/* 📧 Affichage de l'expéditeur configuration SMTP dans la liste */}
-                            <div className="mt-2.5 p-2 bg-slate-50 border border-slate-150 rounded text-[11px] text-slate-700 space-y-1">
-                              <div className="text-[9.5px] font-black uppercase text-slate-500 flex items-center gap-1">
-                                <span>📧 {language === 'ar' ? 'المرسل البريدي (SMTP) :' : 'Expéditeur Email SMTP :'}</span>
-                              </div>
-                              {t.remoteSmtpUser ? (
-                                <div className="space-y-0.5">
-                                  <div>
-                                    <span className="text-slate-400">{language === 'ar' ? 'الحساب المرسل :' : 'Compte :'}</span>{' '}
-                                    <span className="font-mono text-[10.5px] bg-slate-100 border border-slate-150 px-1 py-0.2 rounded text-slate-800 break-all select-all">{t.remoteSmtpUser}</span>
-                                  </div>
-                                  {t.remoteSmtpHost && (
-                                    <div>
-                                      <span className="text-slate-400">{language === 'ar' ? 'الخادم والمستلم :' : 'Host & Recipient :'}</span>{' '}
-                                      <span className="font-mono text-slate-650">{t.remoteSmtpHost}:{t.remoteSmtpPort || 465}</span>
-                                      {t.remoteAdminEmail && (
-                                        <span className="text-emerald-600 font-bold"> → {t.remoteAdminEmail}</span>
-                                      )}
-                                    </div>
-                                  )}
-                                  {t.remoteSmtpSenderName && (
-                                    <div>
-                                      <span className="text-slate-400">{language === 'ar' ? 'اسم الإرسال :' : 'Sender Name :'}</span>{' '}
-                                      <span className="font-semibold text-slate-700">"{t.remoteSmtpSenderName}"</span>
-                                    </div>
-                                  )}
-                                  <div className="text-[10px] flex items-center gap-1">
-                                    <span className="text-slate-400">{language === 'ar' ? 'حالة التنبيهات :' : 'Etat alertes :'}</span>
-                                    {t.remoteEnableCriticalStockEmailAlerts ? (
-                                      <span className="text-emerald-600 font-bold bg-emerald-50 px-1 rounded">✓ {language === 'ar' ? 'تنبيه نشط' : 'Alerte Active'}</span>
-                                    ) : (
-                                      <span className="text-slate-400 bg-slate-100 px-1 rounded">🔕 {language === 'ar' ? 'معطل' : 'Désactivé'}</span>
-                                    )}
-                                  </div>
-                                </div>
-                              ) : (
-                                <div className="text-[10px] text-slate-400 italic">
-                                  {language === 'ar' ? '⚠️ يستخدم إعدادات الخادم الافتراضي للنظام' : '⚠️ Utilise le serveur par défaut'}
-                                </div>
-                              )}
-                            </div>
                           </div>
                         )}
                       </td>
 
-                      {/* Registration timestamp */}
+                      {/* Registration Date */}
                       <td className="p-4 whitespace-nowrap text-slate-500 font-semibold">
                         {t.registeredAt || '24/05/2026'}
                       </td>
 
-                      {/* Expiration datepicker */}
+                      {/* Expiry Date */}
                       <td className="p-4 whitespace-nowrap font-bold text-slate-700">
                         {isEditing ? (
                           <div className="flex items-center gap-1">
@@ -937,7 +632,7 @@ export default function SaaSDeveloperConsole() {
                         )}
                       </td>
 
-                      {/* Current Key signature details */}
+                      {/* Cloud Signature Key */}
                       <td className="p-4 text-center">
                         <div className="inline-flex items-center gap-1.5 bg-slate-100 p-1 px-2.5 rounded border border-slate-200 font-mono text-[10px] text-slate-600">
                           <KeyRound className="w-3 h-3 text-slate-400 shrink-0" />
@@ -946,7 +641,6 @@ export default function SaaSDeveloperConsole() {
                             <button 
                               onClick={() => copyToClipboard(t.licenseKey)}
                               className="text-slate-400 hover:text-slate-800 cursor-pointer"
-                              title="Copy Key"
                             >
                               <Clipboard className="w-3 h-3" />
                             </button>
@@ -954,7 +648,7 @@ export default function SaaSDeveloperConsole() {
                         </div>
                       </td>
 
-                      {/* Status pill badge badges */}
+                      {/* Status select/render */}
                       <td className="p-4 whitespace-nowrap">
                         {isEditing ? (
                           <select
@@ -968,56 +662,57 @@ export default function SaaSDeveloperConsole() {
                             <option value="expired">{language === 'ar' ? 'منتهي الصلاحية' : 'Expiré'}</option>
                           </select>
                         ) : (
-                          <span className={`px-2.5 py-1 rounded-sm text-[10px] font-bold block text-center capitalize w-24 border ${
+                          <span className={`px-2 py-0.5 rounded-sm text-[10px] font-bold block text-center capitalize w-24 border ${
                             isActiveStatus
                               ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
                               : isTrial
                               ? 'bg-blue-50 text-blue-800 border-blue-200'
-                              : 'bg-rose-50 text-rose-800 border-rose-200 animate-pulse'
+                              : 'bg-rose-50 text-rose-800 border-rose-200'
                           }`}>
                             {t.licenseStatus === 'active' && (language === 'ar' ? 'نشط مفعل ✅' : 'Actif ✅')}
-                            {t.licenseStatus === 'trial' && (language === 'ar' ? 'فترة تجريبية ⏳' : 'Essai Gratuit ⏳')}
+                            {t.licenseStatus === 'trial' && (language === 'ar' ? 'تجريبي ⏳' : 'Essai ⏳')}
                             {t.licenseStatus === 'suspended' && (language === 'ar' ? 'معطل 🛑' : 'Suspendu 🛑')}
                             {t.licenseStatus === 'expired' && (language === 'ar' ? 'منتهي ❌' : 'Expiré ❌')}
                           </span>
                         )}
                       </td>
 
-                      {/* Main action controller rows */}
+                      {/* Row specific inline fields editing controls */}
                       <td className="p-4">
                         {isEditing ? (
-                          <div className="space-y-2.5 max-w-xs text-start">
-                            {/* remote message pusher tool right inside cell */}
+                          <div className="space-y-2 max-w-xs text-start">
+                            
+                            {/* Fast remote message broadcast text */}
                             <div className="space-y-1">
                               <label className="text-[8.5px] font-black text-slate-500 uppercase block">
-                                {language === 'ar' ? 'رسالة تنبيه فوري عن بعد تظهر لديه :' : 'Message à pousser en haut :'}
+                                {language === 'ar' ? 'شريط إعلان يظهر له أعلى الشاشة :' : 'Notification à pousser en haut :'}
                               </label>
-                              <div className="flex gap-1.5">
+                              <div className="flex gap-1">
                                 <input
                                   type="text"
                                   value={editAnnouncement}
                                   onChange={(e) => setEditAnnouncement(e.target.value)}
-                                  className="w-full text-[11px] font-semibold border border-slate-250 p-1 rounded bg-white"
-                                  placeholder="e.g. يرجى خلاص الفاتورة السنوية لتجنب التعطيل"
+                                  className="w-full text-[11px] font-semibold border border-slate-250 p-1 rounded bg-white text-slate-800"
+                                  placeholder="e.g. يرجى تصفية الفاتورة السنوية"
                                 />
                                 <button
                                   type="button"
-                                  onClick={() => setEditAnnouncement('برجاء تصفية الفواتير المعلقة للحفاظ على تزامن السيرفر مع خالص الشكر.')}
-                                  className="p-1 text-[9px] bg-slate-100 hover:bg-slate-200 rounded shrink-0 cursor-pointer"
-                                  title="Utiliser modèles rapides"
+                                  onClick={() => setEditAnnouncement(language === 'ar' ? 'برجاء تصفية الفواتير المعلقة للحفاظ على تزامن السيرفر مع خالص الشكر.' : 'Veuillez régulariser votre abonnement annuel pour éviter le blocage du système.')}
+                                  className="p-1 text-[10px] bg-slate-100 hover:bg-slate-200 rounded shrink-0 cursor-pointer font-bold"
+                                  title="Utiliser modèle rapide"
                                 >
                                   ✍️
                                 </button>
                               </div>
                             </div>
 
-                            <div className="flex items-center justify-end gap-1.5 pt-1 border-t border-slate-200 mt-1">
+                            <div className="flex items-center justify-end gap-1.5 pt-1.5 border-t border-slate-200 mt-1">
                               <button
                                 type="button"
                                 onClick={() => setEditingTenantId(null)}
-                                className="py-1 px-2 text-[10px] font-bold rounded bg-slate-100 border border-slate-200 hover:bg-slate-200 text-slate-705 cursor-pointer"
+                                className="py-1 px-2 text-[10px] font-bold rounded bg-slate-100 border border-slate-200 hover:bg-slate-200 text-slate-700 cursor-pointer"
                               >
-                                {language === 'ar' ? 'إلغاء' : 'Retour'}
+                                {language === 'ar' ? 'رجوع' : 'Retour'}
                               </button>
                               <button
                                 type="button"
@@ -1025,18 +720,50 @@ export default function SaaSDeveloperConsole() {
                                 disabled={actionLoading === t.uid}
                                 className="py-1 px-2.5 text-[10px] font-bold rounded bg-slate-900 border border-slate-900 hover:bg-slate-800 text-white flex items-center gap-1 cursor-pointer"
                               >
-                                {actionLoading === t.uid ? '...' : (language === 'ar' ? 'حفظ عن بعد 💾' : 'Appliquer 💾')}
+                                {actionLoading === t.uid ? '...' : (language === 'ar' ? 'حفظ 💾' : 'Appliquer 💾')}
+                              </button>
+                            </div>
+                          </div>
+                        ) : deletingTenantId === t.uid ? (
+                          <div className="flex flex-col gap-1 items-stretch max-w-[180px] mx-auto text-center font-sans">
+                            <span className="text-[9px] text-rose-600 font-bold block bg-rose-50 p-1 px-1.5 border border-rose-200 rounded">
+                              {language === 'ar' ? '⚠️ سيتم مسح بيانات المحل تماماً وسجلاته نهائياً!' : '⚠️ Supprimer définitivement cette boutique ?'}
+                            </span>
+                            <div className="flex gap-1 justify-center">
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteTenant(t.uid)}
+                                disabled={actionLoading === t.uid}
+                                className="py-1 px-2 bg-rose-600 hover:bg-rose-700 text-white rounded text-[9.5px] font-bold cursor-pointer transition-colors"
+                              >
+                                {actionLoading === t.uid ? '...' : (language === 'ar' ? 'تأكيد الحذف 🗑️' : 'Supprimer 🗑️')}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setDeletingTenantId(null)}
+                                className="py-1 px-2 bg-slate-100 border border-slate-200 hover:bg-slate-250 text-slate-700 rounded text-[9.5px] font-bold cursor-pointer"
+                              >
+                                {language === 'ar' ? 'إلغاء' : 'Annuler'}
                               </button>
                             </div>
                           </div>
                         ) : (
-                          <div className="flex items-center justify-center gap-1.5">
+                          <div className="flex flex-col sm:flex-row items-center justify-center gap-1.5">
                             <button
                               type="button"
                               onClick={() => handleStartEdit(t)}
-                              className="py-1.5 px-3 bg-slate-100 border border-slate-200 hover:bg-slate-200 rounded text-[10px] font-black text-slate-700 cursor-pointer transition-colors"
+                              className="py-1 px-2 bg-slate-100 border border-slate-200 hover:bg-slate-200 rounded text-[10px] font-black text-slate-705 cursor-pointer transition-colors inline-flex items-center gap-1 shrink-0"
                             >
-                              ⚙️ {language === 'ar' ? 'تعديل الترخيص والإجراءات' : "Gérer l'accès"}
+                              <span>⚙️</span>
+                              <span>{language === 'ar' ? 'تعديل الترخيص والإجراءات' : "Gérer l'accès"}</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setDeletingTenantId(t.uid)}
+                              className="py-1 px-2 bg-rose-100 border border-rose-200 hover:bg-rose-200 text-rose-700 rounded text-[10px] font-black cursor-pointer transition-colors inline-flex items-center gap-1 shrink-0"
+                            >
+                              <span>🗑️</span>
+                              <span>{language === 'ar' ? 'حذف الحساب' : "Supprimer"}</span>
                             </button>
                           </div>
                         )}
@@ -1051,282 +778,6 @@ export default function SaaSDeveloperConsole() {
         )}
 
       </div>
-
-      {/* DETAILED TUTORIAL FOR WALAKHAROUF TO MONETIZE AND SELL INDEPENDENT LICENSE INSTALLMENTS */}
-      <div className="bg-amber-50/70 border border-amber-200 p-5 rounded space-y-3.5 text-start">
-        <h4 className="text-sm font-bold text-amber-900 flex items-center gap-2">
-          <Sparkles className="w-4 h-4 text-amber-500 animate-pulse" />
-          <span>{language === 'ar' ? 'دليل تسيير الاشتراكات وبيع النسخة وتأمين السيرفر عن بعد :' : 'Guide technique d\'exploitation commerciale :'}</span>
-        </h4>
-        <div className="text-[11px] text-amber-850 space-y-2 leading-relaxed">
-          <p className="font-bold">
-            {language === 'ar' 
-              ? '💡 مبروك ! لقد بنيت لك نظاماً فريداً لتأمين ملكيتك الفكرية ومراقبة المشتركين بنسبة 100%' 
-              : '💡 Félicitations ! Votre SaaS est entièrement protégé par une double validation cryptée.'}
-          </p>
-          <ul className="list-disc leading-relaxed pl-4 space-y-1.5 font-medium">
-            <li>
-              <strong>{language === 'ar' ? 'كيف تبيع البرنامج ؟' : 'Comment ça marche ?'}</strong> 
-              {language === 'ar' 
-                ? ' عند قيام أي زبون جديد بالتسجيل بجوجل، يتم تخصيص قاعدة بيانات معزولة تماماً له في السيرفر وتفعيل رخصة تجريبية تلقائية (14 يومًا).' 
-                : ' Tout client se connectant dispose d\'une période gratuite initiale de 14 jours reliée à son UID unique.'}
-            </li>
-            <li>
-              <strong>{language === 'ar' ? 'تمديد الترخيص أو إلغاؤه (عن بعد)' : 'Paiement / Activation'}</strong> 
-              {language === 'ar' 
-                ? ' عندما ينتهي المشترك أو يدفع لك ثمن البرنامج، ادخل هنا لتعيين حالة حسابه إلى "مشترك مفعل" (Active) واختيار تاريخ الانتهاء الذي تريده، ليتم تمديد الترخيص كليًا.' 
-                : ' Lorsque votre client vous paie sa licence annuelle, modifiez simplement son expiration ci-dessus pour la prolonger.'}
-            </li>
-            <li>
-              <strong>{language === 'ar' ? 'أمان متناهي الصعوبة (تشفير السيرفر)' : 'Sécurité cryptographique'}</strong> 
-              {language === 'ar' 
-                ? ' لمنع أي عميل ذكي من تغيير كود البرنامج أو التلاعب بقاعدة بيانات Firestore للتحايل، يقوم النظام بمطابقة كود الترخيص بعملية تشفير للـ UID وتاريخ الانتهاء. في حالة عدم التطابق، يقفل البرنامج فوراً!' 
-                : ' Même si un utilisateur modifie ses champs Firestore locaux, la signature cryptographique GP-XXXX-YYYY de l\'activation le bloquera instantanément car elle dépend d\'un sel secret que vous êtes seul à posséder.'}
-            </li>
-            <li>
-              <strong>{language === 'ar' ? 'ميزة التحديث والإعلان الفوري' : 'Mise à jour et notifications directes'}</strong> 
-              {language === 'ar' 
-                ? ' اكتب أي رسالة في خانة الإعلان (Announcement) وسيتم عرضها لديه كشريط عاجل في شاشته لإعلامه بما تريده أو تذكيره بالخلاص.' 
-                : ' Vous pouvez envoyer un bandeau dynamique apparaissant immédiatement sur le Dashboard du client en écrivant un message d\'annonce.'}
-            </li>
-            <li>
-              <strong>{language === 'ar' ? 'شركاء وزبائن غير محدودين (بدون قيود)' : 'Partenaires et clients illimités'}</strong> 
-              {language === 'ar' 
-                ? ' لا توجد أي حدود أو قيود على عدد الزبائن والموردين والمنتجات والمستندات في قاعدة البيانات لجميع المشتركين.' 
-                : ' Il n\'y a absolument aucune restriction ou limite sur le nombre de clients, fournisseurs, produits ou transactions pour tous les abonnés.'}
-            </li>
-          </ul>
-        </div>
-      </div>
-      </>
-      )}
-
-      {consoleTab === 'updates' && (
-        <div className="space-y-6 text-start">
-          
-          {/* Header Action Row */}
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-4 border border-slate-200 rounded-xl">
-            <div>
-              <h3 className="text-sm font-extrabold text-slate-800">
-                {language === 'ar' ? 'سجل تتبع الإصدارات البرمجية والتحميلات' : 'Fichier d’Historique des Releases Séquentielles'}
-              </h3>
-              <p className="text-xs text-slate-400 mt-0.5">
-                {language === 'ar' 
-                  ? 'قم بنشر تحديثات فورية وإعلام جميع المشتركين بالإصلاحات وميزات النظام الجديدة.' 
-                  : 'Publiez des logs de mise à jour visibles par vos clients pour documenter l’évolution du SaaS.'}
-              </p>
-            </div>
-
-            <button
-              type="button"
-              onClick={() => {
-                setShowNewUpdateForm(!showNewUpdateForm);
-                if (!showNewUpdateForm) {
-                  setNewUpdateId(`v1.2.${updates.length + 5}`);
-                  setNewUpdateDate(new Date().toISOString().replace('T', ' ').substring(0, 16));
-                }
-              }}
-              className="py-1.5 px-3 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded text-xs flex items-center gap-1.5 cursor-pointer shadow-3xs transition-colors self-start sm:self-auto"
-            >
-              <span>{showNewUpdateForm ? '✕' : '+'}</span>
-              <span>{language === 'ar' ? 'نشر تحديث جديد' : 'Rédiger une Mise à jour'}</span>
-            </button>
-          </div>
-
-          {/* New Update Form */}
-          {showNewUpdateForm && (
-            <form onSubmit={handleCreateSystemUpdate} className="bg-slate-900 text-white rounded-xl p-5 border border-slate-800 space-y-4 shadow-md animate-fadeIn">
-              <div className="flex items-center justify-between border-b border-slate-800 pb-2.5">
-                <h4 className="text-xs font-black uppercase tracking-widest text-rose-400 font-mono">
-                  🚀 {language === 'ar' ? 'إعلان عن إصدار برمجي جديد للنواة قيد التنزيل' : 'Publication d’un nouveau pack d’amélioration'}
-                </h4>
-                <span className="text-[10px] text-slate-500 font-mono">UTC Timestamp : {newUpdateDate || 'Maintenant'}</span>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-slate-900">
-                <div>
-                  <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 block mb-1">
-                    {language === 'ar' ? 'رقم الإصدار (Version) *' : 'Version ID (e.g. v1.2.6) *'}
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    value={newUpdateId}
-                    onChange={(e) => setNewUpdateId(e.target.value)}
-                    placeholder="v1.2.6"
-                    className="w-full text-xs font-bold font-mono border border-slate-800 bg-slate-950 p-2.5 rounded text-white focus:outline-hidden focus:border-rose-500"
-                  />
-                </div>
-                <div>
-                  <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 block mb-1">
-                    {language === 'ar' ? 'تاريخ التحديث *' : 'Date de Publication *'}
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    value={newUpdateDate}
-                    onChange={(e) => setNewUpdateDate(e.target.value)}
-                    placeholder="26/05/2026 - 16:15"
-                    className="w-full text-xs font-semibold font-mono border border-slate-800 bg-slate-950 p-2.5 rounded text-white focus:outline-hidden focus:border-rose-500"
-                  />
-                </div>
-                <div>
-                  <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 block mb-1">
-                    {language === 'ar' ? 'نوع الترقية *' : 'Type de Release *'}
-                  </label>
-                  <select
-                    value={newUpdateType}
-                    onChange={(e) => setNewUpdateType(e.target.value as any)}
-                    className="w-full text-xs font-bold border border-slate-800 bg-slate-950 p-2.5 rounded text-white focus:outline-hidden focus:border-rose-500"
-                  >
-                    <option value="patch">{language === 'ar' ? 'ترقيع بسيط (Patch)' : 'Patch correctif'}</option>
-                    <option value="feature">{language === 'ar' ? 'ميزة جديدة (Feature)' : 'Nouvelle Fonctionnalité'}</option>
-                    <option value="major">{language === 'ar' ? 'تحديث ضخم (Major)' : 'Mise à niveau Majeure'}</option>
-                  </select>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 block mb-1">
-                    {language === 'ar' ? 'العنوان بالفرنسية *' : 'Titre principal (Français) *'}
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    value={newUpdateTitleFr}
-                    onChange={(e) => setNewUpdateTitleFr(e.target.value)}
-                    placeholder="e.g. Carte des Partenaires & Géoréférencement"
-                    className="w-full text-xs font-bold border border-slate-800 bg-slate-950 p-2.5 rounded text-white focus:outline-hidden focus:border-rose-500"
-                  />
-                </div>
-                <div>
-                  <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 block mb-1">
-                    {language === 'ar' ? 'العنوان بالعربية *' : 'Titre principal (Arabe) *'}
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    value={newUpdateTitleAr}
-                    onChange={(e) => setNewUpdateTitleAr(e.target.value)}
-                    placeholder="e.g. خريطة الشركاء والتتبع الجغرافي"
-                    className="w-full text-xs font-bold border border-slate-800 bg-slate-950 p-2.5 rounded text-white focus:outline-hidden focus:border-rose-500 text-right"
-                    dir="rtl"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 block mb-1">
-                    {language === 'ar' ? 'نقاط التطوير بالفرنسية (كل سطر هو نقطة مستقلة) *' : 'Notes (Français - 1 point par ligne) *'}
-                  </label>
-                  <textarea
-                    rows={4}
-                    required
-                    value={newUpdateDescFr}
-                    onChange={(e) => setNewUpdateDescFr(e.target.value)}
-                    placeholder="Intégration de la carte interactive&#10;Géo-référencement autonome"
-                    className="w-full text-xs border border-slate-800 bg-slate-950 p-2.5 rounded text-white focus:outline-hidden focus:border-rose-500 font-sans leading-relaxed text-left"
-                  />
-                </div>
-                <div>
-                  <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 block mb-1">
-                    {language === 'ar' ? 'نقاط التطوير بالعربية (كل سطر هو نقطة مستقلة) *' : 'Notes (Arabe - 1 point par ligne) *'}
-                  </label>
-                  <textarea
-                    rows={4}
-                    required
-                    value={newUpdateDescAr}
-                    onChange={(e) => setNewUpdateDescAr(e.target.value)}
-                    placeholder="دمج لوحة التتبع الجغرافي للشركاء&#10;تحديث خريطة جوجل بنقرة واحدة"
-                    className="w-full text-xs border border-slate-800 bg-slate-950 p-2.5 rounded text-white focus:outline-hidden focus:border-rose-500 text-right font-sans leading-relaxed"
-                    dir="rtl"
-                  />
-                </div>
-              </div>
-
-              <div className="flex justify-end gap-2 pt-2 border-t border-slate-800">
-                <button
-                  type="button"
-                  onClick={() => setShowNewUpdateForm(false)}
-                  className="py-2 px-4 rounded text-xs bg-slate-850 hover:bg-slate-800 text-slate-300 cursor-pointer"
-                >
-                  {language === 'ar' ? 'إلغاء' : 'Annuler'}
-                </button>
-                <button
-                  type="submit"
-                  className="py-2 px-5 rounded text-xs bg-rose-600 hover:bg-rose-700 text-white font-bold cursor-pointer transition-colors shadow-2xs"
-                >
-                  🚀 {language === 'ar' ? 'نشر وتعميم التحديث للمشتركين' : 'Publier et déployer'}
-                </button>
-              </div>
-            </form>
-          )}
-
-          {/* Updates List feeds */}
-          {updatesLoading ? (
-            <div className="py-16 text-center space-y-3 bg-white border border-slate-200 rounded-xl">
-              <div className="w-8 h-8 border-4 border-rose-500 border-t-transparent rounded-full animate-spin mx-auto"></div>
-              <p className="text-xs text-slate-400 font-bold uppercase tracking-wider">
-                {language === 'ar' ? 'جاري استدعاء سجل التحديثات من الخادم...' : 'Chargement des logs système...'}
-              </p>
-            </div>
-          ) : (
-            <div className="space-y-4">
-              {updates.map((up) => {
-                const isLatest = up.id === updates[0]?.id;
-                return (
-                  <div key={up.id} className="bg-white border border-slate-200 rounded-xl p-5 hover:border-slate-300 transition-all text-start relative overflow-hidden group shadow-3xs">
-                    {isLatest && (
-                      <div className="absolute top-0 right-0 lg:right-auto lg:left-0 bg-emerald-500 text-white text-[8px] font-black uppercase tracking-widest px-3 py-1 shadow-3xs">
-                        {language === 'ar' ? 'الإصدار النشط حالياً ⚡' : 'Version Active Actuelle ⚡'}
-                      </div>
-                    )}
-
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 pb-3 mb-4 pt-4 lg:pt-0">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="font-mono bg-slate-900 text-white text-xs font-bold px-2 py-0.5 rounded-sm">
-                          {up.id}
-                        </span>
-                        <span className={`text-[9px] uppercase font-mono font-black px-1.5 py-0.5 rounded ${
-                          up.type === 'major' 
-                            ? 'bg-rose-100 text-rose-800' 
-                            : up.type === 'feature' 
-                            ? 'bg-blue-100 text-blue-800' 
-                            : 'bg-slate-100 text-slate-700'
-                        }`}>
-                          {up.type === 'major' ? (language === 'ar' ? 'تحديث جذري' : 'Mise à niveau') : up.type === 'feature' ? (language === 'ar' ? 'ميزة جديدة' : 'Fonctionnalité') : 'Patch / Bugfix'}
-                        </span>
-                        <h4 className="text-sm font-extrabold text-slate-900">
-                          {language === 'ar' ? up.titleAr : up.titleFr}
-                        </h4>
-                      </div>
-                      <span className="text-[11px] font-mono font-bold text-slate-400" dir="ltr">
-                        📅 {up.date}
-                      </span>
-                    </div>
-
-                    <div className="space-y-2 text-xs text-slate-600 pl-2 lg:pl-4">
-                      <p className="font-bold text-slate-700">
-                        {language === 'ar' ? 'العناصر والميزات والتحسينات المشمولة في هذا الإصدار :' : 'Modifications apportées :'}
-                      </p>
-                      <ul className="list-disc list-inside space-y-1.5 pl-2 leading-relaxed">
-                        {(language === 'ar' ? up.descriptionAr : up.descriptionFr).map((bullet, idx) => (
-                          <li key={idx} className="font-semibold text-slate-600">
-                            {bullet}
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-
-        </div>
-      )}
     </div>
   );
 }

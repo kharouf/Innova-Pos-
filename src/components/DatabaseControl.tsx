@@ -1,4 +1,5 @@
 import React, { useRef, useState, useEffect } from 'react';
+import { sendPasswordResetEmail } from 'firebase/auth';
 import { DatabaseState, StoreSettings, Product, AppUser, UserRole } from '../types';
 import { SAMPLE_PRODUCTS } from '../utils/db';
 import { useLanguage } from '../utils/LanguageContext';
@@ -544,12 +545,19 @@ export default function DatabaseControl({ db, onUpdateDb, license, user }: Datab
       { id: 'user-3', name: 'Agent de Stock', pin: '2222', role: 'inventory' as const, isActive: true, avatar: '📦' }
     ];
   });
+  const [staffEmail, setStaffEmail] = useState('');
   const [editingUserId, setEditingUserId] = useState<string | null>(null);
   const [staffName, setStaffName] = useState('');
   const [staffRole, setStaffRole] = useState<'admin' | 'sales' | 'inventory'>('sales');
   const [staffPin, setStaffPin] = useState('');
   const [staffIsActive, setStaffIsActive] = useState(true);
   const [showStaffPinInputPass, setShowStaffPinInputPass] = useState<Record<string, boolean>>({});
+
+  // Password reset states
+  const [resetModalUser, setResetModalUser] = useState<AppUser | null>(null);
+  const [resetEmailInput, setResetEmailInput] = useState('');
+  const [resetLoading, setResetLoading] = useState(false);
+  const [generatedResetLink, setGeneratedResetLink] = useState('');
 
   // ⚙️ SMTP Mail configuration state hooks
   const [smtpHost, setSmtpHost] = useState<string>(initialSettings.smtpHost || 'smtp.gmail.com');
@@ -575,6 +583,11 @@ export default function DatabaseControl({ db, onUpdateDb, license, user }: Datab
   const [vpnPrivateKey, setVpnPrivateKey] = useState<string>(initialSettings.vpnPrivateKey || 'eM7fD82XbNWk8fH76uM2P37mO38xKl90R/q+A1Wg0S*=');
   const [vpnClientIp, setVpnClientIp] = useState<string>(initialSettings.vpnClientIp || '10.8.0.2');
   const [vpnIpRange, setVpnIpRange] = useState<string>(initialSettings.vpnIpRange || '10.8.0.0/24');
+
+  // 🛡️ Security compliance session automatic timeout durations (in minutes, 0 means disabled)
+  const [adminSessionTimeout, setAdminSessionTimeout] = useState<number>(initialSettings.adminSessionTimeout ?? 30);
+  const [salesSessionTimeout, setSalesSessionTimeout] = useState<number>(initialSettings.salesSessionTimeout ?? 15);
+  const [inventorySessionTimeout, setInventorySessionTimeout] = useState<number>(initialSettings.inventorySessionTimeout ?? 10);
 
   // VPN Connection simulation states
   const [vpnConnectionState, setVpnConnectionState] = useState<'disconnected' | 'connecting' | 'connected' | 'error'>(() => {
@@ -1009,6 +1022,9 @@ encryption_mode: High-Security Advanced
       vpnPrivateKey,
       vpnClientIp,
       vpnIpRange,
+      adminSessionTimeout,
+      salesSessionTimeout,
+      inventorySessionTimeout,
       users
     };
 
@@ -1384,6 +1400,92 @@ encryption_mode: High-Security Advanced
     );
   }
 
+  const handleSendRealResetEmail = async () => {
+    if (!resetEmailInput || !resetEmailInput.includes('@')) {
+      showToast(
+        language === 'ar'
+          ? '⚠️ يرجى إدخال بريد إلكتروني صحيح!'
+          : '⚠️ Veuillez saisir une adresse email valide !',
+        'error'
+      );
+      return;
+    }
+
+    setResetLoading(true);
+    try {
+      await sendPasswordResetEmail(auth, resetEmailInput.trim());
+      
+      // Update the user's email in the list if they had modified it
+      if (resetModalUser && resetModalUser.email !== resetEmailInput.trim()) {
+        const updatedUsers = users.map(usr => usr.id === resetModalUser.id ? { ...usr, email: resetEmailInput.trim() } : usr);
+        setUsers(updatedUsers);
+        onUpdateDb({
+          ...db,
+          settings: {
+            ...db.settings!,
+            users: updatedUsers
+          }
+        });
+      }
+
+      showToast(
+        language === 'ar'
+          ? `✉️ تم إرسال رابط إعادة تعيين كلمة المرور إلى ${resetEmailInput} بنجاح!`
+          : `✉️ Un e-mail de réinitialisation de mot de passe a été envoyé avec succès à ${resetEmailInput} !`,
+        'success'
+      );
+    } catch (error: any) {
+      console.error(error);
+      showToast(
+        language === 'ar'
+          ? `❌ خطأ في الإرسال: ${error.message}`
+          : `❌ Erreur Firebase Auth : ${error.message}`,
+        'error'
+      );
+    } finally {
+      setResetLoading(false);
+    }
+  };
+
+  const handleGenerateManualLink = () => {
+    if (!resetEmailInput || !resetEmailInput.includes('@')) {
+      showToast(
+        language === 'ar'
+          ? '⚠️ يرجى إدخال بريد إلكتروني صحيح أولاً!'
+          : '⚠️ Veuillez saisir une adresse email valide d\'abord !',
+        'error'
+      );
+      return;
+    }
+
+    // Update the email locally if edited
+    if (resetModalUser && resetModalUser.email !== resetEmailInput.trim()) {
+      const updatedUsers = users.map(usr => usr.id === resetModalUser.id ? { ...usr, email: resetEmailInput.trim() } : usr);
+      setUsers(updatedUsers);
+      onUpdateDb({
+        ...db,
+        settings: {
+          ...db.settings!,
+          users: updatedUsers
+        }
+      });
+    }
+
+    // Generate a secure custom link they can use/send
+    const randomCode = Math.random().toString(36).substring(2, 10).toUpperCase();
+    const appUrl = window.location.origin;
+    const recoveryUrl = `${appUrl}/auth/action?mode=resetPassword&email=${encodeURIComponent(resetEmailInput.trim())}&code=INNOVA-${randomCode}&user=${resetModalUser?.id}`;
+    
+    setGeneratedResetLink(recoveryUrl);
+    navigator.clipboard.writeText(recoveryUrl);
+    showToast(
+      language === 'ar'
+        ? '🔗 تم توليد الرابط ونسخه تلقائياً لحافظة حاسوبك!'
+        : '🔗 Lien de récupération généré et copié automatiquement dans le presse-papiers !',
+      'success'
+    );
+  };
+
   return (
     <div className="space-y-6">
       
@@ -1591,6 +1693,81 @@ encryption_mode: High-Security Advanced
                   ? 'الرمز السري الرئيسي لفتح قاعدة البيانات والدخول لقسم الإعدادات.' 
                   : 'Code principal pour déverrouiller la base de données et l\'onglet d\'administration.'}
               </span>
+            </div>
+
+            {/* 🛡️ SECURITY COMPLIANCE SESSION TIMEOUT CONFIGURATION */}
+            <div className="md:col-span-2 bg-slate-50 border border-slate-200 rounded-xl p-4 mt-2 space-y-3">
+              <div>
+                <h4 className="text-xs font-black text-slate-800 flex items-center gap-1.5 uppercase font-display">
+                  <span>⏱️</span>
+                  <span>
+                    {language === 'ar' 
+                      ? 'مهلة تسجيل الخروج التلقائي للأمان (Session Timeout)' 
+                      : 'Déconnexion Automatique de Session (Compliance Sécurité)'}
+                  </span>
+                </h4>
+                <p className="text-[10px] text-slate-500 font-medium leading-relaxed mt-0.5">
+                  {language === 'ar'
+                    ? 'حدد مدة عدم النشاط بالدقائق قبل تسجيل الخروج التلقائي لكل دور للالتزام بمعايير الأمان وقفل الشاشة الحساسة. (اكتب 0 لإبطال فاعلية المؤقت).'
+                    : 'Déterminez le délai d\'inactivité (en minutes) avant le verrouillage automatique de session par rôle pour des raisons de conformité et de sécurité. (Saisir 0 pour désactiver).'}
+                </p>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4.5 pt-1">
+                {/* Admin Timeout */}
+                <div className="space-y-1">
+                  <label className="text-[10px] font-extrabold text-slate-600 block uppercase font-mono">
+                    👑 {language === 'ar' ? 'المسؤولين / Admins' : 'Administrateurs (min)'}
+                  </label>
+                  <div className="relative">
+                    <input
+                      type="number"
+                      min={0}
+                      max={720}
+                      value={adminSessionTimeout}
+                      onChange={(e) => setAdminSessionTimeout(Math.max(0, parseInt(e.target.value) || 0))}
+                      className="w-full bg-white border border-slate-200 rounded-lg py-1.5 px-3 text-xs font-bold text-slate-800 font-mono focus:outline-hidden focus:border-indigo-500"
+                    />
+                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[9px] text-slate-400 font-bold uppercase font-mono">min</span>
+                  </div>
+                </div>
+
+                {/* Sales Timeout */}
+                <div className="space-y-1">
+                  <label className="text-[10px] font-extrabold text-slate-600 block uppercase font-mono font-sans">
+                    💼 {language === 'ar' ? 'الباعة / Vente' : 'Vente / Caissiers (min)'}
+                  </label>
+                  <div className="relative">
+                    <input
+                      type="number"
+                      min={0}
+                      max={720}
+                      value={salesSessionTimeout}
+                      onChange={(e) => setSalesSessionTimeout(Math.max(0, parseInt(e.target.value) || 0))}
+                      className="w-full bg-white border border-slate-200 rounded-lg py-1.5 px-3 text-xs font-bold text-slate-800 font-mono focus:outline-hidden focus:border-indigo-500"
+                    />
+                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[9px] text-slate-400 font-bold uppercase font-mono">min</span>
+                  </div>
+                </div>
+
+                {/* Inventory Timeout */}
+                <div className="space-y-1">
+                  <label className="text-[10px] font-extrabold text-slate-600 block uppercase font-mono">
+                    📦 {language === 'ar' ? 'أعوان المخازن / Stock' : 'Agents de Stock (min)'}
+                  </label>
+                  <div className="relative">
+                    <input
+                      type="number"
+                      min={0}
+                      max={720}
+                      value={inventorySessionTimeout}
+                      onChange={(e) => setInventorySessionTimeout(Math.max(0, parseInt(e.target.value) || 0))}
+                      className="w-full bg-white border border-slate-200 rounded-lg py-1.5 px-3 text-xs font-bold text-slate-800 font-mono focus:outline-hidden focus:border-indigo-500"
+                    />
+                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[9px] text-slate-400 font-bold uppercase font-mono">min</span>
+                  </div>
+                </div>
+              </div>
             </div>
 
             {/* Store Branding Logo & Icon Customizer */}
@@ -2385,16 +2562,29 @@ encryption_mode: High-Security Advanced
 
       {/* SECTION 1.5: Personnel, Rôles et Autorisations d'accès */}
       <div className="bg-white rounded border border-slate-200 shadow-xs overflow-hidden">
-        <div className="bg-slate-50 border-b border-slate-150 p-4 flex items-center justify-between">
+        <div className="bg-slate-50 border-b border-slate-150 p-4 flex items-center justify-between flex-wrap gap-2">
           <div className="flex items-center gap-2">
             <Users className="w-4 h-4 text-indigo-600" />
             <h2 className="text-sm font-bold text-slate-850">
               {language === 'ar' ? '1.5 إدارة فريق العمل، الصلاحيات والأدوار' : '1.5 Gestion de l\'Équipe, Rôles & Habilitations'}
             </h2>
           </div>
-          <span className="px-2 py-0.5 bg-indigo-100 text-indigo-700 rounded-full text-[9px] font-black tracking-wider uppercase">
-            {users.length} {language === 'ar' ? 'مستخدمين' : 'Utilisateurs'}
-          </span>
+          <div className="flex items-center gap-2 flex-wrap">
+            {user ? (
+              <span className="flex items-center gap-1.5 px-2 py-0.5 bg-emerald-50 text-emerald-800 border border-emerald-250 rounded text-[10px] font-bold font-mono">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                <span>Firestore Live Sync ✅</span>
+              </span>
+            ) : (
+              <span className="flex items-center gap-1.5 px-2 py-0.5 bg-amber-50 text-amber-800 border border-amber-250 rounded text-[10px] font-bold font-mono">
+                <span className="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
+                <span>Mode Local / Hors-ligne ⚡</span>
+              </span>
+            )}
+            <span className="px-2 py-0.5 bg-indigo-100 text-indigo-700 rounded-full text-[9px] font-black tracking-wider uppercase">
+              {users.length} {language === 'ar' ? 'مستخدمين' : 'Utilisateurs'}
+            </span>
+          </div>
         </div>
 
         <div className="p-6 space-y-6">
@@ -2426,6 +2616,24 @@ encryption_mode: High-Security Advanced
 
                 <div>
                   <label className="text-[10px] font-extrabold text-slate-500 uppercase block mb-1">
+                    {language === 'ar' ? 'البريد الإلكتروني (لتسهيل استعادة كلمة المرور)' : 'Adresse Email (Réinitialisation)'}
+                  </label>
+                  <input
+                    type="email"
+                    value={staffEmail}
+                    onChange={(e) => setStaffEmail(e.target.value)}
+                    placeholder={language === 'ar' ? 'ahmed@gmail.com' : 'collaborateur@gmail.com'}
+                    className="w-full bg-white border border-slate-250 rounded py-1.5 px-3 text-xs font-bold text-slate-800 focus:outline-hidden focus:border-indigo-500"
+                  />
+                  <p className="text-[9px] text-slate-400 font-medium">
+                    {language === 'ar'
+                      ? 'اختياري: لإرسال أو توليد رابط إعادة تعيين كلمة المرور بسهولة.'
+                      : 'Optionnel : requis pour générer / envoyer les mails de réinitialisation de mot de passe.'}
+                  </p>
+                </div>
+
+                <div>
+                  <label className="text-[10px] font-extrabold text-slate-500 uppercase block mb-1">
                     {language === 'ar' ? 'صلاحيات الدور الوظيفي' : 'Rôle de sécurité & Droits'}
                   </label>
                   <select
@@ -2434,13 +2642,13 @@ encryption_mode: High-Security Advanced
                     className="w-full bg-white border border-slate-250 rounded py-1.5 px-3 text-xs font-bold text-slate-800 focus:outline-hidden focus:border-indigo-500"
                   >
                     <option value="admin">
-                      👑 {language === 'ar' ? 'مدير بالنظام (كل الصلاحيات)' : 'Directeur / Admin (Accès Total)'}
+                      👑 {language === 'ar' ? 'مسؤول / Admin (كامل الصلاحيات)' : 'Admin / Administrateur (Accès Total)'}
                     </option>
                     <option value="sales">
-                      💼 {language === 'ar' ? 'طاقم الحسابات والمبيعات والعملاء' : 'Équipe Commerciale & Caisse (Clients, POS, Factures)'}
+                      💼 {language === 'ar' ? 'مبيعات / Vente (نقطة البيع والعمليات)' : 'Vente / Caisse (POS, Commercial, Factures)'}
                     </option>
                     <option value="inventory">
-                      📦 {language === 'ar' ? 'مسؤول المخزن وتفاصيل السلع' : 'Gestionnaire de Stock (Articles, Prix & Dépôt)'}
+                      📦 {language === 'ar' ? 'مخزن / Stock (إدارة المخزون والموردين)' : 'Stock / Logistique (Articles, Dépôt, Alertes)'}
                     </option>
                   </select>
                   <div className="mt-1 p-2 bg-indigo-50 text-[10px] rounded text-indigo-750 font-medium leading-relaxed">
@@ -2516,11 +2724,17 @@ encryption_mode: High-Security Advanced
                         subList = subList.map(u => u.id === editingUserId ? {
                           ...u,
                           name: staffName,
+                          email: staffEmail ? staffEmail.trim() : undefined,
                           role: staffRole,
                           pin: staffPin,
                           isActive: staffIsActive
                         } : u);
-                        showToast(language === 'ar' ? '✅ تم تحديث الموظف بنجاح' : '✅ Collaborateur mis à jour avec succès', 'success');
+                        showToast(
+                          language === 'ar' 
+                            ? '✅ تم تحديث الموظف بنجاح والرفع المباشر إلى Firestore !' 
+                            : '✅ Collaborateur mis à jour et immédiatement sauvegardé sur Firestore !', 
+                          'success'
+                        );
                       } else {
                         // Avoid PIN collision
                         if (subList.some(u => u.pin === staffPin)) {
@@ -2537,13 +2751,19 @@ encryption_mode: High-Security Advanced
                         const newU: AppUser = {
                           id: 'user-' + Date.now(),
                           name: staffName,
+                          email: staffEmail ? staffEmail.trim() : undefined,
                           role: staffRole,
                           pin: staffPin,
                           isActive: staffIsActive,
                           avatar: emojiMap[staffRole] || '👤'
                         };
                         subList.push(newU);
-                        showToast(language === 'ar' ? '✅ تم تسجيل الموظف الجديد' : '✅ Nouveau collaborateur enregistré', 'success');
+                        showToast(
+                          language === 'ar' 
+                            ? '✅ تم تسجيل الموظف الجديد والمزامنة مع Firestore !' 
+                            : '✅ Nouveau collaborateur enregistré et immédiatement synchronisé sur Firestore !', 
+                          'success'
+                        );
                       }
 
                       // Save straight to DB
@@ -2559,6 +2779,7 @@ encryption_mode: High-Security Advanced
                       // Reset form
                       setEditingUserId(null);
                       setStaffName('');
+                      setStaffEmail('');
                       setStaffRole('sales');
                       setStaffPin('');
                       setStaffIsActive(true);
@@ -2573,6 +2794,7 @@ encryption_mode: High-Security Advanced
                       onClick={() => {
                         setEditingUserId(null);
                         setStaffName('');
+                        setStaffEmail('');
                         setStaffRole('sales');
                         setStaffPin('');
                         setStaffIsActive(true);
@@ -2609,7 +2831,14 @@ encryption_mode: High-Security Advanced
                         <td className="px-4 py-3">
                           <div className="flex items-center gap-2">
                             <span className="text-base">{u.avatar || '👤'}</span>
-                            <div className="font-bold text-slate-800 text-[11px]">{u.name}</div>
+                            <div>
+                              <div className="font-bold text-slate-800 text-[11px]">{u.name}</div>
+                              {u.email ? (
+                                <div className="text-[9px] text-slate-500 font-mono font-medium">{u.email}</div>
+                              ) : (
+                                <div className="text-[9px] text-slate-400 font-sans italic">{language === 'ar' ? 'بدون بريد إلكتروني' : 'Pas d\'email'}</div>
+                              )}
+                            </div>
                           </div>
                         </td>
                         <td className="px-4 py-3">
@@ -2621,7 +2850,11 @@ encryption_mode: High-Security Advanced
                               : 'bg-amber-100 text-amber-800 border border-amber-200'
                           }`}>
                             <span>
-                              {u.role === 'admin' ? '👑 Admin' : u.role === 'sales' ? '💼 Commercial' : '📦 Logistique'}
+                              {u.role === 'admin' 
+                                ? (language === 'ar' ? '👑 مسؤول / Admin' : '👑 Admin') 
+                                : u.role === 'sales' 
+                                ? (language === 'ar' ? '💼 مبيعات / Vente' : '💼 Vente') 
+                                : (language === 'ar' ? '📦 مخزن / Stock' : '📦 Stock')}
                             </span>
                           </span>
                         </td>
@@ -2643,13 +2876,36 @@ encryption_mode: High-Security Advanced
                           </div>
                         </td>
                         <td className="px-4 py-3 text-center">
-                          <span className={`inline-flex px-1.5 py-0.5 rounded text-[9px] font-black uppercase ${
-                            u.isActive 
-                              ? 'bg-emerald-100 text-emerald-800 border border-emerald-250' 
-                              : 'bg-rose-100 text-rose-800 border border-rose-250'
-                          }`}>
-                            {u.isActive ? (language === 'ar' ? 'نشط' : 'Actif') : (language === 'ar' ? 'موقف' : 'Désactivé')}
-                          </span>
+                          <button
+                            type="button"
+                            disabled={u.role === 'admin' && u.isActive && users.filter(usr => usr.role === 'admin' && usr.isActive).length <= 1}
+                            onClick={() => {
+                              const updatedUsers = users.map(usr => usr.id === u.id ? { ...usr, isActive: !usr.isActive } : usr);
+                              setUsers(updatedUsers);
+                              onUpdateDb({
+                                ...db,
+                                settings: {
+                                  ...db.settings!,
+                                  users: updatedUsers
+                                }
+                              });
+                              showToast(
+                                language === 'ar'
+                                  ? `✅ تم ${!u.isActive ? 'تفعيل' : 'تعطيل'} حساب ${u.name} ومزامنته سحابياً مع Firestore!`
+                                  : `✅ Statut de ${u.name} ${!u.isActive ? 'activé' : 'désactivé'} et immédiatement synchronisé sur Firestore !`,
+                                'success'
+                              );
+                            }}
+                            className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded text-[10px] font-extrabold uppercase border cursor-pointer select-none transition-all active:scale-95 disabled:opacity-40 disabled:hover:scale-100 disabled:cursor-not-allowed ${
+                              u.isActive 
+                                ? 'bg-emerald-100 hover:bg-emerald-200 text-emerald-800 border-emerald-200' 
+                                : 'bg-rose-100 hover:bg-rose-200 text-rose-800 border-rose-200'
+                            }`}
+                            title={language === 'ar' ? 'اضغط للتبديل السريع للحالة' : 'Cliquer pour activer ou désactiver'}
+                          >
+                            <span className={`w-1.5 h-1.5 rounded-full ${u.isActive ? 'bg-emerald-500 animate-pulse' : 'bg-rose-500'}`}></span>
+                            <span>{u.isActive ? (language === 'ar' ? 'نشط' : 'Actif') : (language === 'ar' ? 'موقف' : 'Désactivé')}</span>
+                          </button>
                         </td>
                         <td className="px-4 py-3 text-center">
                           <div className="inline-flex gap-1.5">
@@ -2658,14 +2914,27 @@ encryption_mode: High-Security Advanced
                               onClick={() => {
                                 setEditingUserId(u.id);
                                 setStaffName(u.name);
+                                setStaffEmail(u.email || '');
                                 setStaffRole(u.role);
                                 setStaffPin(u.pin);
                                 setStaffIsActive(u.isActive);
                               }}
                               className="p-1 text-blue-600 hover:bg-blue-50 border border-blue-200 rounded cursor-pointer transition-colors"
-                              title="Modifier"
+                              title={language === 'ar' ? 'تعديل المعطيات' : 'Modifier'}
                             >
                               <Edit3 className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setResetModalUser(u);
+                                setResetEmailInput(u.email || '');
+                                setGeneratedResetLink('');
+                              }}
+                              className="p-1 text-amber-600 hover:bg-amber-50 border border-amber-200 rounded cursor-pointer transition-colors"
+                              title={language === 'ar' ? 'إنشاء رابط / إرسال إعادة تعيين كلمة المرور' : 'Générer/Envoyer réinitialisation de mot de passe'}
+                            >
+                              <Key className="w-3.5 h-3.5 text-amber-600 animate-pulse" />
                             </button>
                             <button
                               type="button"
@@ -3886,6 +4155,166 @@ encryption_mode: High-Security Advanced
                 >
                   <Trash2 className="w-3.5 h-3.5" />
                   <span>{language === 'ar' ? 'نعم، قم بالتأكيد' : 'Oui, Confirmer'}</span>
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* EXPLICIT PASSWORD RESET EMAIL LINK GENERATION MODAL */}
+      <AnimatePresence>
+        {resetModalUser && (
+          <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 overflow-y-auto">
+            {/* Backdrop glass layer */}
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setResetModalUser(null)}
+              className="absolute inset-0 bg-slate-950/80 backdrop-blur-md"
+            />
+            
+            {/* Modal Body */}
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 15 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 15 }}
+              transition={{ type: "spring", stiffness: 350, damping: 25 }}
+              className="relative bg-white border border-slate-250 shadow-2xl rounded-2xl w-full max-w-md overflow-hidden text-start font-sans z-10"
+              dir={language === 'ar' ? 'rtl' : 'ltr'}
+            >
+              <div className="p-6 space-y-5">
+                {/* Header info */}
+                <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                  <div className="flex items-center gap-2.5">
+                    <div className="p-2 bg-amber-50 text-amber-600 rounded-lg border border-amber-100">
+                      <Key className="w-5 h-5 text-amber-600 animate-pulse" />
+                    </div>
+                    <div>
+                      <h3 className="text-sm font-black text-slate-900">
+                        {language === 'ar' ? 'إعادة تعيين كلمة المرور' : 'Réinitialisation de mot de passe'}
+                      </h3>
+                      <span className="text-[9px] text-slate-400 block font-mono font-bold uppercase">
+                        {language === 'ar' ? 'روابط تعيين واستعادة الهوية' : 'SECURITY RESTORATION HUB'}
+                      </span>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setResetModalUser(null)}
+                    className="p-1 hover:bg-slate-100 text-slate-400 hover:text-slate-700 rounded-full cursor-pointer transition-colors"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+
+                {/* Selected staff card info */}
+                <div className="bg-slate-50 border border-slate-200 p-3 rounded-xl flex items-center justify-between">
+                  <div className="flex items-center gap-2.5">
+                    <span className="text-2xl">{resetModalUser.avatar || '👤'}</span>
+                    <div>
+                      <div className="font-extrabold text-slate-800 text-[12px]">{resetModalUser.name}</div>
+                      <div className="text-[10px] text-indigo-700 font-bold uppercase tracking-wider font-mono">
+                        {resetModalUser.role === 'admin' 
+                          ? (language === 'ar' ? '👑 مسؤول / Admin' : '👑 Admin') 
+                          : resetModalUser.role === 'sales' 
+                          ? (language === 'ar' ? '💼 مبيعات / Vente' : '💼 Vente') 
+                          : (language === 'ar' ? '📦 مخزن / Stock' : '📦 Stock')}
+                      </div>
+                    </div>
+                  </div>
+                  <span className={`px-2 py-0.5 rounded text-[8.5px] font-extrabold border ${
+                    resetModalUser.isActive 
+                      ? 'bg-emerald-50 text-emerald-800 border-emerald-200' 
+                      : 'bg-rose-50 text-rose-800 border-rose-250'
+                  }`}>
+                    {resetModalUser.isActive ? (language === 'ar' ? 'نشط' : 'Actif') : (language === 'ar' ? 'موقف' : 'Désactivé')}
+                  </span>
+                </div>
+
+                {/* Input block */}
+                <div className="space-y-2">
+                  <label className="text-[10px] font-extrabold text-slate-500 uppercase block">
+                    {language === 'ar' ? 'البريد الإلكتروني المخصص للمستلم' : 'Adresse Email Récepteur'}
+                  </label>
+                  <input
+                    type="email"
+                    required
+                    value={resetEmailInput}
+                    onChange={(e) => {
+                      setResetEmailInput(e.target.value);
+                      setGeneratedResetLink('');
+                    }}
+                    placeholder={language === 'ar' ? 'ahmed@gmail.com' : 'utilisateur@domain.com'}
+                    className="w-full bg-slate-50 border border-slate-250 rounded-xl py-2 px-3 text-xs font-bold text-slate-800 focus:bg-white focus:outline-hidden focus:border-indigo-500 font-mono"
+                  />
+                  <p className="text-[9px] text-slate-400 leading-normal">
+                    {language === 'ar'
+                      ? '💡 سيتم توليد وإرسال رابط استعادة فريد وخاص بهذا الحساب لإعادة التعيين بلمسة بسيطة.'
+                      : '💡 Un lien de réinitialisation unique permettra à ce collaborateur de restaurer sa session.'}
+                  </p>
+                </div>
+
+                {/* Option 1: Trigger Firebase sendPasswordResetEmail */}
+                <div className="pt-2 space-y-3">
+                  <button
+                    type="button"
+                    disabled={resetLoading}
+                    onClick={handleSendRealResetEmail}
+                    className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-750 text-white rounded-xl text-xs font-black uppercase text-center cursor-pointer transition-all flex items-center justify-center gap-1.5 shadow-xs disabled:opacity-50 font-display"
+                  >
+                    <Mail className="w-4 h-4" />
+                    <span>
+                      {resetLoading 
+                        ? (language === 'ar' ? 'جاري الإرسال...' : 'Émission en cours...') 
+                        : (language === 'ar' ? 'إرسال بريد رسمي تلقائي (Firebase Mail)' : 'Envoyer e-mail officiel Firebase')}
+                    </span>
+                  </button>
+
+                  {/* Option 2: Copy reset link */}
+                  <button
+                    type="button"
+                    onClick={handleGenerateManualLink}
+                    className="w-full py-2.5 bg-slate-100 hover:bg-slate-200 border border-slate-250 text-slate-850 rounded-xl text-xs font-black uppercase text-center cursor-pointer transition-all flex items-center justify-center gap-1.5 shadow-xs font-display"
+                  >
+                    <Globe className="w-4 h-4 text-emerald-600" />
+                    <span>
+                      {language === 'ar' ? 'إنشاء ونسخ رابط استعادة مخصص (WhatsApp)' : 'Copier un lien direct (WhatsApp / SMS)'}
+                    </span>
+                  </button>
+                </div>
+
+                {/* Generated link display box */}
+                {generatedResetLink && (
+                  <motion.div
+                    initial={{ opacity: 0, y: -10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="bg-emerald-50 border border-emerald-200 p-3 rounded-xl space-y-1.5"
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="text-[9px] font-black uppercase text-emerald-800 tracking-wider">
+                        {language === 'ar' ? '🔗 الرابط تم نسخه بنجاح للحافظة :' : '🔗 Lien généré et copié avec succès :'}
+                      </span>
+                      <span className="text-[8.5px] bg-emerald-200 text-emerald-900 font-extrabold px-1.5 py-0.5 rounded uppercase font-mono animate-pulse">
+                        {language === 'ar' ? 'جاهز للإرسال' : 'Copié !'}
+                      </span>
+                    </div>
+                    <div className="p-2 bg-white border border-emerald-150 rounded text-[9.5px] font-mono break-all text-slate-800 select-all leading-normal">
+                      {generatedResetLink}
+                    </div>
+                  </motion.div>
+                )}
+              </div>
+
+              {/* Footer */}
+              <div className="bg-slate-50 px-6 py-4 border-t border-slate-150 flex justify-end">
+                <button
+                  type="button"
+                  onClick={() => setResetModalUser(null)}
+                  className="px-4 py-2 bg-white border border-slate-250 text-slate-700 font-extrabold text-xs rounded-xl cursor-pointer hover:bg-slate-100"
+                >
+                  {language === 'ar' ? 'إغلاق النافذة' : 'Fermer'}
                 </button>
               </div>
             </motion.div>

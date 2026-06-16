@@ -126,6 +126,7 @@ export interface AppUser {
   role: UserRole;
   isActive: boolean;
   avatar?: string; // profile emoji or initials
+  email?: string; // optional user email for accounts or reset actions
 }
 
 export interface StoreSettings {
@@ -204,6 +205,11 @@ export interface StoreSettings {
   vpnPrivateKey?: string;
   vpnClientIp?: string;
   vpnIpRange?: string;
+
+  // 🛡️ Security compliance session automatic timeout durations (in minutes, 0 means disabled)
+  adminSessionTimeout?: number;
+  salesSessionTimeout?: number;
+  inventorySessionTimeout?: number;
 }
 
 export interface DatabaseState {
