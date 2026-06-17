@@ -33,6 +33,7 @@ import {
   Menu,
   X,
   Globe,
+  Settings,
   LogOut,
   Building2,
   CloudLightning,
@@ -63,6 +64,8 @@ function AppContent() {
   const [syncingCloud, setSyncingCloud] = useState(false);
   const [authLockError, setAuthLockError] = useState<string | null>(null);
   const [isAppScreenLocked, setIsAppScreenLocked] = useState<boolean>(false);
+  const [showLogoutCenterModal, setShowLogoutCenterModal] = useState<boolean>(false);
+  const [isConfirmingLogout, setIsConfirmingLogout] = useState<boolean>(false);
 
   // SaaS Subscription & Cloud Licensing protection hooks
   const [license, setLicense] = useState<UserLicenseData | null>(null);
@@ -868,6 +871,7 @@ function AppContent() {
   const handleLogout = async () => {
     try {
       await auth.signOut();
+      localStorage.removeItem('FIRST_CONNECTED_GMAIL');
       setDemoMode(false);
       setDb(null);
       setLicense(null);
@@ -994,7 +998,7 @@ function AppContent() {
     <div className="min-h-screen bg-slate-100 flex flex-col lg:flex-row text-slate-800 font-sans" dir={language === 'ar' ? 'rtl' : 'ltr'}>
       
       {/* SIDEBAR NAVIGATION - DESKTOP SCREEN (Persistent) */}
-      <aside className="hidden lg:flex flex-col w-64 bg-slate-900 text-white shrink-0 border-r border-slate-800 shadow-xl no-print">
+      <aside className="hidden lg:flex flex-col w-64 h-screen sticky top-0 bg-slate-900 text-white shrink-0 border-r border-slate-800 shadow-xl no-print overflow-y-auto custom-scrollbar">
         {/* Brand identity */}
         <div className="p-6 flex items-center gap-3 border-b border-slate-800">
           {db.settings?.storeLogo ? (
@@ -1035,6 +1039,19 @@ function AppContent() {
             ) : (
               <Moon className="w-3.5 h-3.5 text-slate-400 shrink-0" />
             )}
+          </button>
+
+          {/* Secure Logout & Cloud Disconnect Gear Icon (Écrou de Déconnexion) */}
+          <button
+            onClick={() => {
+              setIsConfirmingLogout(false);
+              setShowLogoutCenterModal(true);
+            }}
+            id="disconnect-gear-desktop"
+            className="p-1.5 rounded-lg bg-slate-850 hover:bg-rose-950/40 text-rose-400 hover:text-rose-300 border border-slate-800 hover:border-rose-900/50 transition-all cursor-pointer flex items-center justify-center shrink-0 select-none focus:outline-hidden group"
+            title={language === 'ar' ? 'مركز إدارة الاتصال و فك الارتباط' : 'Déconnexion & Synchro Multi-Appareils'}
+          >
+            <Settings className="w-3.5 h-3.5 animate-spin-slow group-hover:rotate-90 transition-transform duration-500 shrink-0" />
           </button>
         </div>
 
@@ -1256,7 +1273,7 @@ function AppContent() {
       {mobileMenuOpen && (
         <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs z-30 lg:hidden no-print" onClick={() => setMobileMenuOpen(false)}>
           <aside 
-            className="w-72 bg-slate-950 h-full flex flex-col justify-between pt-20"
+            className="w-72 bg-slate-950 h-full flex flex-col justify-between pt-20 overflow-y-auto custom-scrollbar"
             onClick={(e) => e.stopPropagation()}
           >
             <nav className="p-4 space-y-2">
@@ -1340,16 +1357,17 @@ function AppContent() {
                 )}
               </button>
 
-              {/* Mobile Logout Button */}
+              {/* Mobile Logout Button representing the settings gear / 'écrou' */}
               <button
                 onClick={() => {
                   setMobileMenuOpen(false);
-                  handleLogout();
+                  setIsConfirmingLogout(false);
+                  setShowLogoutCenterModal(true);
                 }}
-                className="w-full flex items-center justify-center gap-2 py-2 px-3 rounded text-[11px] font-bold bg-rose-950/25 hover:bg-rose-900/35 border border-rose-900/20 text-rose-400 hover:text-rose-350 transition-all cursor-pointer select-none"
+                className="w-full flex items-center justify-center gap-2 py-2 px-3 rounded text-[11px] font-bold bg-rose-950/25 hover:bg-rose-900/35 border border-rose-900/20 text-rose-400 hover:text-rose-350 transition-all cursor-pointer select-none group"
               >
-                <LogOut className="w-3.5 h-3.5 shrink-0" />
-                <span>{language === 'ar' ? 'تسجيل الخروج' : 'Se Déconnecter'}</span>
+                <Settings className="w-3.5 h-3.5 animate-spin-slow group-hover:rotate-45 transition-transform" />
+                <span>{language === 'ar' ? '⚙️ إعدادات الخروج والربط' : '⚙️ Déconnexion & Synchro'}</span>
               </button>
 
 
@@ -2423,6 +2441,203 @@ function AppContent() {
                     </div>
                   </div>
                 )}
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* ⚙️ SECURE MULTI-DEVICE DISOPERATION & CLOUD DISCONNECTION CONTROL CENTER MODAL */}
+      <AnimatePresence>
+        {showLogoutCenterModal && (
+          <div className="fixed inset-0 z-55 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md no-print" style={{ zIndex: 9999 }}>
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0, y: 15 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.95, opacity: 0, y: 15 }}
+              transition={{ type: "spring", stiffness: 350, damping: 25 }}
+              className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-lg max-h-[90vh] overflow-y-auto text-start font-sans custom-scrollbar"
+              dir={language === 'ar' ? 'rtl' : 'ltr'}
+            >
+              {/* Modal Brand strip */}
+              <div className="bg-slate-900 text-white p-5 flex justify-between items-center border-b border-slate-800 relative">
+                <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-rose-500 via-indigo-500 to-emerald-500" />
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-slate-800 text-rose-400 rounded-lg border border-slate-705">
+                    <Settings className="w-5 h-5 text-rose-450 animate-spin-slow" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-black uppercase tracking-wide">
+                      {language === 'ar' ? 'مركز التحكم بإزالة الربط وتسجيل الخروج' : 'Contrôle de Déconnexion & Appareils'}
+                    </h3>
+                    <span className="text-[9px] text-slate-400 block font-mono font-bold tracking-widest uppercase mt-0.5">
+                      {language === 'ar' ? 'إعدادات الأجهزة المشتركة ومزامنة السحابة' : 'MULTI-DEVICE CLOUD SYNCHRONIZATION GATE'}
+                    </span>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowLogoutCenterModal(false)}
+                  className="p-1 hover:bg-slate-800 text-slate-400 hover:text-white rounded-full transition-colors cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <div className="p-6 space-y-5">
+                {/* Connection Status block */}
+                <div className="p-4 bg-slate-50 rounded-xl border border-slate-200 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] uppercase font-black text-slate-400 tracking-wider font-mono">
+                      {language === 'ar' ? 'الحالة الحالية للجهاز' : 'État de Session de l\'Appareil'}
+                    </span>
+                    <span className={`px-2 py-0.5 rounded text-[9px] font-extrabold uppercase border ${
+                      user 
+                        ? 'bg-emerald-50 text-emerald-800 border-emerald-200' 
+                        : 'bg-rose-50 text-rose-800 border-rose-200'
+                    }`}>
+                      {user 
+                        ? (language === 'ar' ? '🟢 متصل بالسحابة / Cloud' : '🟢 Session Cloud Active') 
+                        : (language === 'ar' ? '🔴 وضع غير متصل / Hors-ligne' : '🔴 Session Locale Hors-ligne')}
+                    </span>
+                  </div>
+
+                  {user && (
+                    <div className="bg-white p-3 rounded-lg border border-slate-150 space-y-1.5">
+                      <div className="flex justify-between items-center text-xs">
+                        <span className="text-slate-400 font-medium">
+                          {language === 'ar' ? 'البريد الإلكتروني المتصل :' : 'Compte Google connecté :'}
+                        </span>
+                        <span className="font-extrabold text-slate-800 font-mono text-xs">{user.email}</span>
+                      </div>
+                      <div className="flex justify-between items-center text-xs">
+                        <span className="text-slate-400 font-medium">
+                          {language === 'ar' ? 'معرّف السيرفر المتصل (UID) :' : 'ID Unique de Synchro :'}
+                        </span>
+                        <span className="font-bold text-slate-500 font-mono text-[9px] truncate max-w-[200px]">{user.uid}</span>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Multi-device sync explanation context */}
+                  <div className="p-3 bg-indigo-50/50 border border-indigo-100 rounded-lg text-indigo-950 text-xs select-none">
+                    <p className="font-bold text-indigo-900 mb-1 leading-snug">
+                      {language === 'ar' ? '💡 ميزة المزامنة المتعددة للأجهزة :' : '💡 Synchronisation Multi-Appareils Active :'}
+                    </p>
+                    <p className="text-[11px] leading-relaxed text-indigo-750">
+                      {language === 'ar'
+                        ? 'عند تسجيل الدخول بنفس البريد الإلكتروني (Gmail) في هذا المحل وعلى جهاز أو هاتف آخر، يفتح التطبيق تلقائياً نفس الحساب مع جلب وتحديث نفس قاعدة البيانات مباشرة من السيرفر السحابي الآمن لـ Firebase في نفس الوقت.'
+                        : 'Lorsque vous vous connectez avec ce COMPTE GOOGLE sur n\'importe quel autre appareil (PC, Tablette, Mobile ou sur un autre navigateur), l\'application charge instantanément exactement le même compte avec les mêmes stocks, reçus et ventes extraits en temps réel de Firebase.'}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Secure disconnection prompt explaining how to log out properly */}
+                <div className="space-y-1.5">
+                  <h4 className="text-[11px] uppercase font-black text-slate-500 tracking-wider">
+                    {language === 'ar' ? 'كيفية تسجيل الخروج الكامل بأمان' : 'PROCÉDURE DE DÉCONNEXION FINALE'}
+                  </h4>
+                  <p className="text-xs text-slate-600 leading-relaxed font-medium">
+                    {language === 'ar'
+                      ? 'لإلغاء قفل هذا الجهاز أو التبديل إلى حساب بريدي آخر، اضغط على زر تسجيل الخروج الكامل الآمن أدناه. سيتم فك ارتباط البريد وتهيئة مساحة العمل دون لمس أو التأثير على بياناتك المحفوظة داخل Firebase السحابي.'
+                      : 'Pour libérer cet appareil, changer de compte Gmail ou désactiver l\'accès à l\'établissement de ce poste, cliquez sur le bouton de déconnexion officielle ci-dessous. Cette action n\'altère en aucun cas vos données sauvegardées de manière sécurisée sur Firebase.'}
+                  </p>
+                </div>
+
+                {/* Disconnect actions */}
+                <div className="space-y-4 pt-1">
+                  {!isConfirmingLogout ? (
+                    <div className="flex flex-col sm:flex-row gap-3">
+                      {/* Button to start confirmation */}
+                      <button
+                        type="button"
+                        onClick={() => setIsConfirmingLogout(true)}
+                        className="flex-1 py-3 bg-slate-900 hover:bg-rose-950/20 hover:text-rose-450 text-slate-200 border border-slate-800 hover:border-rose-900/30 rounded-xl text-xs font-black uppercase text-center cursor-pointer transition-all flex items-center justify-center gap-1.5 shadow-lg shadow-rose-950/5 font-display"
+                      >
+                        <LogOut className="w-4 h-4 shrink-0" />
+                        <span>
+                          {language === 'ar' ? 'تسجيل الخروج والفك الآمن (Clean Signout)' : 'Déconnexion Propre & Dissociation'}
+                        </span>
+                      </button>
+
+                      {/* Close modal */}
+                      <button
+                        type="button"
+                        onClick={() => setShowLogoutCenterModal(false)}
+                        className="py-3 px-5 bg-slate-100 hover:bg-slate-250 border border-slate-200 text-slate-700 font-extrabold text-xs rounded-xl cursor-pointer transition-colors"
+                      >
+                        {language === 'ar' ? 'إغلاق' : 'Fermer'}
+                      </button>
+                    </div>
+                  ) : (
+                    <motion.div 
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      className="p-4 bg-rose-50 border border-rose-200 rounded-xl space-y-4"
+                    >
+                      <div className="flex gap-3">
+                        <span className="text-xl shrink-0">⚠️</span>
+                        <div className="space-y-1">
+                          <h5 className="text-xs font-black uppercase text-rose-800 tracking-wider">
+                            {language === 'ar' ? 'تأكيد تسجيل الخروج النهائي' : 'CONFIRMATION DE SÉCURITÉ REQUISE'}
+                          </h5>
+                          <p className="text-[11px] font-semibold text-rose-700 leading-relaxed">
+                            {language === 'ar' 
+                              ? 'هل أنت متأكد تمامًا؟ سيتم قطع الاتصال وتطهير الجلسة من هذا الجهاز وتوجيهك إلى شاشة قفل الدخول.' 
+                              : 'Êtes-vous absolument sûr ? Cette action déconnectera ce compte Google de cet appareil et purifiera votre session locale.'}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="flex flex-wrap gap-2.5 justify-end">
+                        <button
+                          type="button"
+                          onClick={() => setIsConfirmingLogout(false)}
+                          className="px-3.5 py-1.5 bg-white border border-slate-250 hover:bg-slate-100 text-slate-700 rounded-lg text-xs font-extrabold cursor-pointer transition-colors"
+                        >
+                          {language === 'ar' ? 'تراجع / الغاء' : 'Non, Annuler'}
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            await handleLogout();
+                            setIsConfirmingLogout(false);
+                            setShowLogoutCenterModal(false);
+                            const confirmMsg = language === 'ar'
+                              ? '✅ تم تسجيل الخروج وفك الارتباط بنجاح!'
+                              : '✅ Déconnexion et nettoyage de session exécutés avec succès !';
+                            
+                            setTimeout(() => {
+                              try {
+                                const event = new CustomEvent('show-toast', {
+                                  detail: { message: confirmMsg, type: 'success' }
+                                });
+                                window.dispatchEvent(event);
+                              } catch(_) {}
+                            }, 120);
+                          }}
+                          className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-xs font-black uppercase tracking-wider cursor-pointer transition-colors shadow-sm shadow-rose-900/10 flex items-center gap-1.5"
+                        >
+                          <LogOut className="w-3.5 h-3.5 shrink-0" />
+                          <span>
+                            {language === 'ar' ? 'نعم، قم بالخروج الآن' : 'Oui, me Déconnecter'}
+                          </span>
+                        </button>
+                      </div>
+                    </motion.div>
+                  )}
+                </div>
+              </div>
+
+              {/* Modal Footer warning badge */}
+              <div className="bg-slate-50 px-6 py-4 border-t border-slate-150 flex items-center gap-2 select-none">
+                <ShieldCheck className="w-4 h-4 text-indigo-600 shrink-0" />
+                <span className="text-[10px] text-slate-500 font-bold leading-normal">
+                  {language === 'ar'
+                    ? '🔒 بياناتك ومبيعاتك مشفرة ومحمية بالكامل على خوادم سحابية متباعدة جغرافياً.'
+                    : '🔒 Vos transactions et inventaires sont chiffrés de bout en bout et protégés par Firebase Shield.'}
+                </span>
               </div>
             </motion.div>
           </div>
