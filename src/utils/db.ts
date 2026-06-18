@@ -470,7 +470,7 @@ export const DEFAULT_SETTINGS = {
   storeAddress: 'AVENU HABIB BORGIBA GHANNOUCHE GABES',
   activitySector: 'superette' as const,
   matriculeFiscal: '1234567/A/M/000',
-  storeLogo: 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="100" height="100"><rect width="100%" height="100%" rx="22" fill="%230f172a"/><circle cx="50" cy="50" r="35" fill="none" stroke="url(%23g)" stroke-width="7"/><text x="50" y="59" font-family="system-ui, sans-serif" font-weight="950" font-size="30" fill="%233b82f6" text-anchor="middle">IP</text><defs><linearGradient id="g" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="%233b82f6"/><stop offset="100%" stop-color="%2310b981"/></linearGradient></defs></svg>',
+  storeLogo: 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="100" height="100"><defs><linearGradient id="g-ring" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="%2302b0df"/><stop offset="100%" stop-color="%2310b981"/></linearGradient><linearGradient id="g-ip" x1="0%" y1="0%" x2="100%" y2="0%"><stop offset="0%" stop-color="%2338bdf8"/><stop offset="50%" stop-color="%230284c7"/><stop offset="100%" stop-color="%23059669"/></linearGradient></defs><rect width="100%" height="100%" rx="24" fill="%230b1329"/><circle cx="50" cy="50" r="38" fill="none" stroke="url(%23g-ring)" stroke-width="2.5" opacity="0.3"/><circle cx="50" cy="50" r="34" fill="none" stroke="url(%23g-ring)" stroke-width="4" stroke-dasharray="80 20" stroke-linecap="round"/><path d="M38 48 L46 72" stroke="url(%23g-ip)" stroke-width="5.5" stroke-linecap="round"/><circle cx="43" cy="40" r="3.5" fill="%2338bdf8"/><path d="M43 48 C 65 44, 65 64, 46 64" fill="none" stroke="url(%23g-ip)" stroke-width="5.5" stroke-linecap="round"/><path d="M 46 64 L 54 48" stroke="%2310b981" stroke-width="3" stroke-linecap="round" opacity="0.8"/></svg>',
   adminEmail: 'innovapospro@gmail.com',
   enableCriticalStockEmailAlerts: true,
   enableIndividualProductEmailAlerts: true,
@@ -555,6 +555,16 @@ export function getDatabase(): DatabaseState {
   try {
     const parsed = JSON.parse(data);
     let settings = { ...DEFAULT_SETTINGS, ...(parsed.settings || {}) };
+    
+    // Auto-upgrade old preset text-based logo or missing logo to the fresh, majestic vector logo
+    if (settings && (
+      !settings.storeLogo || 
+      settings.storeLogo === '🛒' || 
+      settings.storeLogo.includes('fill="%233b82f6"') || 
+      settings.storeLogo.includes('text-anchor="middle">IP</text>')
+    )) {
+      settings.storeLogo = DEFAULT_SETTINGS.storeLogo;
+    }
     
     // Auto-migrate legacy name/logo to INNOVA POS PRO defaults only if it is completely empty or matches old preset names
     if (settings && (!settings.storeName || settings.storeName === 'Innova POS' || settings.storeName === 'Alimentation Générale El Hana (القناعة)' || settings.storeName === 'Alimentation Générale BEN ABDESELEM (بن عبد السلام)')) {

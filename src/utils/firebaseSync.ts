@@ -492,3 +492,16 @@ export async function saveSystemUpdate(update: SystemUpdate): Promise<void> {
   }
 }
 
+/**
+ * Deletes a SystemUpdate from Firestore.
+ */
+export async function deleteSystemUpdate(id: string): Promise<void> {
+  const docRef = doc(db, 'updates', id);
+  try {
+    await deleteDoc(docRef);
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, `updates/${id}`);
+  }
+}
+
+

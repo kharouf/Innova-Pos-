@@ -538,6 +538,14 @@ function AppContent() {
               ...(getDatabase().settings || {}),
               ...(cloudDb.settings || {})
             };
+            if (
+              !mergedSettings.storeLogo ||
+              mergedSettings.storeLogo === '🛒' ||
+              mergedSettings.storeLogo.includes('fill="%233b82f6"') ||
+              mergedSettings.storeLogo.includes('text-anchor="middle">IP</text>')
+            ) {
+              mergedSettings.storeLogo = DEFAULT_SETTINGS.storeLogo;
+            }
             const finalizedDb = {
               ...cloudDb,
               settings: mergedSettings
@@ -1468,11 +1476,10 @@ function AppContent() {
               <button
                 type="button"
                 onClick={handleLogout}
-                className="py-1 px-2.5 bg-rose-50 hover:bg-rose-100/80 text-rose-700 border border-rose-200 hover:border-rose-300 rounded text-[10px] font-bold uppercase transition-all flex items-center gap-1.5 shrink-0 cursor-pointer shadow-3xs hover:shadow-2xs active:scale-95 animate-fade-in"
+                className="p-2 bg-rose-50 hover:bg-rose-100/80 text-rose-700 border border-rose-200 hover:border-rose-300 rounded-lg transition-all flex items-center justify-center shrink-0 cursor-pointer shadow-3xs hover:shadow-2xs active:scale-95 animate-fade-in"
                 title={language === 'ar' ? 'تسجيل الخروج' : 'Déconnexion'}
               >
-                <LogOut className="w-3.5 h-3.5 text-rose-600" />
-                <span>{language === 'ar' ? 'خروج' : 'Déconnecter'}</span>
+                <LogOut className="w-4 h-4 text-rose-600" />
               </button>
             )}
 
@@ -1550,15 +1557,107 @@ function AppContent() {
                 </div>
               )}
 
-              {activeTab === 'dashboard' && <Dashboard db={db} onNavigate={(tab) => { setActiveTab(tab); }} onUpdateDb={handleUpdateDb} />}
-              {activeTab === 'pos' && <POS db={db} onUpdateDb={handleUpdateDb} onNavigate={(tab) => { setActiveTab(tab); }} />}
-              {activeTab === 'telecom' && <TelecomRecharge db={db} onUpdateDb={handleUpdateDb} />}
-              {activeTab === 'products' && <Products db={db} onUpdateDb={handleUpdateDb} />}
-              {activeTab === 'partners' && <Partners db={db} onUpdateDb={handleUpdateDb} />}
-              {activeTab === 'invoices' && <InvoicesList db={db} onUpdateDb={handleUpdateDb} />}
-              {activeTab === 'finance' && <Finance db={db} onUpdateDb={handleUpdateDb} />}
-              {activeTab === 'backup' && <DatabaseControl db={db} onUpdateDb={handleUpdateDb} license={license} user={user} />}
-              {activeTab === 'admin' && isSuperAdmin && <SaaSDeveloperConsole />}
+              <AnimatePresence mode="wait">
+                {activeTab === 'dashboard' && (
+                  <motion.div
+                    key="dashboard"
+                    initial={{ opacity: 0, y: 12 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -12 }}
+                    transition={{ duration: 0.22, ease: "easeInOut" }}
+                  >
+                    <Dashboard db={db} onNavigate={(tab) => { setActiveTab(tab); }} onUpdateDb={handleUpdateDb} />
+                  </motion.div>
+                )}
+                {activeTab === 'pos' && (
+                  <motion.div
+                    key="pos"
+                    initial={{ opacity: 0, y: 12 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -12 }}
+                    transition={{ duration: 0.22, ease: "easeInOut" }}
+                  >
+                    <POS db={db} onUpdateDb={handleUpdateDb} onNavigate={(tab) => { setActiveTab(tab); }} />
+                  </motion.div>
+                )}
+                {activeTab === 'telecom' && (
+                  <motion.div
+                    key="telecom"
+                    initial={{ opacity: 0, y: 12 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -12 }}
+                    transition={{ duration: 0.22, ease: "easeInOut" }}
+                  >
+                    <TelecomRecharge db={db} onUpdateDb={handleUpdateDb} />
+                  </motion.div>
+                )}
+                {activeTab === 'products' && (
+                  <motion.div
+                    key="products"
+                    initial={{ opacity: 0, y: 12 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -12 }}
+                    transition={{ duration: 0.22, ease: "easeInOut" }}
+                  >
+                    <Products db={db} onUpdateDb={handleUpdateDb} />
+                  </motion.div>
+                )}
+                {activeTab === 'partners' && (
+                  <motion.div
+                    key="partners"
+                    initial={{ opacity: 0, y: 12 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -12 }}
+                    transition={{ duration: 0.22, ease: "easeInOut" }}
+                  >
+                    <Partners db={db} onUpdateDb={handleUpdateDb} />
+                  </motion.div>
+                )}
+                {activeTab === 'invoices' && (
+                  <motion.div
+                    key="invoices"
+                    initial={{ opacity: 0, y: 12 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -12 }}
+                    transition={{ duration: 0.22, ease: "easeInOut" }}
+                  >
+                    <InvoicesList db={db} onUpdateDb={handleUpdateDb} />
+                  </motion.div>
+                )}
+                {activeTab === 'finance' && (
+                  <motion.div
+                    key="finance"
+                    initial={{ opacity: 0, y: 12 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -12 }}
+                    transition={{ duration: 0.22, ease: "easeInOut" }}
+                  >
+                    <Finance db={db} onUpdateDb={handleUpdateDb} />
+                  </motion.div>
+                )}
+                {activeTab === 'backup' && (
+                  <motion.div
+                    key="backup"
+                    initial={{ opacity: 0, y: 12 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -12 }}
+                    transition={{ duration: 0.22, ease: "easeInOut" }}
+                  >
+                    <DatabaseControl db={db} onUpdateDb={handleUpdateDb} license={license} user={user} />
+                  </motion.div>
+                )}
+                {activeTab === 'admin' && isSuperAdmin && (
+                  <motion.div
+                    key="admin"
+                    initial={{ opacity: 0, y: 12 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -12 }}
+                    transition={{ duration: 0.22, ease: "easeInOut" }}
+                  >
+                    <SaaSDeveloperConsole />
+                  </motion.div>
+                )}
+              </AnimatePresence>
             </div>
           </main>
 
