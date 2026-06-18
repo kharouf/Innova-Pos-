@@ -1,11 +1,21 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { DatabaseState, SystemUpdate, Product, StoreSettings, AppUser } from './types';
-import { getDatabase, saveDatabase, DEFAULT_SETTINGS } from './utils/db';
+import { getDatabase, saveDatabase, DEFAULT_SETTINGS, getSuperetteDatabase, saveSuperetteDatabase } from './utils/db';
 import { LanguageProvider, useLanguage } from './utils/LanguageContext';
 import { safeLocalStorage } from './utils/storage';
 import { auth } from './utils/firebase';
-import { loadUserDatabase, seedUserDatabase, syncDatabaseDiff, loadUserLicense, loadSystemUpdates } from './utils/firebaseSync';
+import { 
+  loadUserDatabase, 
+  seedUserDatabase, 
+  syncDatabaseDiff, 
+  loadUserLicense, 
+  loadSystemUpdates,
+  loadUserSuperettesList,
+  saveUserSuperetteMeta,
+  deleteUserSuperetteMeta,
+  SuperetteMeta 
+} from './utils/firebaseSync';
 import { UserLicenseData, verifyLicenseKey } from './utils/licensing';
 import { sendCriticalStockEmail, sendShiftOpeningEmail, sendShiftClosingEmail, sendDailyLowStockSummaryEmail, EmailLog } from './utils/notifications';
 import { downloadPurchaseOrderPDF, downloadShiftReportPDF } from './utils/pdfGenerator';
@@ -51,7 +61,8 @@ import {
   EyeOff,
   Sun,
   Moon,
-  Printer
+  Printer,
+  Store
 } from 'lucide-react';
 
 function AppContent() {
@@ -73,6 +84,15 @@ function AppContent() {
 
   // App database state
   const [db, setDb] = useState<DatabaseState | null>(null);
+  
+  // Multi-store workspaces State
+  const [activeSuperetteId, setActiveSuperetteId] = useState<string>('default');
+  const [superettesList, setSuperettesList] = useState<SuperetteMeta[]>([
+    { id: 'default', name: 'Superette Principale', createdAt: '' }
+  ]);
+  const [showSuperetteModal, setShowSuperetteModal] = useState(false);
+  const [newSuperetteName, setNewSuperetteName] = useState('');
+  const [isCreatingSuperette, setIsCreatingSuperette] = useState(false);
   
   // Worker-Only Restricted Mode state
   const [isWorkerMode, setIsWorkerMode] = useState<boolean>(() => {
@@ -111,7 +131,7 @@ function AppContent() {
   const [showPinInputPass, setShowPinInputPass] = useState(false);
 
   const handleToggleGlobalTheme = () => {
-    const currentDb = db || getDatabase();
+    const currentDb = db || (user ? getSuperetteDatabase(user.uid, activeSuperetteId) : getDatabase());
     if (!currentDb) return;
     const currentTheme = currentDb.settings?.themeMode || 'light';
     const nextTheme = currentTheme === 'dark' ? 'light' : 'dark';
@@ -124,6 +144,96 @@ function AppContent() {
       }
     };
     handleUpdateDb(updatedDb);
+  };
+
+  const switchSuperette = async (targetId: string) => {
+    if (!user) return;
+    setSyncingCloud(true);
+    try {
+      setActiveSuperetteId(targetId);
+      safeLocalStorage.setItem('active_superette_id_' + user.uid, targetId);
+
+      const cloudDb = await loadUserDatabase(user.uid, targetId);
+      let loadedDb = cloudDb;
+
+      if (cloudDb) {
+        const mergedSettings = {
+          ...DEFAULT_SETTINGS,
+          ...(getSuperetteDatabase(user.uid, targetId).settings || {}),
+          ...(cloudDb.settings || {})
+        };
+        const finalizedDb = {
+          ...cloudDb,
+          settings: mergedSettings
+        };
+        loadedDb = finalizedDb;
+        setDb(finalizedDb);
+        saveSuperetteDatabase(user.uid, targetId, finalizedDb);
+      } else {
+        const localFallback = getSuperetteDatabase(user.uid, targetId);
+        loadedDb = localFallback;
+        setDb(localFallback);
+
+        seedUserDatabase(user.uid, localFallback, targetId).catch(err => {
+          console.log("[FIRESTORE SYSTEM INFO] Seeding for new superette:", err);
+        });
+      }
+
+      const activeTheme = loadedDb?.settings?.themeMode || 'light';
+      if (activeTheme === 'dark') {
+        document.documentElement.classList.add('dark');
+      } else {
+        document.documentElement.classList.remove('dark');
+      }
+    } catch (err) {
+      console.error("Failed switching superette", err);
+    } finally {
+      setSyncingCloud(false);
+    }
+  };
+
+  const handleCreateNewSuperette = async (name: string) => {
+    if (!user || !name.trim()) return;
+    setIsCreatingSuperette(true);
+    try {
+      const newId = 'superette-' + Math.random().toString(36).substring(2, 9);
+      const newMeta: SuperetteMeta = {
+        id: newId,
+        name: name.trim(),
+        createdAt: new Date().toISOString().split('T')[0]
+      };
+
+      await saveUserSuperetteMeta(user.uid, newMeta);
+
+      const updatedList = await loadUserSuperettesList(user.uid);
+      setSuperettesList(updatedList);
+
+      const initialDbForNewStore: DatabaseState = {
+        products: [],
+        partners: [],
+        invoices: [],
+        payments: [],
+        traites: [],
+        expenses: [],
+        settings: {
+          ...DEFAULT_SETTINGS,
+          storeName: name.trim(),
+          themeMode: 'light'
+        }
+      };
+
+      saveSuperetteDatabase(user.uid, newId, initialDbForNewStore);
+      await seedUserDatabase(user.uid, initialDbForNewStore, newId);
+
+      await switchSuperette(newId);
+      
+      setShowSuperetteModal(false);
+      setNewSuperetteName('');
+    } catch (err) {
+      console.error("Failed creating superette workspace", err);
+    } finally {
+      setIsCreatingSuperette(false);
+    }
   };
 
   // States for low stock levels prompt & banner
@@ -529,13 +639,24 @@ function AppContent() {
         setDemoMode(false);
         setSyncingCloud(true);
         try {
-          // Attempt loading this store's custom cloud database with a 4.5s safe timeout
-          const cloudDb = await withTimeout(loadUserDatabase(currentUser.uid), 4500, null);
+          // 1. Load lists of available superettes from cloud
+          const list = await withTimeout(loadUserSuperettesList(currentUser.uid), 4000, [{ id: 'default', name: 'Superette Principale', createdAt: '' }]);
+          setSuperettesList(list);
+
+          // 2. Detect active superette Id
+          const savedActiveId = safeLocalStorage.getItem('active_superette_id_' + currentUser.uid) || 'default';
+          const activeIdObj = list.find(s => s.id === savedActiveId) || list[0] || { id: 'default' };
+          const activeId = activeIdObj.id;
+          setActiveSuperetteId(activeId);
+          safeLocalStorage.setItem('active_superette_id_' + currentUser.uid, activeId);
+
+          // 3. Attempt loading this store's custom cloud database with a 4.5s safe timeout
+          const cloudDb = await withTimeout(loadUserDatabase(currentUser.uid, activeId), 4500, null);
           let dbInstance = cloudDb;
           if (cloudDb) {
             const mergedSettings = {
               ...DEFAULT_SETTINGS,
-              ...(getDatabase().settings || {}),
+              ...(getSuperetteDatabase(currentUser.uid, activeId).settings || {}),
               ...(cloudDb.settings || {})
             };
             if (
@@ -552,12 +673,12 @@ function AppContent() {
             };
             dbInstance = finalizedDb;
             setDb(finalizedDb);
-            saveDatabase(finalizedDb);
+            saveSuperetteDatabase(currentUser.uid, activeId, finalizedDb);
           } else {
             // New account or offline fallback: seed or use local cache
-            const localFallback = getDatabase();
+            const localFallback = getSuperetteDatabase(currentUser.uid, activeId);
             dbInstance = localFallback;
-            seedUserDatabase(currentUser.uid, localFallback).catch(err => {
+            seedUserDatabase(currentUser.uid, localFallback, activeId).catch(err => {
               console.log("[FIRESTORE SYSTEM INFO] Background database seeding handled:", err);
             });
             setDb(localFallback);
@@ -579,7 +700,7 @@ function AppContent() {
           };
           const userLicense = await withTimeout(
             loadUserLicense(currentUser.uid, currentUser.email, storeName),
-            3500,
+            3505,
             defaultOfflineLicense
           );
           setLicense(userLicense);
@@ -599,7 +720,8 @@ function AppContent() {
           }
         } catch (err) {
           console.log("[FIRESTORE SYSTEM INFO] Failed to load user cloud data, falling back to local storage.", err);
-          setDb(getDatabase());
+          const activeId = safeLocalStorage.getItem('active_superette_id_' + currentUser.uid) || 'default';
+          setDb(getSuperetteDatabase(currentUser.uid, activeId));
         } finally {
           setSyncingCloud(false);
         }
@@ -749,13 +871,17 @@ function AppContent() {
   // 1.8. Automatically trigger saveDatabase(db) whenever db changes and is not null
   useEffect(() => {
     if (db) {
-      saveDatabase(db);
+      if (user) {
+        saveSuperetteDatabase(user.uid, activeSuperetteId, db);
+      } else {
+        saveDatabase(db);
+      }
     }
-  }, [db]);
+  }, [db, activeSuperetteId, user]);
 
   // Apply visual theme mode dynamically on document element
   useEffect(() => {
-    const activeTheme = db?.settings?.themeMode || getDatabase().settings?.themeMode || 'light';
+    const activeTheme = db?.settings?.themeMode || (user ? getSuperetteDatabase(user.uid, activeSuperetteId) : getDatabase()).settings?.themeMode || 'light';
     if (activeTheme === 'dark') {
       document.documentElement.classList.add('dark');
     } else {
@@ -767,12 +893,16 @@ function AppContent() {
   const handleUpdateDb = async (updatedDb: DatabaseState) => {
     const oldDb = db;
     setDb(updatedDb);
-    saveDatabase(updatedDb);
+    if (user) {
+      saveSuperetteDatabase(user.uid, activeSuperetteId, updatedDb);
+    } else {
+      saveDatabase(updatedDb);
+    }
 
     // If cloud syncing is connected and active, sync diff in background
     if (user && oldDb) {
       try {
-        await syncDatabaseDiff(user.uid, oldDb, updatedDb);
+        await syncDatabaseDiff(user.uid, oldDb, updatedDb, activeSuperetteId);
       } catch (err) {
         console.log("[FIRESTORE SYSTEM INFO] Incremental background cloud synchronization failed or offline", err);
       }
@@ -1063,6 +1193,47 @@ function AppContent() {
           </button>
         </div>
 
+        {/* Workspace selector - only visible if logged in and not in restricted cashier worker mode */}
+        {user && !isWorkerMode && (
+          <div className="mx-4 mt-3 p-3 rounded-xl bg-slate-850/60 border border-slate-800/80 flex flex-col gap-2">
+            <div className="flex items-center justify-between text-[10px] text-slate-400 font-extrabold uppercase tracking-wider select-none">
+              <span className="flex items-center gap-1.5">
+                <Store className="w-3.5 h-3.5 text-blue-400 shrink-0" />
+                {language === 'ar' ? 'المتجر النشط' : 'Superette Active'}
+              </span>
+              <button 
+                onClick={() => {
+                  setNewSuperetteName('');
+                  setShowSuperetteModal(true);
+                }}
+                className="text-blue-400 hover:text-blue-300 transition-colors text-[9px] font-extrabold hover:underline cursor-pointer"
+                title={language === 'ar' ? 'إضافة نقطة بيع / محل جديد' : 'Créer une Superette'}
+              >
+                + {language === 'ar' ? 'جديد' : 'Créer'}
+              </button>
+            </div>
+            
+            <div className="relative">
+              <select
+                value={activeSuperetteId}
+                onChange={(e) => switchSuperette(e.target.value)}
+                className="w-full bg-slate-900 border border-slate-750 text-slate-200 py-1.5 px-2.5 rounded-lg text-xs font-semibold focus:outline-hidden focus:border-blue-500 cursor-pointer appearance-none pr-8 text-start"
+              >
+                {superettesList.map((sup) => (
+                  <option key={sup.id} value={sup.id}>
+                    🏪 {sup.name}
+                  </option>
+                ))}
+              </select>
+              <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-slate-400">
+                <svg className="fill-current h-4 w-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20">
+                  <path d="M9.293 12.95l.707.707L15.657 8l-1.414-1.414L10 10.828 5.757 6.586 4.343 8z"/>
+                </svg>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Section title */}
         <div className="text-slate-500 text-[10px] uppercase font-bold tracking-widest px-4 pt-5 pb-1">
           {t('nav_principal')}
@@ -1285,6 +1456,44 @@ function AppContent() {
             onClick={(e) => e.stopPropagation()}
           >
             <nav className="p-4 space-y-2">
+              {/* Mobile Workspace selector */}
+              {user && !isWorkerMode && (
+                <div className="mb-4 p-3 rounded-xl bg-slate-900 border border-slate-800 flex flex-col gap-2">
+                  <div className="flex items-center justify-between text-[10px] text-slate-400 font-extrabold uppercase tracking-wider select-none">
+                    <span className="flex items-center gap-1">
+                      <Store className="w-3 h-3 text-blue-400 shrink-0" />
+                      {language === 'ar' ? 'المتجر النشط' : 'Superette Active'}
+                    </span>
+                    <button 
+                      onClick={() => {
+                        setNewSuperetteName('');
+                        setShowSuperetteModal(true);
+                      }}
+                      className="text-blue-400 hover:text-blue-300 transition-colors text-[9px] font-extrabold hover:underline cursor-pointer"
+                    >
+                      + {language === 'ar' ? 'جديد' : 'Créer'}
+                    </button>
+                  </div>
+                  
+                  <div className="relative">
+                    <select
+                      value={activeSuperetteId}
+                      onChange={(e) => {
+                        switchSuperette(e.target.value);
+                        setMobileMenuOpen(false);
+                      }}
+                      className="w-full bg-slate-950 border border-slate-750 text-slate-200 py-1.5 px-2 rounded-lg text-xs font-semibold focus:outline-hidden cursor-pointer"
+                    >
+                      {superettesList.map((sup) => (
+                        <option key={sup.id} value={sup.id}>
+                          🏪 {sup.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+              )}
+
               <div className="text-slate-500 text-[10px] uppercase font-bold tracking-widest px-2 pb-1">
                 {t('nav_principal')}
               </div>
@@ -1676,6 +1885,87 @@ function AppContent() {
           </footer>
         </div>
       </div>
+
+      {/* 🏪 Modal to Create a New Superette Workspace */}
+      {showSuperetteModal && (
+        <div 
+          onClick={(e) => {
+            if (e.target === e.currentTarget && !isCreatingSuperette) {
+              setShowSuperetteModal(false);
+            }
+          }}
+          className="fixed inset-0 bg-slate-950/80 backdrop-blur-md flex items-center justify-center z-50 p-4" 
+          dir={language === 'ar' ? 'rtl' : 'ltr'}
+        >
+          <div className="bg-white dark:bg-slate-900 rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-800 max-w-md w-full p-6 space-y-5 text-center relative max-h-[90vh] overflow-y-auto">
+            <button
+              type="button"
+              disabled={isCreatingSuperette}
+              onClick={() => setShowSuperetteModal(false)}
+              className="absolute top-4 right-4 rtl:left-4 rtl:right-auto text-slate-400 hover:text-slate-650 dark:hover:text-slate-200 cursor-pointer p-1.5 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+              title={language === 'ar' ? 'إغلاق' : 'Fermer'}
+            >
+              ✕
+            </button>
+
+            <div className="mx-auto w-12 h-12 bg-blue-100 dark:bg-blue-900/40 rounded-full flex items-center justify-center text-blue-600 dark:text-blue-400">
+              <Store className="w-6 h-6" />
+            </div>
+
+            <div className="space-y-1.5">
+              <h3 className="text-lg font-bold text-slate-900 dark:text-white font-display">
+                {language === 'ar' ? 'إضافة نقطة بيع أو محل جديد' : 'Ajouter une nouvelle Superette'}
+              </h3>
+              <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                {language === 'ar' 
+                  ? 'سيتم إنشاء قاعدة بيانات سحابية وتجهيز كاشير مالي مستقل تماماً وخاص بهذا الفرع.' 
+                  : 'Créez un point de vente indépendant avec son propre inventaire, historique de ventes et paramètres dédiés.'}
+              </p>
+            </div>
+
+            <form onSubmit={(e) => {
+              e.preventDefault();
+              handleCreateNewSuperette(newSuperetteName);
+            }} className="space-y-4 text-start">
+              <div>
+                <label className="block text-xs font-bold text-slate-650 dark:text-slate-300 uppercase tracking-widest mb-1.5">
+                  {language === 'ar' ? 'إسم المحل أو الفرع' : 'Nom de la Superette / POS'}
+                </label>
+                <input
+                  type="text"
+                  required
+                  placeholder={language === 'ar' ? 'مثال: سوبرماركت النصر' : 'Ex: Superette Centre-Ville'}
+                  disabled={isCreatingSuperette}
+                  value={newSuperetteName}
+                  onChange={(e) => setNewSuperetteName(e.target.value)}
+                  className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-250 dark:border-slate-800 text-slate-900 dark:text-white rounded-xl py-2.5 px-3.5 text-xs font-semibold focus:outline-hidden focus:border-blue-500 transition-all placeholder:text-slate-400"
+                />
+              </div>
+
+              <div className="flex items-center gap-3 pt-2">
+                <button
+                  type="button"
+                  disabled={isCreatingSuperette}
+                  onClick={() => setShowSuperetteModal(false)}
+                  className="flex-1 bg-slate-100 hover:bg-slate-205 dark:bg-slate-800 dark:hover:bg-slate-750 text-slate-700 dark:text-slate-350 font-bold text-xs py-2.5 rounded-xl cursor-pointer"
+                >
+                  {language === 'ar' ? 'إلغاء' : 'Annuler'}
+                </button>
+                <button
+                  type="submit"
+                  disabled={isCreatingSuperette || !newSuperetteName.trim()}
+                  className="flex-1 bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs py-2.5 rounded-xl flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+                >
+                  {isCreatingSuperette ? (
+                    <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                  ) : null}
+                  <span>{language === 'ar' ? 'تأكيد الإنشاء' : 'Créer l’Établissement'}</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {/* 🔐 PIN Validation Modal for Owner Status */}
       {showPinModal && (

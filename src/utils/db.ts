@@ -818,4 +818,47 @@ export function getActiveProductPrice(product: Product): number {
   return product.sellingPrice;
 }
 
+/**
+ * Gets database for a specific superette and user. Fallbacks to default if not found.
+ */
+export function getSuperetteDatabase(userId: string, superetteId: string): DatabaseState {
+  if (typeof window === 'undefined') return INITIAL_DATABASE;
+  const key = `commercial_management_db_${userId}_${superetteId}`;
+  let data = safeLocalStorage.getItem(key);
+  if (!data && superetteId === 'default') {
+    data = safeLocalStorage.getItem('commercial_management_db');
+  }
+  if (!data) {
+    return { ...INITIAL_DATABASE, settings: { ...DEFAULT_SETTINGS, storeName: superetteId === 'default' ? DEFAULT_SETTINGS.storeName : `Superette ${superetteId.toUpperCase()}` } };
+  }
+  try {
+    const parsed = JSON.parse(data);
+    const settings = { ...DEFAULT_SETTINGS, ...(parsed.settings || {}) };
+    return {
+      products: parsed.products || INITIAL_DATABASE.products,
+      partners: parsed.partners || INITIAL_DATABASE.partners,
+      invoices: parsed.invoices || INITIAL_DATABASE.invoices,
+      payments: parsed.payments || INITIAL_DATABASE.payments,
+      traites: parsed.traites || INITIAL_DATABASE.traites,
+      expenses: parsed.expenses || INITIAL_DATABASE.expenses,
+      settings
+    };
+  } catch (e) {
+    return { ...INITIAL_DATABASE, settings: DEFAULT_SETTINGS };
+  }
+}
+
+/**
+ * Saves database for a specific superette and user.
+ */
+export function saveSuperetteDatabase(userId: string, superetteId: string, db: DatabaseState): void {
+  if (typeof window === 'undefined') return;
+  const key = `commercial_management_db_${userId}_${superetteId}`;
+  safeLocalStorage.setItem(key, JSON.stringify(db));
+  if (superetteId === 'default') {
+    safeLocalStorage.setItem('commercial_management_db', JSON.stringify(db));
+  }
+}
+
+
 

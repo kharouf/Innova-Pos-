@@ -133,9 +133,11 @@ export default function Auth({
         setCachedAccessToken(credential.accessToken);
       }
     } catch (err: any) {
-      console.error('Core Auth Error:', err);
+      console.warn('Core Auth Error handled:', err);
       const errCode = err?.code || '';
       const isDomainError = errCode === 'auth/unauthorized-domain' || (err?.message && err.message.includes('unauthorized-domain'));
+      const isPopupClosed = errCode === 'auth/popup-closed-by-user' || errCode === 'auth/cancelled-popup-request';
+      const isPopupBlocked = errCode === 'auth/popup-blocked';
       
       let msg = language === 'ar'
         ? 'فشل تسجيل الدخول. يرجى التحقق من اتصالك بالإنترنت والمحاولة مجدداً.'
@@ -145,6 +147,14 @@ export default function Auth({
         msg = language === 'ar'
           ? `النطاق الحالي غير مصرح به في إعدادات Firebase Auth. يرجى إضافة النطاق الحالي للعمل بشكل صحيح.`
           : `Le domaine actif n'est pas autorisé dans votre console Firebase Authentication.`;
+      } else if (isPopupClosed) {
+        msg = language === 'ar'
+          ? 'تم إلغاء عملية الدخول بسبب إغلاق نافذة Google. يرجى إعادة المحاولة من جديد.'
+          : 'Opération annulée : la fenêtre de connexion Google a été fermée. Veuillez réessayer.';
+      } else if (isPopupBlocked) {
+        msg = language === 'ar'
+          ? 'تم حظر النافذة البارزة بواسطة المتصفح. يرجى السماح بالنوافذ المنبثقة لهذا الموقع.'
+          : 'La fenêtre contextuelle de connexion a été bloquée par votre navigateur. Veuillez autoriser les popups.';
       }
 
       setError({

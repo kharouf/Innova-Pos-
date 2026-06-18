@@ -43,8 +43,76 @@ export function cleanUndefined<T>(obj: T): T {
  * Loads the complete database for a given user from Firestore.
  * If Firestore is empty, it returns null (indicating we should seed it with initial data).
  */
-export async function loadUserDatabase(userId: string): Promise<DatabaseState | null> {
-  const baseUserPath = `users/${userId}`;
+export interface SuperetteMeta {
+  id: string;
+  name: string;
+  createdAt: string;
+}
+
+/**
+ * Loads list of all registered superettes/workspaces under a given user.
+ */
+export async function loadUserSuperettesList(userId: string): Promise<SuperetteMeta[]> {
+  const colRef = collection(db, 'users', userId, 'superettes_meta');
+  try {
+    const snap = await getDocs(colRef);
+    const list: SuperetteMeta[] = [];
+    snap.forEach(docSnap => {
+      const data = docSnap.data();
+      list.push({
+        id: docSnap.id,
+        name: data.name || 'Superette',
+        createdAt: data.createdAt || new Date().toISOString().split('T')[0]
+      });
+    });
+
+    // Automatically register and seed the default database metadata if it does not exist
+    if (list.length === 0 || !list.some(s => s.id === 'default')) {
+      const defaultMeta = {
+        id: 'default',
+        name: 'Superette Principale',
+        createdAt: new Date().toISOString().split('T')[0]
+      };
+      await setDoc(doc(db, 'users', userId, 'superettes_meta', 'default'), defaultMeta);
+      list.push(defaultMeta);
+    }
+    return list;
+  } catch (err) {
+    console.warn("Could not load superettes list. Using fallback default local.", err);
+    return [{ id: 'default', name: 'Superette Principale', createdAt: '' }];
+  }
+}
+
+/**
+ * Saves or updates a superette's basic metadata in Firestore.
+ */
+export async function saveUserSuperetteMeta(userId: string, meta: SuperetteMeta): Promise<void> {
+  const docRef = doc(db, 'users', userId, 'superettes_meta', meta.id);
+  try {
+    await setDoc(docRef, meta, { merge: true });
+  } catch (err) {
+    console.error("Failed storing superette metadata", err);
+  }
+}
+
+/**
+ * Deletes a superette workspace's metadata and data.
+ */
+export async function deleteUserSuperetteMeta(userId: string, superetteId: string): Promise<void> {
+  const docRef = doc(db, 'users', userId, 'superettes_meta', superetteId);
+  try {
+    await deleteDoc(docRef);
+  } catch (err) {
+    console.error("Failed deleting superette metadata", err);
+  }
+}
+
+/**
+ * Loads the complete database for a given user and superette from Firestore.
+ * If Firestore is empty, it returns null (indicating we should seed it with initial data).
+ */
+export async function loadUserDatabase(userId: string, superetteId: string = 'default'): Promise<DatabaseState | null> {
+  const baseUserPath = superetteId === 'default' ? `users/${userId}` : `users/${userId}/superettes/${superetteId}`;
   
   try {
     const [
@@ -62,7 +130,9 @@ export async function loadUserDatabase(userId: string): Promise<DatabaseState | 
       getDocs(collection(db, baseUserPath, 'payments')),
       getDocs(collection(db, baseUserPath, 'traites')),
       getDocs(collection(db, baseUserPath, 'expenses')),
-      getDoc(doc(db, 'users', userId))
+      superetteId === 'default'
+        ? getDoc(doc(db, 'users', userId))
+        : getDoc(doc(db, 'users', userId, 'superettes', superetteId))
     ]);
 
     const products: Product[] = [];
@@ -122,8 +192,8 @@ export async function loadUserDatabase(userId: string): Promise<DatabaseState | 
 /**
  * Seeds a new user's Firestore with default Tunisian superette database
  */
-export async function seedUserDatabase(userId: string, initialDb: DatabaseState): Promise<void> {
-  const baseUserPath = `users/${userId}`;
+export async function seedUserDatabase(userId: string, initialDb: DatabaseState, superetteId: string = 'default'): Promise<void> {
+  const baseUserPath = superetteId === 'default' ? `users/${userId}` : `users/${userId}/superettes/${superetteId}`;
   
   try {
     const batch = writeBatch(db);
@@ -168,7 +238,11 @@ export async function seedUserDatabase(userId: string, initialDb: DatabaseState)
 
     // Seed storeSettings inside user document matching the key
     if (initialDb.settings) {
-      await setDoc(doc(db, 'users', userId), { storeSettings: cleanUndefined(initialDb.settings) }, { merge: true });
+      if (superetteId === 'default') {
+        await setDoc(doc(db, 'users', userId), { storeSettings: cleanUndefined(initialDb.settings) }, { merge: true });
+      } else {
+        await setDoc(doc(db, 'users', userId, 'superettes', superetteId), { storeSettings: cleanUndefined(initialDb.settings) }, { merge: true });
+      }
     }
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, `${baseUserPath}/[SEED]`);
@@ -181,9 +255,10 @@ export async function seedUserDatabase(userId: string, initialDb: DatabaseState)
 export async function syncDatabaseDiff(
   userId: string,
   oldDb: DatabaseState,
-  newDb: DatabaseState
+  newDb: DatabaseState,
+  superetteId: string = 'default'
 ): Promise<void> {
-  const baseUserPath = `users/${userId}`;
+  const baseUserPath = superetteId === 'default' ? `users/${userId}` : `users/${userId}/superettes/${superetteId}`;
 
   try {
     // Helper to diff collections and execute writes/deletes
@@ -236,9 +311,15 @@ export async function syncDatabaseDiff(
 
     // Also sync settings if they changed
     if (newDb.settings && JSON.stringify(oldDb.settings) !== JSON.stringify(newDb.settings)) {
-      await setDoc(doc(db, 'users', userId), { storeSettings: cleanUndefined(newDb.settings) }, { merge: true }).catch(err => {
-        handleFirestoreError(err, OperationType.WRITE, `users/${userId}/[SETTINGS]`);
-      });
+      if (superetteId === 'default') {
+        await setDoc(doc(db, 'users', userId), { storeSettings: cleanUndefined(newDb.settings) }, { merge: true }).catch(err => {
+          handleFirestoreError(err, OperationType.WRITE, `users/${userId}/[SETTINGS]`);
+        });
+      } else {
+        await setDoc(doc(db, 'users', userId, 'superettes', superetteId), { storeSettings: cleanUndefined(newDb.settings) }, { merge: true }).catch(err => {
+          handleFirestoreError(err, OperationType.WRITE, `users/${userId}/superettes/${superetteId}/[SETTINGS]`);
+        });
+      }
     }
   } catch (err) {
     console.log('[FIRESTORE SYSTEM INFO] Failure inside incremental sync database helper. Operating offline.', err);
