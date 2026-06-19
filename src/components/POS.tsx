@@ -88,7 +88,7 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
   const [rapidScanValue, setRapidScanValue] = useState<string>('');
   const [autoFocusScanField, setAutoFocusScanField] = useState<boolean>(() => {
     const saved = safeLocalStorage.getItem('pos_autofocus_scan_field');
-    return saved === 'true'; // Default to false so touch screens do not get auto-refocused constantly
+    return saved === null ? true : saved === 'true'; // Default to true so users scan automatically out of the box
   });
   const [isRapidScanFocused, setIsRapidScanFocused] = useState<boolean>(false);
   const rapidScanInputRef = useRef<HTMLInputElement | null>(null);
@@ -943,6 +943,46 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
       document.removeEventListener('click', handleGlobalClick);
     };
   }, [autoFocusScanField]);
+
+  // Global Keyboard listener for physical barcode scanner guns
+  useEffect(() => {
+    const handleGlobalKeyDown = (e: KeyboardEvent) => {
+      const activeEl = document.activeElement;
+      
+      // If user typing is already focused on any text input/select/textarea, do NOT steal focus.
+      if (
+        activeEl && (
+          activeEl.tagName.toLowerCase() === 'input' ||
+          activeEl.tagName.toLowerCase() === 'textarea' ||
+          activeEl.tagName.toLowerCase() === 'select' ||
+          activeEl.closest('[role="dialog"]') ||
+          activeEl.closest('.modal') ||
+          activeEl.closest('[id^="radix-"]')
+        )
+      ) {
+        return;
+      }
+
+      // Ignore common modifier key operations like copy/paste, reload, etc.
+      if (e.ctrlKey || e.altKey || e.metaKey) {
+        return;
+      }
+
+      // We only handle single key presses (alphanumeric digits / symbols sent by mechanical barcode laser gun)
+      if (e.key && e.key.length === 1) {
+        if (rapidScanInputRef.current) {
+          e.preventDefault();
+          rapidScanInputRef.current.focus();
+          setRapidScanValue(e.key);
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleGlobalKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleGlobalKeyDown);
+    };
+  }, []);
 
   // Handler for instant barcode resolution and addition to cart
   const handleRapidBarcodeSubmit = (e: React.FormEvent) => {
