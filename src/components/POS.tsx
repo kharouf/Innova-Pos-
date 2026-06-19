@@ -80,6 +80,11 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
   const [selectedPartnerId, setSelectedPartnerId] = useState<string>('');
   const [isReturnMode, setIsReturnMode] = useState<boolean>(false);
   
+  // Stand-alone cart full view option ("Caisse d'article page wa7adha fiha ken panier")
+  const [isCartOnlyMode, setIsCartOnlyMode] = useState<boolean>(() => {
+    return safeLocalStorage.getItem('pos_cart_only_mode') === 'true';
+  });
+  
   // Custom rapid price item addition (Vente libre)
   const [customItemPrice, setCustomItemPrice] = useState<string>('');
   const [customItemName, setCustomItemName] = useState<string>('');
@@ -1523,8 +1528,8 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
     <div className="space-y-6 relative">
 
       {/* POS Screen Header */}
-      <div className="bg-white border border-slate-200 p-4 rounded-lg flex flex-col sm:flex-row items-center justify-between gap-4 no-print shadow-3xs">
-        <div className="flex items-center gap-3">
+      <div className="bg-white border border-slate-200 p-4 rounded-xl flex flex-col lg:flex-row items-center justify-between gap-4 no-print shadow-3xs">
+        <div className="flex items-center gap-3 w-full lg:w-auto">
           <motion.div 
             animate={triggerPulse ? {
               scale: [1, 1.3, 0.9, 1.15, 1],
@@ -1545,8 +1550,43 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
           </div>
         </div>
 
+        {/* Brand Segmented Controls for Cart-Only View requested by user ("page wa7adha feha ken panier lbe9i lkoul yitne7") */}
+        <div className="bg-slate-100 p-1 rounded-xl flex items-center gap-1 border border-slate-200 select-none w-full sm:w-auto justify-center">
+          <button
+            type="button"
+            onClick={() => {
+              setIsCartOnlyMode(false);
+              safeLocalStorage.setItem('pos_cart_only_mode', 'false');
+            }}
+            className={`px-3 py-1.5 rounded-lg text-xs font-bold uppercase transition-all duration-200 cursor-pointer flex items-center gap-1.5 ${
+              !isCartOnlyMode 
+                ? 'bg-white text-indigo-800 shadow-3xs border border-indigo-100/50' 
+                : 'text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            <span>🖥️</span>
+            <span>{language === 'ar' ? 'شاشة الكاشير الكاملة' : 'Caisse Complète'}</span>
+          </button>
+          
+          <button
+            type="button"
+            onClick={() => {
+              setIsCartOnlyMode(true);
+              safeLocalStorage.setItem('pos_cart_only_mode', 'true');
+            }}
+            className={`px-3 py-1.5 rounded-lg text-xs font-bold uppercase transition-all duration-200 cursor-pointer flex items-center gap-1.5 ${
+              isCartOnlyMode 
+                ? 'bg-indigo-600 text-white shadow-3xs font-black' 
+                : 'text-slate-600 hover:text-slate-905'
+            }`}
+          >
+            <span>🛒</span>
+            <span>{language === 'ar' ? 'سلة المبيعات فقط' : 'Panier Uniquement'}</span>
+          </button>
+        </div>
+
         {/* Global Shortcuts Indicator Block & scan drawer toggle */}
-        <div className="flex flex-wrap items-center gap-2.5">
+        <div className="flex flex-wrap items-center gap-2.5 w-full lg:w-auto justify-center lg:justify-end">
           <div className="hidden md:flex items-center gap-3 bg-slate-50 border border-slate-200 px-3 py-1.5 rounded-md text-[10px] text-slate-600 font-mono">
             <span><kbd className="bg-white px-1.5 py-0.5 border border-slate-300 rounded shadow-3xs font-bold text-slate-900 select-all">F2</kbd> Vider</span>
             <span className="text-slate-300">|</span>
@@ -1778,7 +1818,8 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
         
         {/* Left column: Products catalog (8 cols in desktop) */}
-        <div className="lg:col-span-12 xl:col-span-7 bg-white p-6 border border-slate-150 rounded-2xl space-y-5 no-print shadow-xs">
+        {!isCartOnlyMode && (
+          <div className="lg:col-span-12 xl:col-span-7 bg-white p-6 border border-slate-150 rounded-2xl space-y-5 no-print shadow-xs">
           
           {/* Dedicated continuous barcode scanner entry block */}
           <div className="bg-slate-50 border border-slate-200/80 rounded-xl p-4 space-y-3 relative overflow-hidden transition-all duration-200 hover:border-emerald-250 hover:shadow-2xs">
@@ -2239,10 +2280,97 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
             </div>
           )}
         </div>
+        )}
 
-        {/* Right column: Cart, customer, settings & actions (5 cols in desktop) */}
-        <div className="lg:col-span-12 xl:col-span-5 bg-slate-50 p-6 border border-slate-200 rounded-2xl space-y-5 no-print shadow-xs">
+        {/* Right column: Cart, customer, settings & actions (5 cols in desktop, or 12 cols when cart only mode is active) */}
+        <div className={`lg:col-span-12 ${isCartOnlyMode ? 'xl:col-span-12 max-w-4xl mx-auto w-full' : 'xl:col-span-5'} bg-slate-50 p-6 border border-slate-200 rounded-2xl space-y-5 no-print shadow-xs transition-all duration-300`}>
           
+          {/* Continuous barcode scanner entry block (Shown in Cart Only Mode) */}
+          {isCartOnlyMode && (
+            <div className="bg-white border border-slate-200 rounded-xl p-4 space-y-3 relative overflow-hidden transition-all duration-200 hover:border-emerald-250 hover:shadow-2xs">
+              <div className="absolute top-0 left-0 w-1 h-full bg-emerald-500"></div>
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 pl-1">
+                <div className="flex items-center gap-2 text-emerald-850 text-xs font-black uppercase tracking-wider font-sans select-none">
+                  <span className="relative flex h-2 w-2">
+                    <span className={`animate-ping absolute inline-flex h-full w-full rounded-full ${isRapidScanFocused ? 'bg-emerald-400 opacity-75' : 'bg-slate-300'}`}></span>
+                    <span className={`relative inline-flex rounded-full h-2 w-2 ${isRapidScanFocused ? 'bg-emerald-500' : 'bg-slate-400'}`}></span>
+                  </span>
+                  <span>{language === 'ar' ? 'سحب سريع للباركود (بدون نقر)' : 'Saisie Directe Code-barres (Sans clic)'}</span>
+                </div>
+                
+                <div className="flex flex-wrap items-center gap-2.5">
+                  {/* Active scan indicator */}
+                  <div 
+                    onClick={() => rapidScanInputRef.current?.focus()}
+                    className="flex items-center gap-1.5 cursor-pointer bg-slate-50 px-2 py-0.5 rounded border border-slate-200 select-none hover:bg-slate-100 transition-all text-[10px]"
+                  >
+                    <span className="text-[10px] font-bold text-slate-500">
+                      {isRapidScanFocused 
+                        ? (language === 'ar' ? 'القارئ جاهز' : 'PRÊT / EN ÉCOUTE') 
+                        : (language === 'ar' ? 'انقر للتفعيل' : 'CLIQUEZ POUR FILTRER / ACTIVER')
+                      }
+                    </span>
+                  </div>
+
+                  <div className="flex items-center gap-1.5 pl-2 border-l border-slate-200">
+                    <input
+                      type="checkbox"
+                      id="autoFocusScanFieldCartOnly"
+                      checked={autoFocusScanField}
+                      onChange={(e) => {
+                        setAutoFocusScanField(e.target.checked);
+                        safeLocalStorage.setItem('pos_autofocus_scan_field', String(e.target.checked));
+                      }}
+                      className="w-3.5 h-3.5 rounded text-emerald-600 focus:ring-emerald-555 border-slate-300 cursor-pointer"
+                    />
+                    <label htmlFor="autoFocusScanFieldCartOnly" className="text-[10px] font-black text-slate-650 cursor-pointer select-none">
+                      {language === 'ar' ? 'تركيز تلقائي دائم' : 'Autofocus auto'}
+                    </label>
+                  </div>
+                </div>
+              </div>
+
+              <form onSubmit={handleRapidBarcodeSubmit} className="flex gap-2">
+                <div className="relative flex-1">
+                  <span className="absolute left-3.5 top-3 text-sm select-none">📟</span>
+                  <input
+                    ref={isCartOnlyMode ? rapidScanInputRef : null}
+                    type="text"
+                    placeholder={
+                      language === 'ar'
+                        ? 'امسح باركود السلعة هنا لإضافتها فوراً (دون لمس الفأرة)...'
+                        : 'Scannez un code-barres ici... Le panier s\'actualisera instantanément !'
+                    }
+                    value={rapidScanValue}
+                    onChange={(e) => setRapidScanValue(e.target.value)}
+                    onFocus={() => {
+                      setIsRapidScanFocused(true);
+                      setActiveNumpadTarget('rapidScan');
+                      setKeyboardLayout('numeric');
+                    }}
+                    onBlur={() => setIsRapidScanFocused(false)}
+                    className="w-full bg-slate-50 border border-slate-200 hover:border-slate-300 focus:border-emerald-500 focus:bg-white rounded-lg py-2.5 pl-9 pr-4 text-xs font-black font-mono transition-colors text-slate-900 placeholder:text-slate-400 placeholder:font-sans focus:outline-hidden"
+                  />
+                  {rapidScanValue && (
+                    <button
+                      type="button"
+                      onClick={() => setRapidScanValue('')}
+                      className="absolute right-3 top-3 text-xs text-slate-400 hover:text-slate-650 font-bold"
+                    >
+                      ✕
+                    </button>
+                  )}
+                </div>
+                <button
+                  type="submit"
+                  className="bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white text-xs font-black px-4.5 py-2.5 rounded-lg transition-all cursor-pointer shadow-3xs"
+                >
+                  {language === 'ar' ? 'إضافة' : 'Ajouter'}
+                </button>
+              </form>
+            </div>
+          )}
+
           {/* Customer Selection Card with inline Loyalty info */}
           <div className="bg-white p-5 rounded-xl border border-slate-150 space-y-4 shadow-3xs relative overflow-hidden transition-all duration-200">
             <div className="absolute top-0 left-0 w-1 h-full bg-blue-600"></div>
