@@ -85,10 +85,8 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
   const [paymentMethod, setPaymentMethod] = useState<'especes' | 'ticket_cadeau'>('especes');
   const [ticketCadeauCode, setTicketCadeauCode] = useState<string>('');
   
-  // Stand-alone cart full view option ("Caisse d'article page wa7adha fiha ken panier")
-  const [isCartOnlyMode, setIsCartOnlyMode] = useState<boolean>(() => {
-    return safeLocalStorage.getItem('pos_cart_only_mode') === 'true';
-  });
+  // Stand-alone cart full view option is now always enabled (Panier Uniquement)
+  const [isCartOnlyMode] = useState<boolean>(true);
   
   // Custom rapid price item addition (Vente libre)
   const [customItemPrice, setCustomItemPrice] = useState<string>('');
@@ -1561,41 +1559,6 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
               {language === 'ar' ? 'تاريخ اليوم:' : 'Session de caisse active :'} <span className="font-mono font-bold text-slate-700">{new Date().toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</span>
             </p>
           </div>
-        </div>
-
-        {/* Brand Segmented Controls for Cart-Only View requested by user ("page wa7adha feha ken panier lbe9i lkoul yitne7") */}
-        <div className="bg-slate-100 p-1 rounded-xl flex items-center gap-1 border border-slate-200 select-none w-full sm:w-auto justify-center">
-          <button
-            type="button"
-            onClick={() => {
-              setIsCartOnlyMode(false);
-              safeLocalStorage.setItem('pos_cart_only_mode', 'false');
-            }}
-            className={`px-3 py-1.5 rounded-lg text-xs font-bold uppercase transition-all duration-200 cursor-pointer flex items-center gap-1.5 ${
-              !isCartOnlyMode 
-                ? 'bg-white text-indigo-800 shadow-3xs border border-indigo-100/50' 
-                : 'text-slate-600 hover:text-slate-900'
-            }`}
-          >
-            <span>🖥️</span>
-            <span>{language === 'ar' ? 'شاشة الكاشير الكاملة' : 'Caisse Complète'}</span>
-          </button>
-          
-          <button
-            type="button"
-            onClick={() => {
-              setIsCartOnlyMode(true);
-              safeLocalStorage.setItem('pos_cart_only_mode', 'true');
-            }}
-            className={`px-3 py-1.5 rounded-lg text-xs font-bold uppercase transition-all duration-200 cursor-pointer flex items-center gap-1.5 ${
-              isCartOnlyMode 
-                ? 'bg-indigo-600 text-white shadow-3xs font-black' 
-                : 'text-slate-600 hover:text-slate-905'
-            }`}
-          >
-            <span>🛒</span>
-            <span>{language === 'ar' ? 'سلة المبيعات فقط' : 'Panier Uniquement'}</span>
-          </button>
         </div>
 
         {/* Global Shortcuts Indicator Block & scan drawer toggle */}
