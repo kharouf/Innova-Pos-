@@ -8,7 +8,7 @@ import {
   LogIn, Globe, Shield, Sparkles, Store, Phone, MapPin, BadgeCheck, Settings, Database, Sparkle, HelpCircle, Save, RotateCcw
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import defaultPosLogo from '../assets/images/innova_pos_logo_1779782745745.png';
+const defaultPosLogo = "/innova_pos_logo.png";
 
 // Extractor helper to parse both Web app JSON config and pasted raw JavaScript code declarations
 const extractFirebaseConfig = (rawText: string) => {
@@ -91,10 +91,9 @@ export default function Auth({
   // Handle auto-login block if dispatched from App.tsx onAuthStateChanged
   React.useEffect(() => {
     if (lockError) {
-      const savedFirstGmail = localStorage.getItem('FIRST_CONNECTED_GMAIL');
       let errorMsg = language === 'ar'
-        ? `⚠️ تم رفض الدخول السحابي التلقائي: هذا المحل مغلق فقط لحساب Gmail الأول الذي تم تعيينه (${savedFirstGmail}). الحساب الحالي ليس له صلاحيات الوصول.`
-        : `⚠️ Accès Cloud automatique refusé : Cette superette est verrouillée uniquement pour le premier compte Gmail configuré (${savedFirstGmail}). Votre compte actif n'est pas autorisé.`;
+        ? `⚠️ تم رفض الدخول السحابي التلقائي.`
+        : `⚠️ Accès Cloud automatique refusé.`;
       setError({ message: errorMsg });
     }
   }, [lockError, language]);
@@ -109,25 +108,6 @@ export default function Auth({
     try {
       const result = await signInWithPopup(auth, provider);
       
-      // Perform strict local safety biological check immediately upon successful Google Login popup
-      const loggedUser = result.user;
-      if (loggedUser && loggedUser.email) {
-        const savedFirstGmail = localStorage.getItem('FIRST_CONNECTED_GMAIL');
-        const isDeveloper = loggedUser.email === 'kharoufwala24@gmail.com';
-        
-        if (savedFirstGmail && loggedUser.email !== savedFirstGmail && !isDeveloper) {
-          await auth.signOut();
-          let errorMsg = language === 'ar'
-            ? `⚠️ تم رفض الدخول: هذا المحل مغلق فقط لحساب Gmail الأول الذي تم ربطه (${savedFirstGmail}). الحساب الحالي (${loggedUser.email}) غير مصرح له.`
-            : `⚠️ Accès refusé : Cette superette est verrouillée uniquement pour le premier compte Gmail configuré (${savedFirstGmail}). Votre compte actuel (${loggedUser.email}) n'est pas autorisé.`;
-          setError({ message: errorMsg });
-          return;
-        } else if (!savedFirstGmail && loggedUser.email !== 'kharoufwala24@gmail.com') {
-          // Permanently lock this post/superette to this specific Google/Gmail address
-          localStorage.setItem('FIRST_CONNECTED_GMAIL', loggedUser.email);
-        }
-      }
-
       const credential = GoogleAuthProvider.credentialFromResult(result);
       if (credential?.accessToken) {
         setCachedAccessToken(credential.accessToken);
@@ -239,8 +219,8 @@ export default function Auth({
       {/* TOP BAR / LANGUAGE TOGGLE */}
       <header className="flex items-center justify-between w-full max-w-5xl mx-auto z-10 relative">
         <div className="flex items-center gap-3">
-          <div className="p-2 bg-gradient-to-tr from-blue-600/20 to-emerald-500/20 text-blue-400 rounded-lg border border-blue-500/15">
-            <Store className="w-5 h-5" />
+          <div className="p-1 bg-slate-950/80 border border-slate-850 rounded-lg overflow-hidden w-9 h-9 flex items-center justify-center shrink-0">
+            <img src={defaultPosLogo} className="w-full h-full object-contain" alt="Innova POS Pro" referrerPolicy="no-referrer" />
           </div>
           <div>
             <h1 className="text-xs font-black tracking-[0.1em] text-slate-300 font-mono uppercase">
@@ -344,6 +324,13 @@ export default function Auth({
                   </span>
                 )}
               </div>
+
+              {isLockedState && (
+                <div className="flex items-center justify-center gap-2 pt-2 border-t border-slate-850/60 mt-2">
+                  <img src={defaultPosLogo} className="h-[18px] w-auto object-contain" alt="Innova POS Pro Logo" referrerPolicy="no-referrer" />
+                  <span className="text-[9px] font-black tracking-widest text-slate-400 font-mono">POWERED BY INNOVA POS PRO</span>
+                </div>
+              )}
             </div>
           </div>
 
@@ -448,32 +435,14 @@ export default function Auth({
                   ? 'يربط النظام بالإنترنت لمزامنة المبيعات ومخازن السلع تلقائياً.'
                   : 'Associe votre compte pour charger et sécuriser vos données de vente.'}
               </p>
-              {(() => {
-                const savedFirstGmail = localStorage.getItem('FIRST_CONNECTED_GMAIL');
-                if (savedFirstGmail) {
-                  return (
-                    <div className="mt-2.5 p-2 bg-emerald-500/10 border border-emerald-500/20 rounded-lg text-[9.5px] font-mono text-emerald-300 flex items-center justify-center gap-1.5 select-text">
-                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse shrink-0"></span>
-                      <span>
-                        {language === 'ar'
-                          ? `🔐 مرتبط بالمالك الـمخوّل : ${savedFirstGmail}`
-                          : `🔐 Lié au propriétaire autorisé : ${savedFirstGmail}`}
-                      </span>
-                    </div>
-                  );
-                } else {
-                  return (
-                    <div className="mt-2.5 p-2 bg-amber-500/10 border border-amber-500/20 rounded-lg text-[9px] font-mono text-amber-300 flex items-center justify-center gap-1.5 select-none">
-                      <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse shrink-0"></span>
-                      <span>
-                        {language === 'ar'
-                          ? '👉 أول حساب Gmail يتم ربطه سيكون مالك النظام الدائم'
-                          : '👉 Le premier Gmail connecté sera lié définitivement'}
-                      </span>
-                    </div>
-                  );
-                }
-              })()}
+              <div className="mt-2.5 p-2.5 bg-emerald-500/10 border border-emerald-500/20 rounded-lg text-[9.5px] font-mono text-emerald-300 flex items-center justify-center gap-1.5 select-text">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse shrink-0"></span>
+                <span>
+                  {language === 'ar'
+                    ? '👥 دعم كامل للمستخدمين المتعددين: لكل مستخدم حسابه وبياناته السحابية المستقلة تماماً والآمنة.'
+                    : '👥 Support Multi-tenant actif : chaque utilisateur accède de façon sécurisée à ses propres bases de données.'}
+                </span>
+              </div>
             </div>
 
             {/* Elegant Divider */}

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
+const defaultPosLogo = "/innova_pos_logo.png";
 import { DatabaseState, SystemUpdate, Product, StoreSettings, AppUser } from './types';
 import { getDatabase, saveDatabase, DEFAULT_SETTINGS, getSuperetteDatabase, saveSuperetteDatabase } from './utils/db';
 import { LanguageProvider, useLanguage } from './utils/LanguageContext';
@@ -55,6 +56,7 @@ import {
   Unlock,
   Smartphone,
   Wifi,
+  WifiOff,
   Battery,
   Bell,
   Eye,
@@ -95,6 +97,34 @@ function AppContent() {
   const [isCreatingSuperette, setIsCreatingSuperette] = useState(false);
   
   // Worker-Only Restricted Mode state
+  const [isBrowserOnline, setIsBrowserOnline] = useState<boolean>(() => typeof navigator !== 'undefined' ? navigator.onLine : true);
+  const [isOfflineForced, setIsOfflineForced] = useState<boolean>(() => {
+    return safeLocalStorage.getItem('isOfflineForced') === 'true';
+  });
+
+  useEffect(() => {
+    const handleOnline = () => setIsBrowserOnline(true);
+    const handleOffline = () => setIsBrowserOnline(false);
+    if (typeof window !== 'undefined') {
+      window.addEventListener('online', handleOnline);
+      window.addEventListener('offline', handleOffline);
+    }
+    return () => {
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('online', handleOnline);
+        window.removeEventListener('offline', handleOffline);
+      }
+    };
+  }, []);
+
+  const handleToggleOfflineForced = () => {
+    const nextVal = !isOfflineForced;
+    setIsOfflineForced(nextVal);
+    safeLocalStorage.setItem('isOfflineForced', String(nextVal));
+  };
+
+  const isEffectiveOffline = isOfflineForced || !isBrowserOnline;
+
   const [isWorkerMode, setIsWorkerMode] = useState<boolean>(() => {
     return safeLocalStorage.getItem('isWorkerMode') === 'true';
   });
@@ -106,6 +136,14 @@ function AppContent() {
   const handleSaveCashierName = (name: string) => {
     setCashierName(name);
     safeLocalStorage.setItem('activeCashierName', name);
+  };
+
+  const resolveStoreLogo = (logo?: string) => {
+    if (!logo) return logo;
+    if (typeof logo === 'string' && (logo.includes('innova_pos_logo') || logo.includes('app-icon'))) {
+      return defaultPosLogo;
+    }
+    return logo;
   };
 
   const [activeTab, setActiveTab] = useState<string>(() => {
@@ -616,22 +654,6 @@ function AppContent() {
     };
 
     const unsubscribe = auth.onAuthStateChanged(async (currentUser) => {
-      if (currentUser) {
-        const savedFirstGmail = localStorage.getItem('FIRST_CONNECTED_GMAIL');
-        const isDeveloper = currentUser.email === 'kharoufwala24@gmail.com';
-        if (savedFirstGmail && currentUser.email && currentUser.email !== savedFirstGmail && !isDeveloper) {
-          console.warn(`[INNOVA POS PRO SYSTEM BIOLOGICAL CHECK] Blocked access for account ${currentUser.email}. Device locked to master account keys: ${savedFirstGmail}`);
-          setAuthLockError(currentUser.email);
-          setUser(null);
-          setLoadingAuth(false);
-          await auth.signOut();
-          return;
-        } else if (!savedFirstGmail && currentUser.email && currentUser.email !== 'kharoufwala24@gmail.com') {
-          // Permanently lock this post/cabinet to this specific Google/Gmail address
-          localStorage.setItem('FIRST_CONNECTED_GMAIL', currentUser.email);
-        }
-      }
-
       setUser(currentUser);
       setLoadingAuth(false);
       
@@ -899,8 +921,8 @@ function AppContent() {
       saveDatabase(updatedDb);
     }
 
-    // If cloud syncing is connected and active, sync diff in background
-    if (user && oldDb) {
+    // If cloud syncing is connected and active, sync diff in background (only if not offline or forced offline)
+    if (user && oldDb && !isEffectiveOffline) {
       try {
         await syncDatabaseDiff(user.uid, oldDb, updatedDb, activeSuperetteId);
       } catch (err) {
@@ -1009,7 +1031,6 @@ function AppContent() {
   const handleLogout = async () => {
     try {
       await auth.signOut();
-      localStorage.removeItem('FIRST_CONNECTED_GMAIL');
       setDemoMode(false);
       setDb(null);
       setLicense(null);
@@ -1139,17 +1160,17 @@ function AppContent() {
       <aside className="hidden lg:flex flex-col w-64 h-screen sticky top-0 bg-slate-900 text-white shrink-0 border-r border-slate-800 shadow-xl no-print overflow-y-auto custom-scrollbar">
         {/* Brand identity */}
         <div className="p-6 flex items-center gap-3 border-b border-slate-800">
-          {db.settings?.storeLogo ? (
-            (db.settings.storeLogo.startsWith('data:') || db.settings.storeLogo.startsWith('http') || db.settings.storeLogo.startsWith('/') || db.settings.storeLogo.includes('.') || db.settings.storeLogo.length > 15) ? (
+          {resolveStoreLogo(db.settings?.storeLogo) ? (
+            ((resolveStoreLogo(db.settings?.storeLogo) || '').startsWith('data:') || (resolveStoreLogo(db.settings?.storeLogo) || '').startsWith('http') || (resolveStoreLogo(db.settings?.storeLogo) || '').startsWith('/') || (resolveStoreLogo(db.settings?.storeLogo) || '').includes('.') || (resolveStoreLogo(db.settings?.storeLogo) || '').length > 15) ? (
               <img 
-                src={db.settings.storeLogo} 
+                src={resolveStoreLogo(db.settings?.storeLogo)} 
                 alt="Logo" 
                 className="w-8 h-8 rounded-md object-cover bg-white" 
                 referrerPolicy="no-referrer"
               />
             ) : (
               <div className="w-8 h-8 bg-blue-600/20 text-blue-300 rounded border border-blue-500/30 flex items-center justify-center text-sm font-bold shadow-xs shrink-0 select-none">
-                {db.settings.storeLogo}
+                {resolveStoreLogo(db.settings?.storeLogo)}
               </div>
             )
           ) : (
@@ -1295,20 +1316,62 @@ function AppContent() {
             </button>
           </div>
 
-          <div className="flex justify-between items-center px-1">
-            <span className="text-[9px] text-slate-400 font-bold truncate">
-              {user ? user.displayName || user.email : 'Guest / Mode Démo'}
-            </span>
-            <span className="text-[8px] text-slate-500 font-bold uppercase flex items-center gap-1 shrink-0">
-              {user ? (
+          {/* Real-time Connection Indicator & Manual Offline Mode control */}
+          <div className="p-2.5 bg-slate-900 border border-slate-800 rounded-lg space-y-2 text-start select-none">
+            <div className="flex items-center justify-between">
+              <span className="text-[8.5px] font-black text-slate-400 uppercase tracking-wider font-mono">
+                {language === 'ar' ? '🔌 الاتصال والمزامنة' : '🔌 Connexion & Sync'}
+              </span>
+              <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[8px] font-extrabold uppercase ${
+                isEffectiveOffline 
+                  ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20' 
+                  : 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
+              }`}>
+                <span className={`w-1 h-1 rounded-full ${isEffectiveOffline ? 'bg-amber-400 animate-pulse' : 'bg-emerald-400'}`} />
+                <span>{isEffectiveOffline ? (language === 'ar' ? 'دون اتصال' : 'OFFLINE') : (language === 'ar' ? 'متصل' : 'ONLINE')}</span>
+              </span>
+            </div>
+            
+            <p className="text-[8.5px] leading-relaxed text-slate-500">
+              {isOfflineForced ? (
+                <span className="text-amber-300 font-semibold block">
+                  {language === 'ar' ? '⚠️ مفعّل يدوياً لحماية سرعة الكاشير.' : '⚠️ Mode offline forcé activé.'}
+                </span>
+              ) : !isBrowserOnline ? (
+                <span className="text-amber-400 font-semibold block">
+                  {language === 'ar' ? '📡 انقطع الاتصال الفعلي بالويب.' : '📡 Réseau web éteint.'}
+                </span>
+              ) : (
+                <span>
+                  {language === 'ar' ? '✅ الحساب متزامن سحابياً بالكامل.' : '✅ Synchronisation cloud active.'}
+                </span>
+              )}
+              <span className="block text-[8px] text-slate-600 mt-0.5 font-sans">
+                {language === 'ar' ? 'أمان تام ومستمر للبيانات محلياً.' : 'Données sécurisées localement.'}
+              </span>
+            </p>
+
+            <button
+              onClick={handleToggleOfflineForced}
+              type="button"
+              className={`w-full flex items-center justify-center gap-1.5 py-1 px-2 rounded text-[9px] font-bold uppercase transition-all border cursor-pointer ${
+                isOfflineForced 
+                  ? 'bg-amber-500/20 text-amber-300 border-amber-500/30 hover:bg-amber-500/30' 
+                  : 'bg-slate-950 text-slate-400 border-slate-800 hover:text-white hover:bg-slate-850'
+              }`}
+            >
+              {isOfflineForced ? (
                 <>
-                  <CloudLightning className="w-2.5 h-2.5 text-emerald-400" />
-                  <span>Cloud Sync</span>
+                  <Wifi className="w-3 h-3 text-cyan-400" />
+                  <span>{language === 'ar' ? 'تفعيل الوضع السحابي' : 'Activer Mode Cloud'}</span>
                 </>
               ) : (
-                <span>Local Offline</span>
+                <>
+                  <WifiOff className="w-3 h-3 text-amber-500" />
+                  <span>{language === 'ar' ? 'تشغيل وضع أوفلاين' : 'Passer en Hors-ligne'}</span>
+                </>
               )}
-            </span>
+            </button>
           </div>
 
           {/* Worker Lock Toggle Button */}
@@ -1377,17 +1440,17 @@ function AppContent() {
       {/* MOBILE HEADER BAR & HAMBURGER (Visible on small screen) */}
       <div className="lg:hidden fixed top-0 left-0 right-0 h-16 bg-slate-900 text-white flex items-center justify-between px-5 border-b border-slate-800 z-40 no-print">
         <div className="flex items-center gap-2.5">
-          {db.settings?.storeLogo ? (
-            (db.settings.storeLogo.startsWith('data:') || db.settings.storeLogo.startsWith('http') || db.settings.storeLogo.startsWith('/') || db.settings.storeLogo.includes('.') || db.settings.storeLogo.length > 15) ? (
+          {resolveStoreLogo(db.settings?.storeLogo) ? (
+            ((resolveStoreLogo(db.settings?.storeLogo) || '').startsWith('data:') || (resolveStoreLogo(db.settings?.storeLogo) || '').startsWith('http') || (resolveStoreLogo(db.settings?.storeLogo) || '').startsWith('/') || (resolveStoreLogo(db.settings?.storeLogo) || '').includes('.') || (resolveStoreLogo(db.settings?.storeLogo) || '').length > 15) ? (
               <img 
-                src={db.settings.storeLogo} 
+                src={resolveStoreLogo(db.settings?.storeLogo)} 
                 alt="Logo" 
                 className="w-10 h-10 rounded-md object-cover bg-white" 
                 referrerPolicy="no-referrer"
               />
             ) : (
               <div className="w-10 h-10 bg-blue-600/20 text-blue-300 rounded border border-blue-500/30 flex items-center justify-center text-xl font-bold shadow-xs shrink-0 select-none">
-                {db.settings.storeLogo}
+                {resolveStoreLogo(db.settings?.storeLogo)}
               </div>
             )
           ) : (
@@ -1527,6 +1590,45 @@ function AppContent() {
                 <span className="truncate">{user ? user.email : 'Démo Hors-ligne'}</span>
               </div>
 
+              {/* Mobile Connection Toggler */}
+              <div className="p-2.5 bg-slate-900 border border-slate-800 rounded-lg space-y-2 text-start select-none">
+                <div className="flex items-center justify-between">
+                  <span className="text-[9px] font-black text-slate-400 uppercase tracking-wider font-mono">
+                    {language === 'ar' ? '🔌 الاتصال والشبكة' : '🔌 Statut Réseau'}
+                  </span>
+                  <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[8px] font-extrabold uppercase ${
+                    isEffectiveOffline 
+                      ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20' 
+                      : 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
+                  }`}>
+                    <span className={`w-1 h-1 rounded-full ${isEffectiveOffline ? 'bg-amber-400 animate-pulse' : 'bg-emerald-400'}`} />
+                    <span>{isEffectiveOffline ? (language === 'ar' ? 'أوفلاين' : 'OFFLINE') : (language === 'ar' ? 'متصل' : 'ONLINE')}</span>
+                  </span>
+                </div>
+                
+                <button
+                  onClick={handleToggleOfflineForced}
+                  type="button"
+                  className={`w-full flex items-center justify-center gap-1.5 py-1.5 px-2 rounded text-[10px] font-bold uppercase transition-all border cursor-pointer ${
+                    isOfflineForced 
+                      ? 'bg-amber-500/20 text-amber-300 border-amber-500/30 hover:bg-amber-500/30' 
+                      : 'bg-slate-950 text-slate-400 border-slate-800 hover:text-white hover:bg-slate-850'
+                  }`}
+                >
+                  {isOfflineForced ? (
+                    <>
+                      <Wifi className="w-3.5 h-3.5 text-cyan-400" />
+                      <span>{language === 'ar' ? 'توصيل بالإنترنت' : 'Activer Mode Cloud'}</span>
+                    </>
+                  ) : (
+                    <>
+                      <WifiOff className="w-3.5 h-3.5 text-amber-500" />
+                      <span>{language === 'ar' ? 'قطع الاتصال (أوفلاين)' : 'Mode Sans Internet'}</span>
+                    </>
+                  )}
+                </button>
+              </div>
+
               {/* Mobile Worker Lock Toggle */}
               <button
                 onClick={() => {
@@ -1650,12 +1752,12 @@ function AppContent() {
             
             {/* Active Store Accent Badge */}
             <div className="hidden sm:flex items-center gap-2 py-1 px-2.5 bg-slate-50 border border-slate-200 rounded text-xs text-slate-700 shrink-0 select-none">
-              {db.settings?.storeLogo && (
+              {resolveStoreLogo(db.settings?.storeLogo) && (
                 <div className="w-5 h-5 flex items-center justify-center rounded-sm overflow-hidden bg-white shrink-0 border border-slate-200">
-                  {(db.settings.storeLogo.startsWith('data:') || db.settings.storeLogo.startsWith('http') || db.settings.storeLogo.startsWith('/') || db.settings.storeLogo.includes('.') || db.settings.storeLogo.length > 15) ? (
-                    <img src={db.settings.storeLogo} alt="Logo" className="w-full h-full object-cover" />
+                  {((resolveStoreLogo(db.settings?.storeLogo) || '').startsWith('data:') || (resolveStoreLogo(db.settings?.storeLogo) || '').startsWith('http') || (resolveStoreLogo(db.settings?.storeLogo) || '').startsWith('/') || (resolveStoreLogo(db.settings?.storeLogo) || '').includes('.') || (resolveStoreLogo(db.settings?.storeLogo) || '').length > 15) ? (
+                    <img src={resolveStoreLogo(db.settings?.storeLogo)} alt="Logo" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
                   ) : (
-                    <span className="text-[11px]">{db.settings.storeLogo}</span>
+                    <span className="text-[11px]">{resolveStoreLogo(db.settings?.storeLogo)}</span>
                   )}
                 </div>
               )}
@@ -1666,15 +1768,24 @@ function AppContent() {
             </div>
             
             {/* Sync Status Badge */}
-            <div className="py-1 px-3 bg-indigo-50 text-indigo-700 border border-indigo-150 rounded text-[10px] flex items-center gap-1 shrink-0 font-bold uppercase tracking-normal">
-              {user ? (
+            <div className={`py-1 px-3 border rounded text-[10px] flex items-center gap-1.5 shrink-0 font-bold uppercase tracking-normal ${
+              isEffectiveOffline 
+                ? 'bg-amber-50 text-amber-800 border-amber-250 animate-pulse' 
+                : 'bg-indigo-50 text-indigo-700 border-indigo-150'
+            }`}>
+              {isEffectiveOffline ? (
                 <>
-                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
+                  <WifiOff className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                  <span>{language === 'ar' ? 'وضع العمل دون اتصال' : 'Hors-ligne (Actif)'}</span>
+                </>
+              ) : user ? (
+                <>
+                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
                   <span>Cloud {user.displayName ? user.displayName.split(' ')[0] : 'Connecté'}</span>
                 </>
               ) : (
                 <>
-                  <ShieldCheck className="w-3.5 h-3.5 text-blue-500" />
+                  <ShieldCheck className="w-3.5 h-3.5 text-blue-500 shrink-0" />
                   <span>Sûr hors-ligne (Démo)</span>
                 </>
               )}
@@ -1701,6 +1812,39 @@ function AppContent() {
           <main className="flex-1 p-4 md:p-8">
             <div className="max-w-7xl mx-auto pb-12 print-card">
               
+              {/* Responsive Offline Alert Strip */}
+              {isEffectiveOffline && (
+                <div 
+                  className="mb-5 bg-gradient-to-r from-amber-500/10 to-orange-500/10 border border-amber-500/20 text-amber-900 rounded-lg p-3.5 flex flex-col sm:flex-row items-center justify-between gap-3 shadow-3xs relative overflow-hidden animate-fade-in no-print" 
+                  dir={language === 'ar' ? 'rtl' : 'ltr'}
+                >
+                  <div className="absolute top-0 right-0 h-full w-32 bg-amber-500/5 rounded-full blur-xl pointer-events-none" />
+                  <div className="flex items-center gap-3 relative z-10 text-start">
+                    <div className="p-2 bg-amber-500/20 text-amber-700 rounded-md border border-amber-500/20 shrink-0">
+                      <WifiOff className="w-5 h-5 animate-pulse" />
+                    </div>
+                    <div>
+                      <span className="text-[10px] uppercase font-black tracking-widest text-amber-700 block leading-none mb-1">
+                        {language === 'ar' ? 'وضع العمل بدون اتصال بالإنترنت' : 'MODE DE FONCTIONNEMENT HORS-LIGNE'}
+                      </span>
+                      <p className="text-xs font-semibold leading-relaxed text-amber-800">
+                        {language === 'ar' 
+                          ? '⚠️ أنت تعمل بموثوقية وسرعة فائقة دون إنترنت. فواتيرك ومخازنك آمنة على الذاكرة المحلية لجهازك، وسوف تتزامن تلقائياً حين يتصل النظام بالإنترنت.' 
+                          : '⚠️ Vous travaillez avec succès et ultra-rapidement hors-ligne. Vos factures et stocks sont stockés localement sur votre terminal et se synchroniseront au retour de la connexion.'}
+                      </p>
+                    </div>
+                  </div>
+                  {isOfflineForced && (
+                    <button
+                      onClick={handleToggleOfflineForced}
+                      className="p-1 px-3 bg-amber-600 hover:bg-amber-700 text-white rounded text-[10px] font-bold uppercase transition-all select-none shrink-0 cursor-pointer shadow-xs active:scale-95"
+                    >
+                      {language === 'ar' ? 'توصيل السحابة والإنترنت' : 'Passer en Ligne'}
+                    </button>
+                  )}
+                </div>
+              )}
+
               {/* Remote SaaS Developer Announcement Banner */}
               {user && license?.remoteAnnouncement && (
                 <div className="mb-5 bg-gradient-to-r from-blue-900 to-indigo-950 border border-blue-500/20 text-white rounded p-4 flex items-center justify-between shadow-md relative overflow-hidden animate-fade-in no-print" dir={language === 'ar' ? 'rtl' : 'ltr'}>
