@@ -80,6 +80,10 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
   const [selectedPartnerId, setSelectedPartnerId] = useState<string>('');
   const [isReturnMode, setIsReturnMode] = useState<boolean>(false);
   
+  // Payment methods: Espèces vs Ticket Cadeau
+  const [paymentMethod, setPaymentMethod] = useState<'especes' | 'ticket_cadeau'>('especes');
+  const [ticketCadeauCode, setTicketCadeauCode] = useState<string>('');
+  
   // Stand-alone cart full view option ("Caisse d'article page wa7adha fiha ken panier")
   const [isCartOnlyMode, setIsCartOnlyMode] = useState<boolean>(() => {
     return safeLocalStorage.getItem('pos_cart_only_mode') === 'true';
@@ -1311,7 +1315,9 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
         amount: Math.abs(currentPay),
         notes: isReturnMode 
           ? `Remboursement espèces pour retour ${invoiceNumber}`
-          : `Espèces/Chèque comptant pour ${invoiceNumber}`,
+          : paymentMethod === 'ticket_cadeau'
+            ? `Ticket Cadeau${ticketCadeauCode.trim() ? ` (Code: ${ticketCadeauCode.trim()})` : ''} pour ${invoiceNumber}`
+            : `Espèces/Chèque comptant pour ${invoiceNumber}`,
         invoiceId: newInvoice.id
       });
     } else if (isReturnMode && currentPay === 0 && selectedPartnerId) {
@@ -1377,6 +1383,8 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
     setPrintedInvoice(newInvoice); // Mount invoice in print preview template trigger
     setCart([]); // Clear Cart
     setPaidAmount('');
+    setPaymentMethod('especes');
+    setTicketCadeauCode('');
     setGlobalDiscount(0);
     setRedeemedPoints(0); // Reset points state
     setIsReturnMode(false); // Reset Return Mode to normal on successful checkout
@@ -1409,6 +1417,10 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
   };
 
   const paymentMethodNotes = () => {
+    if (paymentMethod === 'ticket_cadeau') {
+      const codeStr = ticketCadeauCode.trim() ? ` (Code: ${ticketCadeauCode.trim()})` : '';
+      return `Payé par Ticket Cadeau${codeStr}`;
+    }
     if (remainingDebt === 0) return 'Payé comptant';
     if (currentPay === 0) return 'À crédit (30 jours)';
     return `Payé partiel: ${formatCurrency(currentPay)} - Reste à crédit: ${formatCurrency(remainingDebt)}`;
@@ -2579,12 +2591,15 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
                           <div className="flex flex-wrap items-center gap-x-2 gap-y-1 mt-1">
                             <div className="flex items-center gap-1">
                               <span className="text-[10px] text-slate-400">P.U:</span>
-                              <input
-                                type="number"
-                                value={item.customPrice}
-                                onChange={(e) => handleUpdatePrice(item.product.id, Number(e.target.value))}
-                                className="w-16 bg-slate-50 border border-slate-200 hover:border-slate-350 rounded px-1.5 py-0.5 text-[10px] font-black font-mono text-blue-600 focus:bg-white focus:outline-hidden"
-                              />
+                              <div className="relative flex items-center bg-amber-50/70 border border-amber-205 rounded px-1.5 py-0.5 group transition-all duration-150 hover:bg-amber-100/30 focus-within:bg-white focus-within:border-amber-400">
+                                <span className="text-[9.5px] text-amber-600 mr-1 select-none font-bold" title="Modifier le prix">✏️</span>
+                                <input
+                                  type="number"
+                                  value={item.customPrice}
+                                  onChange={(e) => handleUpdatePrice(item.product.id, Number(e.target.value))}
+                                  className="w-14 bg-transparent border-none p-0 text-[10.5px] font-extrabold font-mono text-slate-850 focus:outline-hidden focus:ring-0 text-center"
+                                />
+                              </div>
                             </div>
                             <span className="text-[10px] text-slate-400">x</span>
                             <motion.span
@@ -2780,40 +2795,132 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
                 </div>
               </div>
 
-              {/* Cash payment section */}
-              <div className="pt-3 border-t border-slate-100 space-y-3">
-                <div className="flex items-center justify-between select-none">
-                  <label className="text-[10px] font-black text-slate-600 uppercase">
-                    {language === 'ar' ? 'المبلغ المستلم / كاش' : 'Montant Reçu / Cash (DT)'}
-                  </label>
+              {/* Payment Mode Selection */}
+              <div className="pt-3 border-t border-slate-100 space-y-2 select-none">
+                <label className="text-[10px] font-black text-slate-500 uppercase tracking-wider block">
+                  {language === 'ar' ? 'طريقة الدفع / Règlement' : 'Mode de Règlement'}
+                </label>
+                <div className="grid grid-cols-2 gap-2">
                   <button
                     type="button"
-                    onClick={handleQuickPayFull}
-                    className="text-[10.5px] font-extrabold text-blue-600 hover:text-blue-800 flex items-center gap-1 transition-colors cursor-pointer"
+                    onClick={() => {
+                      setPaymentMethod('especes');
+                    }}
+                    className={`px-3 py-2 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer border ${
+                      paymentMethod === 'especes'
+                        ? 'bg-slate-900 border-slate-900 text-white shadow-xs'
+                        : 'bg-white border-slate-205 text-slate-700 hover:bg-slate-50'
+                    }`}
                   >
-                    <Coins className="w-3.5 h-3.5" />
-                    <span>Exact / الكل</span>
+                    <span>💵</span>
+                    <span>{language === 'ar' ? 'نقدي / شيك' : 'Espèces / Chèque'}</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPaymentMethod('ticket_cadeau');
+                      if (!paidAmount) {
+                        setPaidAmount(String(finalTotal));
+                      }
+                    }}
+                    className={`px-3 py-2 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer border ${
+                      paymentMethod === 'ticket_cadeau'
+                        ? 'bg-indigo-600 border-indigo-600 text-white shadow-xs'
+                        : 'bg-white border-slate-205 text-slate-700 hover:bg-slate-50'
+                    }`}
+                  >
+                    <span>🎁</span>
+                    <span>{language === 'ar' ? 'بطاقة هدية' : 'Ticket Cadeau'}</span>
                   </button>
                 </div>
-                
-                <div className="relative">
-                  <input
-                    ref={paidAmountInputRef}
-                    type="number"
-                    value={paidAmount}
-                    placeholder={language === 'ar' ? "أدخل المبلغ المستلم..." : "Saisir montant reçu..."}
-                    onChange={(e) => setPaidAmount(e.target.value)}
-                    onKeyDown={handlePaidAmountKeyDown}
-                    onFocus={() => {
-                      setActiveNumpadTarget('paidAmount');
-                      setKeyboardLayout('numeric');
-                    }}
-                    className="w-full bg-slate-50 border border-slate-205 rounded-lg py-2.5 pl-3 pr-10 text-xs font-black font-mono focus:bg-white focus:outline-none transition-colors text-slate-850"
-                  />
-                  <span className="font-black text-[10px] text-slate-400 absolute right-3.5 top-3">
-                    DT
-                  </span>
-                </div>
+              </div>
+
+              {/* Cash payment section */}
+              <div className="pt-3 border-t border-slate-100 space-y-3">
+                {paymentMethod === 'ticket_cadeau' ? (
+                  <div className="space-y-3">
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-black text-slate-600 uppercase">
+                        {language === 'ar' ? 'رمز تذكرة الهدية' : 'Code du Ticket Cadeau'}
+                      </label>
+                      <input
+                        type="text"
+                        value={ticketCadeauCode}
+                        placeholder={language === 'ar' ? 'مثال: TC-774433...' : 'Ex: TC-990088...'}
+                        onChange={(e) => setTicketCadeauCode(e.target.value)}
+                        className="w-full bg-indigo-50/50 border border-indigo-200 focus:border-indigo-500 focus:bg-white rounded-lg py-2.5 px-3 text-xs font-bold font-mono transition-colors text-indigo-950 focus:outline-hidden"
+                      />
+                    </div>
+                    
+                    <div className="space-y-1">
+                      <div className="flex items-center justify-between">
+                        <label className="text-[10px] font-black text-slate-600 uppercase">
+                          {language === 'ar' ? 'القيمة المستغلة من التذكرة (د.ت)' : 'Montant Déduit via Ticket Cadeau (DT)'}
+                        </label>
+                        <button
+                          type="button"
+                          onClick={() => setPaidAmount(String(finalTotal))}
+                          className="text-[10px] font-extrabold text-indigo-600 hover:text-indigo-800 transition-colors cursor-pointer"
+                        >
+                          {language === 'ar' ? 'كامل الصافي' : 'Montant Total'}
+                        </button>
+                      </div>
+                      <div className="relative">
+                        <input
+                          ref={paidAmountInputRef}
+                          type="number"
+                          value={paidAmount}
+                          placeholder="Saisir montant reçu..."
+                          onChange={(e) => setPaidAmount(e.target.value)}
+                          onKeyDown={handlePaidAmountKeyDown}
+                          onFocus={() => {
+                            setActiveNumpadTarget('paidAmount');
+                            setKeyboardLayout('numeric');
+                          }}
+                          className="w-full bg-slate-50 border border-slate-205 rounded-lg py-2.5 pl-3 pr-10 text-xs font-black font-mono focus:bg-white focus:outline-none transition-colors text-slate-850"
+                        />
+                        <span className="font-black text-[10px] text-indigo-500 absolute right-3.5 top-3">
+                          DT
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between select-none">
+                      <label className="text-[10px] font-black text-slate-600 uppercase">
+                        {language === 'ar' ? 'المبلغ المستلم / كاش' : 'Montant Reçu / Cash (DT)'}
+                      </label>
+                      <button
+                        type="button"
+                        onClick={handleQuickPayFull}
+                        className="text-[10.5px] font-extrabold text-blue-600 hover:text-blue-800 flex items-center gap-1 transition-colors cursor-pointer"
+                      >
+                        <Coins className="w-3.5 h-3.5" />
+                        <span>Exact / الكل</span>
+                      </button>
+                    </div>
+                    
+                    <div className="relative">
+                      <input
+                        ref={paidAmountInputRef}
+                        type="number"
+                        value={paidAmount}
+                        placeholder={language === 'ar' ? "أدخل المبلغ المستلم..." : "Saisir montant reçu..."}
+                        onChange={(e) => setPaidAmount(e.target.value)}
+                        onKeyDown={handlePaidAmountKeyDown}
+                        onFocus={() => {
+                          setActiveNumpadTarget('paidAmount');
+                          setKeyboardLayout('numeric');
+                        }}
+                        className="w-full bg-slate-50 border border-slate-205 rounded-lg py-2.5 pl-3 pr-10 text-xs font-black font-mono focus:bg-white focus:outline-none transition-colors text-slate-850"
+                      />
+                      <span className="font-black text-[10px] text-slate-400 absolute right-3.5 top-3">
+                        DT
+                      </span>
+                    </div>
+                  </div>
+                )}
 
                 {/* Return balance /debt status indicator widget */}
                 {remainingDebt > 0 ? (
