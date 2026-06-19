@@ -76,6 +76,7 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
     }
   };
   const [cart, setCart] = useState<{ product: Product; qty: number; customPrice: number }[]>([]);
+  const [selectedCartIdx, setSelectedCartIdx] = useState<number>(-1);
   const [addedParticles, setAddedParticles] = useState<{ id: string; productId: string; text: string }[]>([]);
   const [selectedPartnerId, setSelectedPartnerId] = useState<string>('');
   const [isReturnMode, setIsReturnMode] = useState<boolean>(false);
@@ -294,7 +295,7 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
         showToast(language === 'ar' ? 'السلة فارغة' : 'Le panier est vide', 'error');
         return;
       }
-      const lastItemIndex = cart.length - 1;
+      const lastItemIndex = selectedCartIdx >= 0 && selectedCartIdx < cart.length ? selectedCartIdx : cart.length - 1;
       const lastItem = cart[lastItemIndex];
       let currentValStr = String(Math.abs(lastItem.qty));
 
@@ -2295,11 +2296,608 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
         )}
 
         {/* Right column: Cart, customer, settings & actions (5 cols in desktop, or 12 cols when cart only mode is active) */}
-        <div className={`lg:col-span-12 ${isCartOnlyMode ? 'xl:col-span-12 max-w-4xl mx-auto w-full' : 'xl:col-span-5'} bg-slate-50 p-6 border border-slate-200 rounded-2xl space-y-5 no-print shadow-xs transition-all duration-300`}>
+        {isCartOnlyMode ? (
+          <div className="xl:col-span-12 max-w-[1550px] mx-auto w-full grid grid-cols-1 xl:grid-cols-12 gap-6 items-stretch select-none no-print">
+            
+            {/* LEFT COLUMN: Cart listing + LCD Total + Numpad & Quick Payment Tabs */}
+            <div className="xl:col-span-5 bg-slate-900 border border-slate-800 p-4.5 rounded-3xl flex flex-col justify-between gap-4 h-[800px] xl:h-[860px] shadow-2xl relative overflow-hidden text-white">
+              
+              {/* Header LCD Panel display */}
+              <div className="bg-slate-950 border border-slate-850 p-4 rounded-2xl flex flex-col justify-between relative overflow-hidden font-sans shadow-inner shrink-0 text-left">
+                <div className="absolute top-0 right-0 p-2 opacity-15 text-[8px] font-mono tracking-widest text-indigo-400">📟 INTEGRATED TERMINAL</div>
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-black uppercase text-cyan-400 tracking-wider">
+                    {language === 'ar' ? 'نوع الوثيقة:' : 'DOCUMENT :'} <span className="text-white font-mono">{cashRegisterType === 'facture' ? 'FACTURE (19% VAT)' : 'BON DE LIVRAISON'}</span>
+                  </span>
+                  <div className="text-[10px] font-mono font-bold text-slate-400">
+                    ⏱️ {new Date().toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                  </div>
+                </div>
+                
+                <div className="flex items-baseline justify-between mt-1">
+                  <div className="text-left">
+                    <span className="text-[9.5px] font-black text-slate-500 uppercase tracking-wide block">
+                      {language === 'ar' ? 'العميل الحالي' : 'CLIENT ACTUEL'}
+                    </span>
+                    <span className="text-xs font-bold text-slate-250 truncate block max-w-[150px]">
+                      👤 {activePartner ? activePartner.name : (language === 'ar' ? 'زبون عام (Comptoir)' : 'Client Comptoir')}
+                    </span>
+                  </div>
+                  
+                  <div className="text-right">
+                    <span className="text-[10px] font-black uppercase text-rose-400 block tracking-wide">
+                      {language === 'ar' ? 'المجموع المستحق' : 'TOTAL TND'}
+                    </span>
+                    <span className="text-2xl sm:text-3xl font-mono font-black text-rose-500 tracking-tight animate-pulse drop-shadow-[0_0_10px_rgba(239,68,68,0.3)]">
+                      {formatCurrency(finalTotal)}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2 mt-2 pt-2 border-t border-slate-850/50 text-[9.5px] text-slate-400 font-mono">
+                  <div>
+                    {language === 'ar' ? 'المدفوع كاش:' : 'REÇU CASH :'} <span className="font-bold text-emerald-400">{formatCurrency(parseFloat(paidAmount) || 0)}</span>
+                  </div>
+                  <div className="text-right">
+                    {language === 'ar' ? 'المتبقي لـه:' : 'RESTE RENDU :'} <span className="font-bold text-cyan-400">
+                      {formatCurrency(Math.max(0, (parseFloat(paidAmount) || 0) - finalTotal))}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Cart Listing grid */}
+              <div className="bg-slate-950/60 border border-slate-850 rounded-2xl flex-1 flex flex-col justify-between overflow-hidden">
+                <div className="overflow-y-auto flex-1 custom-scrollbar">
+                  <table className="w-full text-left text-[11px] font-sans border-collapse">
+                    <thead>
+                      <tr className="bg-slate-900 text-slate-400 font-bold border-b border-slate-850 uppercase text-[9px] sticky top-0 z-10">
+                        <th className="px-2.5 py-2 text-center w-8">#</th>
+                        <th className="px-2 py-2">{language === 'ar' ? 'البيان' : 'Désignation'}</th>
+                        <th className="px-2 py-2 text-center w-12">{language === 'ar' ? 'سعر د' : 'P.U'}</th>
+                        <th className="px-2 py-2 text-center w-10">{language === 'ar' ? 'كمية' : 'Qté'}</th>
+                        <th className="px-2.5 py-2 text-right w-16">{language === 'ar' ? 'مجموع د' : 'Total'}</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {cart.length === 0 ? (
+                        <tr>
+                          <td colSpan={5} className="text-center py-20 text-slate-500 font-bold">
+                            🛒 {language === 'ar' ? 'سلة المبيعات فارغة' : 'Panier tactile vide. Ajoutez des articles.'}
+                          </td>
+                        </tr>
+                      ) : (
+                        cart.map((item, idx) => {
+                          const isSelected = (selectedCartIdx >= 0 && selectedCartIdx < cart.length ? selectedCartIdx : (cart.length > 0 ? cart.length - 1 : -1)) === idx;
+                          const itemTotal = item.qty * item.customPrice;
+                          return (
+                            <tr 
+                              key={idx}
+                              onClick={() => setSelectedCartIdx(idx)}
+                              className={`border-b border-slate-900/40 cursor-pointer select-none transition-all duration-150 ${
+                                isSelected 
+                                  ? 'bg-indigo-950/60 text-cyan-300 border-l-4 border-cyan-500 font-bold' 
+                                  : 'hover:bg-slate-900/30 text-slate-300'
+                              }`}
+                            >
+                              <td className="px-2.5 py-2 text-center text-[9px] font-mono font-bold text-slate-500">
+                                {idx + 1}
+                              </td>
+                              <td className="px-2 py-2 truncate max-w-[130px]">
+                                {language === 'ar' ? (item.product.nameAr || item.product.name) : (item.product.nameFr || item.product.name)}
+                              </td>
+                              <td className="px-2 py-2 text-center font-mono font-bold text-slate-400">
+                                {formatCurrency(item.customPrice)}
+                              </td>
+                              <td className="px-2 py-2 text-center font-mono">
+                                <span className={`px-1.5 py-0.5 rounded-sm text-[10px] font-black ${item.qty < 0 ? 'bg-rose-950 text-rose-400' : 'bg-slate-800 text-white'}`}>
+                                  {item.qty}
+                                </span>
+                              </td>
+                              <td className="px-2.5 py-2 text-right font-mono font-bold text-emerald-400">
+                                {formatCurrency(itemTotal)}
+                              </td>
+                            </tr>
+                          );
+                        })
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              {/* Huge standard + and - touch buttons */}
+              <div className="grid grid-cols-2 gap-3 shrink-0 pt-1">
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (cart.length > 0) {
+                      const effIdx = selectedCartIdx >= 0 && selectedCartIdx < cart.length ? selectedCartIdx : cart.length - 1;
+                      const item = cart[effIdx];
+                      handleUpdateQty(item.product.id, item.qty + 1);
+                      playScanBeep();
+                    } else {
+                      showToast(language === 'ar' ? 'لا توجد سلع بالسلة' : 'Le panier est vide', 'error');
+                    }
+                  }}
+                  className="bg-emerald-600 hover:bg-emerald-750 text-white py-3 rounded-2xl font-black text-sm flex items-center justify-center gap-2 transition-all active:scale-95 shadow-md border-b-4 border-emerald-850 cursor-pointer text-center"
+                >
+                  <span>➕</span>
+                  <span>{language === 'ar' ? 'زيادة الكمية' : 'Quantité +'}</span>
+                </button>
+                
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (cart.length > 0) {
+                      const effIdx = selectedCartIdx >= 0 && selectedCartIdx < cart.length ? selectedCartIdx : cart.length - 1;
+                      const item = cart[effIdx];
+                      handleUpdateQty(item.product.id, item.qty - 1);
+                      playScanBeep();
+                    } else {
+                      showToast(language === 'ar' ? 'لا توجد سلع بالسلة' : 'Le panier est vide', 'error');
+                    }
+                  }}
+                  className="bg-rose-600 hover:bg-rose-750 text-white py-3 rounded-2xl font-black text-sm flex items-center justify-center gap-2 transition-all active:scale-95 shadow-md border-b-4 border-rose-850 cursor-pointer text-center"
+                >
+                  <span>➖</span>
+                  <span>{language === 'ar' ? 'إنقاص الكمية' : 'Quantité -'}</span>
+                </button>
+              </div>
+
+              {/* Fast Touch payment options and Numpad block */}
+              <div className="grid grid-cols-12 gap-3 shrink-0">
+                
+                {/* Payment selection categories (Indigo column) */}
+                <div className="col-span-5 flex flex-col gap-2">
+                  <div className="bg-slate-950 rounded-xl p-1.5 border border-slate-850 text-center flex flex-col justify-center min-h-[44px]">
+                    <span className="text-[8px] font-extrabold text-indigo-400 uppercase tracking-wider block leading-3">
+                      {activeNumpadTarget === 'rapidScan' && (language === 'ar' ? 'الباركود' : 'TARGET: BARCODE')}
+                      {activeNumpadTarget === 'paidAmount' && (language === 'ar' ? 'كاش مستحق' : 'TARGET: CASH')}
+                      {activeNumpadTarget === 'discount' && (language === 'ar' ? 'تخفيض' : 'TARGET: DISCOUNT')}
+                      {activeNumpadTarget === 'lastItemQty' && (language === 'ar' ? 'الكمية' : 'TARGET: QUANTITY')}
+                      {activeNumpadTarget === 'customPrice' && (language === 'ar' ? 'سعر حر' : 'TARGET: FREE PRICE')}
+                    </span>
+                    <span className="text-xs font-mono font-black text-yellow-405 truncate block">
+                      {activeNumpadTarget === 'rapidScan' && (rapidScanValue || '—')}
+                      {activeNumpadTarget === 'paidAmount' && (paidAmount ? `${paidAmount} DT` : '0 DT')}
+                      {activeNumpadTarget === 'discount' && (globalDiscount ? `${globalDiscount} DT` : '0 DT')}
+                      {activeNumpadTarget === 'lastItemQty' && (cart.length > 0 ? `${cart[selectedCartIdx >= 0 && selectedCartIdx < cart.length ? selectedCartIdx : cart.length - 1]?.qty} u` : '—')}
+                      {activeNumpadTarget === 'customPrice' && (customItemPrice ? `${customItemPrice} DT` : '—')}
+                    </span>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setActiveNumpadTarget('paidAmount');
+                      setPaymentMethod('especes');
+                      showToast(language === 'ar' ? 'نمط تعديل الكاش مفعل' : 'Activer saisie règlement espèces', 'info');
+                    }}
+                    className={`py-3 rounded-xl font-bold text-[10px] uppercase flex items-center justify-center gap-1.5 cursor-pointer transition-all active:scale-95 border-b-2 ${
+                      activeNumpadTarget === 'paidAmount'
+                        ? 'bg-sky-600 border-sky-850 text-white shadow-md font-black scale-102 font-bold'
+                        : 'bg-slate-800 hover:bg-slate-750 text-slate-300 border-slate-900'
+                    }`}
+                  >
+                    <span>💵</span>
+                    <span>{language === 'ar' ? 'كاش مستلم' : 'Saisir Reçu'}</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setActiveNumpadTarget('lastItemQty');
+                      showToast(language === 'ar' ? 'حاسبة الأرقام للتعديل المباشر لكمية السلعة' : 'Activer numpad pour modifier la quantité', 'info');
+                    }}
+                    className={`py-3 rounded-xl font-bold text-[10px] uppercase flex items-center justify-center gap-1.5 cursor-pointer transition-all active:scale-95 border-b-2 ${
+                      activeNumpadTarget === 'lastItemQty'
+                        ? 'bg-purple-600 border-purple-850 text-white shadow-md font-black scale-102'
+                        : 'bg-slate-800 hover:bg-slate-750 text-slate-300 border-slate-900'
+                    }`}
+                  >
+                    <span>📦</span>
+                    <span>{language === 'ar' ? 'الكمية' : 'Saisir Qté'}</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (cart.length > 0) {
+                        handleNumpadKeyPress('C');
+                      }
+                    }}
+                    className="bg-slate-705 hover:bg-slate-650 text-white py-2.5 rounded-xl font-bold text-[9.5px] uppercase flex items-center justify-center gap-1.5 cursor-pointer transition-all active:scale-95 border-b-2 border-slate-800"
+                  >
+                    <span>⌫</span>
+                    <span>{language === 'ar' ? 'تصفير الحقل' : 'Reset Target'}</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (cart.length === 0) {
+                        showToast(language === 'ar' ? 'السلة فارغة!' : 'Ajoutez d\'abord des articles pour encaisser immédiat !', 'error');
+                        return;
+                      }
+                      setPaidAmount(String(finalTotal));
+                      setPaymentMethod('especes');
+                      setTimeout(() => {
+                        handleCheckoutClick();
+                      }, 120);
+                    }}
+                    className="bg-emerald-600 hover:bg-emerald-700 text-white py-4.5 rounded-xl font-black text-[10px] uppercase flex flex-col items-center justify-center gap-0.5 cursor-pointer transition-all active:scale-95 border-b-4 border-emerald-855 shadow-md"
+                    title="Valider immédiatement l'encaissement exact TTC"
+                  >
+                    <span>⚡ Encaisser</span>
+                    <span className="text-[8.5px] font-mono font-bold text-slate-100 italic">{language === 'ar' ? 'تأكيد ودفع' : 'Direct Cash'}</span>
+                  </button>
+                </div>
+
+                {/* Numpad touch grid */}
+                <div className="col-span-7 bg-slate-950 border border-slate-850 p-2 rounded-xl grid grid-cols-4 gap-1 select-none text-center">
+                  {[
+                    { label: '7', key: '7', style: 'bg-slate-800 text-white font-bold active:bg-slate-700' },
+                    { label: '8', key: '8', style: 'bg-slate-800 text-white font-bold active:bg-slate-700' },
+                    { label: '9', key: '9', style: 'bg-slate-800 text-white font-bold active:bg-slate-700' },
+                    { label: 'C', key: 'C', style: 'bg-rose-605 text-white font-black active:bg-rose-700 border-b-2 border-rose-800 text-[11px]' },
+                    
+                    { label: '4', key: '4', style: 'bg-slate-800 text-white font-bold active:bg-slate-700' },
+                    { label: '5', key: '5', style: 'bg-slate-800 text-white font-bold active:bg-slate-700' },
+                    { label: '6', key: '6', style: 'bg-slate-800 text-white font-bold active:bg-slate-700' },
+                    { label: '⌫', key: '⌫', style: 'bg-slate-700 text-slate-205 font-bold text-xs active:bg-slate-605' },
+                    
+                    { label: '1', key: '1', style: 'bg-slate-805 text-white font-bold active:bg-slate-700' },
+                    { label: '2', key: '2', style: 'bg-slate-805 text-white font-bold active:bg-slate-700' },
+                    { label: '3', key: '3', style: 'bg-slate-805 text-white font-bold active:bg-slate-700' },
+                    { label: '+10', key: 'p10', style: 'bg-indigo-950 text-indigo-300 font-bold text-[9px] active:bg-indigo-900 border border-indigo-900/50' },
+                    
+                    { label: '0', key: '0', style: 'bg-slate-800 text-white font-bold active:bg-slate-700 col-span-2' },
+                    { label: '.', key: '.', style: 'bg-slate-800 text-white font-bold active:bg-slate-700' },
+                    { label: '+50', key: 'p50', style: 'bg-indigo-950 text-indigo-300 font-bold text-[9px] active:bg-indigo-900 border border-indigo-900/50' },
+                  ].map((btn, index) => {
+                    return (
+                      <button
+                        key={index}
+                        type="button"
+                        onClick={() => {
+                          const effIdx = selectedCartIdx >= 0 && selectedCartIdx < cart.length ? selectedCartIdx : cart.length - 1;
+                          if (btn.key === 'p10') {
+                            if (activeNumpadTarget === 'paidAmount') {
+                              setPaidAmount(prev => String((Number(prev) || 0) + 10));
+                            } else if (activeNumpadTarget === 'lastItemQty' && cart.length > 0) {
+                              const item = cart[effIdx];
+                              handleUpdateQty(item.product.id, item.qty + 10);
+                            }
+                            playScanBeep();
+                          } else if (btn.key === 'p50') {
+                            if (activeNumpadTarget === 'paidAmount') {
+                              setPaidAmount(prev => String((Number(prev) || 0) + 50));
+                            } else if (activeNumpadTarget === 'lastItemQty' && cart.length > 0) {
+                              const item = cart[effIdx];
+                              handleUpdateQty(item.product.id, item.qty + 50);
+                            }
+                            playScanBeep();
+                          } else {
+                            handleNumpadKeyPress(btn.key);
+                          }
+                        }}
+                        className={`${btn.style} py-3.5 rounded-lg transition-all active:scale-95 cursor-pointer shadow-2xs ${
+                          btn.key === '0' ? 'col-span-2' : ''
+                        }`}
+                      >
+                        {btn.label}
+                      </button>
+                    );
+                  })}
+                </div>
+
+              </div>
+
+            </div>
+
+            {/* RIGHT COLUMN: Search + Filters + Product Touch Matrix + Action Grid Buttons */}
+            <div className="xl:col-span-7 bg-white border border-slate-200 p-4.5 rounded-3xl flex flex-col justify-between gap-4 h-[800px] xl:h-[860px] shadow-lg">
+              
+              {/* Search, Rapid scanner and quick add user input */}
+              <div className="bg-slate-50 p-3 rounded-2xl flex flex-col sm:flex-row items-center gap-3 shrink-0 border border-slate-200 text-left">
+                
+                <div className="relative w-full sm:w-1/2">
+                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400 text-xs">
+                    🔍
+                  </div>
+                  <input
+                    type="text"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    placeholder={language === 'ar' ? 'البحث بالاسم / الباركود...' : 'Recherche de produit / Code-barres...'}
+                    className="block w-full bg-white border border-slate-250 rounded-xl pl-9 pr-3 py-2 text-xs font-bold text-slate-800 placeholder-slate-400 focus:outline-hidden focus:ring-2 focus:ring-indigo-500 font-sans"
+                  />
+                </div>
+
+                {/* Client Selection list with quick add + */}
+                <div className="flex items-center gap-2 w-full sm:w-1/2">
+                  <div className="relative flex-1">
+                    <select
+                      value={selectedPartnerId}
+                      onChange={(e) => setSelectedPartnerId(e.target.value)}
+                      className="block w-full bg-white border border-slate-250 rounded-xl py-2 px-3 text-xs font-bold text-indigo-905 focus:outline-hidden focus:ring-2 focus:ring-indigo-500"
+                    >
+                      <option value="">👤 {language === 'ar' ? 'سند عميل عام (Comptoir)' : 'Client Comptoir (Anonyme)'}</option>
+                      {clients.map(p => (
+                        <option key={p.id} value={p.id}>
+                          👤 {p.name} {p.discountRate ? `(-${p.discountRate}%)` : ''} - {p.phone || 'Pas de numéro'}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setShowNewClientModal(true)}
+                    className="p-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-705 border border-indigo-200 rounded-xl text-xs font-black transition-colors shrink-0 cursor-pointer active:scale-95"
+                    title="Nouveau Client"
+                  >
+                    ➕
+                  </button>
+                </div>
+
+              </div>
+
+              {/* Category horizontal pills selection */}
+              <div className="flex items-center gap-1.5 overflow-x-auto pb-1 shrink-0 scrollbar-thin scrollbar-indigo">
+                {categories.map((cat) => {
+                  const isSelected = selectedCategory === cat;
+                  return (
+                    <button
+                      key={cat}
+                      type="button"
+                      onClick={() => setSelectedCategory(cat)}
+                      className={`px-3.5 py-2 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all duration-155 shrink-0 cursor-pointer active:scale-95 border ${
+                        isSelected 
+                          ? 'bg-indigo-600 text-white border-indigo-755 shadow-md scale-102 font-black' 
+                          : 'bg-slate-100 text-slate-700 border-slate-205 hover:bg-slate-200'
+                      }`}
+                    >
+                      {cat === 'Tous' ? (language === 'ar' ? '🔥 الكل' : '🔥 TOUS') : cat}
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Product matrices touch catalogue */}
+              <div className="flex-1 overflow-y-auto custom-scrollbar pr-1">
+                {filteredProducts.length === 0 ? (
+                  <div className="h-full flex flex-col items-center justify-center py-10 bg-slate-50 border border-dashed border-slate-200 rounded-2xl text-slate-400 font-bold select-none text-[12px] gap-2">
+                    <span>🔎 Aucun produit ne correspond à vos filtres.</span>
+                    <button 
+                      onClick={() => { setSearchQuery(''); setSelectedCategory('Tous'); }}
+                      className="px-3 py-1 bg-white border border-slate-200 rounded-lg text-[10px] text-slate-600 hover:border-slate-350 active:scale-95 font-bold cursor-pointer"
+                    >
+                      Réinitialiser
+                    </button>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-3 gap-3.5 select-none text-left">
+                    {filteredProducts.map((prod) => {
+                      const isOutOfStock = prod.stock <= 0;
+                      return (
+                        <button
+                          key={prod.id}
+                          type="button"
+                          disabled={isOutOfStock}
+                          onClick={() => {
+                            handleAddToCart(prod);
+                            // Set selected index to newly added element
+                            setTimeout(() => {
+                              setSelectedCartIdx(cart.length);
+                            }, 50);
+                          }}
+                          className={`group relative bg-white border rounded-2xl p-3 text-left transition-all duration-205 flex flex-col justify-between hover:scale-[1.01] cursor-pointer min-h-[115px] max-h-[145px] hover:shadow-xs ${
+                            isOutOfStock 
+                              ? 'opacity-40 bg-slate-100 border-slate-200 cursor-not-allowed' 
+                              : 'border-slate-200/80 hover:border-indigo-400 active:bg-indigo-50/20 shadow-2xs'
+                          }`}
+                        >
+                          {/* Beautiful left accent border */}
+                          <div className={`absolute top-0 left-0 w-1.5 h-full rounded-l-2xl ${
+                            prod.stock <= prod.minAlertQty ? 'bg-amber-400' : 'bg-slate-300'
+                          }`}></div>
+
+                          <div className="pl-1.5 space-y-0.5 w-full text-left">
+                            <span className="text-[8.5px] uppercase font-bold text-slate-400 tracking-wider block">
+                              {prod.category}
+                            </span>
+                            <h4 className="text-xs font-black text-slate-800 line-clamp-2 leading-4">
+                              {language === 'ar' ? (prod.nameAr || prod.name) : (prod.nameFr || prod.name)}
+                            </h4>
+                          </div>
+
+                          <div className="pl-1.5 flex items-center justify-between mt-2.5 w-full">
+                            {prod.image ? (
+                              <img 
+                                src={prod.image} 
+                                alt={prod.name} 
+                                referrerPolicy="no-referrer"
+                                className="w-8.5 h-8.5 rounded-lg object-cover bg-slate-50 border border-slate-100"
+                              />
+                            ) : (
+                              <div className="w-8.5 h-8.5 rounded-lg bg-indigo-50 border border-indigo-100 text-indigo-435 flex items-center justify-center text-[10px] uppercase font-black font-mono">
+                                📦
+                              </div>
+                            )}
+
+                            <div className="text-right flex flex-col items-end">
+                              <span className="text-sm font-mono font-black text-emerald-600">
+                                {formatCurrency(getActiveProductPrice(prod))}
+                              </span>
+                              <span className={`text-[8px] font-black px-1 rounded-sm ${
+                                prod.stock <= prod.minAlertQty 
+                                  ? 'bg-amber-100 text-amber-800' 
+                                  : 'bg-slate-100 text-slate-500'
+                              }`}>
+                                Stk: {prod.stock}
+                              </span>
+                            </div>
+                          </div>
+
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              {/* Bottom touch operational action grid keys */}
+              <div className="bg-slate-105 border border-slate-200 p-2 rounded-2xl shrink-0 select-none grid grid-cols-2 sm:grid-cols-4 gap-2 text-center text-white">
+                
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (cart.length > 0) {
+                      setCart([]);
+                      setSelectedCartIdx(-1);
+                      showToast(language === 'ar' ? 'تم إفراغ سلة المعاملة بالكامل' : 'Panier vidé avec succès', 'info');
+                    }
+                  }}
+                  className="bg-rose-600 hover:bg-rose-700 text-white font-black text-[10px] py-3 rounded-lg uppercase transition-all duration-150 cursor-pointer active:scale-95 flex items-center justify-center gap-1.5 shadow-2xs border-b-2 border-rose-800"
+                >
+                  <span>🗑️</span>
+                  <span>{language === 'ar' ? 'مسح السلة' : 'Vider Panier'}</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (cart.length > 0) {
+                      handleCheckoutClick();
+                    } else {
+                      showToast(language === 'ar' ? 'السلة فارغة' : 'Le panier est vide', 'error');
+                    }
+                  }}
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white font-black text-[10px] py-3 rounded-lg uppercase transition-all duration-150 cursor-pointer active:scale-95 flex items-center justify-center gap-1.5 shadow-2xs border-b-2 border-emerald-800"
+                >
+                  <span>✔️</span>
+                  <span>{language === 'ar' ? 'تأكيد ودفع' : 'Valider Ticket'}</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    const targetType = cashRegisterType === 'facture' ? 'bl' : 'facture';
+                    setCashRegisterType(targetType);
+                    setTaxRate(targetType === 'facture' ? 19 : 0);
+                    showToast(
+                      targetType === 'facture' 
+                        ? (language === 'ar' ? 'المستند: فاتورة بيع (19% VAT)' : 'Document: Facture Officielle (19%)')
+                        : (language === 'ar' ? 'المستند: وصل تسليم بضاعة (BL)' : 'Document: Bon de Livraison'),
+                      'info'
+                    );
+                  }}
+                  className="bg-blue-600 hover:bg-blue-750 text-white font-black text-[10px] py-3 rounded-lg uppercase transition-all duration-150 cursor-pointer active:scale-95 flex items-center justify-center gap-1.5 shadow-2xs border-b-2 border-blue-800"
+                >
+                  <span>📄</span>
+                  <span>{cashRegisterType === 'facture' ? '🧾 FACTURE' : '🚚 B.L'}</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActiveNumpadTarget('customPrice');
+                    showToast(language === 'ar' ? 'أدخل سعر السعر الحر في لوحة الأرقام' : 'Entrez le prix au clavier puis ajoutez libre', 'info');
+                  }}
+                  className={`font-black text-[10px] py-3 rounded-lg uppercase transition-all duration-150 cursor-pointer active:scale-95 flex items-center justify-center gap-1.5 shadow-2xs border-b-2 ${
+                    activeNumpadTarget === 'customPrice'
+                      ? 'bg-amber-600 hover:bg-amber-700 text-white border-amber-800'
+                      : 'bg-amber-500 hover:bg-amber-600 text-white border-amber-700'
+                  }`}
+                >
+                  <span>*️⃣</span>
+                  <span>{language === 'ar' ? 'سعر حر' : 'Saisie Prix'}</span>
+                </button>
+
+                <button
+                  type="button"
+                  disabled={!customItemPrice || Number(customItemPrice) <= 0}
+                  onClick={() => {
+                    handleAddCustomItem();
+                  }}
+                  className={`font-black text-[10px] py-3 rounded-lg uppercase transition-all duration-150 cursor-pointer active:scale-95 flex items-center justify-center gap-1.5 shadow-2xs border-b-2 ${
+                    customItemPrice && Number(customItemPrice) > 0
+                      ? 'bg-indigo-650 hover:bg-indigo-750 text-white border-indigo-800 animate-bounce'
+                      : 'bg-slate-400 text-slate-205 border-slate-500 cursor-not-allowed opacity-60'
+                  }`}
+                >
+                  <span>🚀</span>
+                  <span>{language === 'ar' ? 'إضافة حر' : 'Ajouter Libre'}</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActiveNumpadTarget('discount');
+                    showToast(language === 'ar' ? 'أدخل تخفيض إجمالي للمعاملة' : 'Saisir réduction générale', 'info');
+                  }}
+                  className={`font-black text-[10px] py-3 rounded-lg uppercase transition-all duration-150 cursor-pointer active:scale-95 flex items-center justify-center gap-1.5 shadow-2xs border-b-2 ${
+                    activeNumpadTarget === 'discount'
+                      ? 'bg-orange-600 hover:bg-orange-700 text-white border-orange-850 font-bold'
+                      : 'bg-orange-500 hover:bg-orange-600 text-white border-orange-700'
+                  }`}
+                >
+                  <span>🏷️</span>
+                  <span>{language === 'ar' ? 'تخفيض' : 'Remise Gen.'}</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsReturnMode(!isReturnMode);
+                    showToast(
+                      !isReturnMode 
+                        ? (language === 'ar' ? 'تم اختيار وضع استرجاع البضائع' : '⚠️ MODE RETOUR / REMBOURSEMENT ACTIVÉ')
+                        : (language === 'ar' ? 'تفعيل وضع المبيعات العادية' : 'Saisie normale activée'),
+                      'info'
+                    );
+                  }}
+                  className={`font-black text-[10px] py-3 rounded-lg uppercase transition-all duration-150 cursor-pointer active:scale-95 flex items-center justify-center gap-1.5 shadow-s border-b-2 ${
+                    isReturnMode
+                      ? 'bg-pink-600 text-white border-pink-850 animate-pulse'
+                      : 'bg-pink-500 hover:bg-pink-650 text-white border-pink-700'
+                  }`}
+                >
+                  <span>🔄</span>
+                  <span>{isReturnMode ? 'Mode Rbt ⚠️' : 'Retour Art'}</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    const lastInv = db.invoices && db.invoices.length > 0 ? db.invoices[0] : null;
+                    if (lastInv) {
+                      setPrintedInvoice(lastInv);
+                      showToast(language === 'ar' ? 'عرض آخر وصل للطباعة' : 'Impression du dernier ticket produit', 'success');
+                    } else {
+                      showToast(language === 'ar' ? 'لا توجد مبيعات سابقة في هذه الجلسة' : 'Aucun ticket existant dans cette session', 'error');
+                    }
+                  }}
+                  className="bg-purple-600 hover:bg-purple-750 text-white font-black text-[10px] py-3 rounded-lg uppercase transition-all duration-150 cursor-pointer active:scale-95 flex items-center justify-center gap-1.5 shadow-2xs border-b-2 border-purple-800"
+                >
+                  <span>🖨️</span>
+                  <span>{language === 'ar' ? 'طباعة الأخير' : 'Dernier Ticket'}</span>
+                </button>
+
+              </div>
+
+            </div>
+
+          </div>
+        ) : (
+          <div className="lg:col-span-12 xl:col-span-5 bg-slate-50 p-6 border border-slate-200 rounded-3xl no-print shadow-xs transition-all duration-300 space-y-5">
           
           {/* Continuous barcode scanner entry block (Shown in Cart Only Mode) */}
           {isCartOnlyMode && (
-            <div className="bg-white border border-slate-200 rounded-xl p-4 space-y-3 relative overflow-hidden transition-all duration-200 hover:border-emerald-250 hover:shadow-2xs">
+            <div className={`bg-white border border-slate-200 rounded-xl p-4 space-y-3 relative overflow-hidden transition-all duration-200 hover:border-emerald-250 hover:shadow-2xs ${
+              isCartOnlyMode ? 'lg:col-span-5 xl:col-span-4 lg:col-start-8 lg:row-start-1' : ''
+            }`}>
               <div className="absolute top-0 left-0 w-1 h-full bg-emerald-500"></div>
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 pl-1">
                 <div className="flex items-center gap-2 text-emerald-850 text-xs font-black uppercase tracking-wider font-sans select-none">
@@ -2384,7 +2982,9 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
           )}
 
           {/* Customer Selection Card with inline Loyalty info */}
-          <div className="bg-white p-5 rounded-xl border border-slate-150 space-y-4 shadow-3xs relative overflow-hidden transition-all duration-200">
+          <div className={`bg-white p-5 rounded-xl border border-slate-150 space-y-4 shadow-3xs relative overflow-hidden transition-all duration-200 ${
+            isCartOnlyMode ? 'lg:col-span-5 xl:col-span-4 lg:col-start-8 lg:row-start-2' : ''
+          }`}>
             <div className="absolute top-0 left-0 w-1 h-full bg-blue-600"></div>
             <div className="flex items-center justify-between pl-1">
               <span className="text-xs font-black text-slate-800 uppercase flex items-center gap-1.5 select-none">
@@ -2484,7 +3084,11 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
           </div>
 
           {/* Cart Listing Card */}
-          <div className="bg-white p-5 rounded-xl border border-slate-150 space-y-4 shadow-3xs">
+          <div className={`bg-white p-5 rounded-2xl border border-slate-150 space-y-4 shadow-3xs ${
+            isCartOnlyMode 
+              ? 'lg:col-span-7 xl:col-span-8 lg:col-start-1 lg:row-start-1 lg:row-span-12 flex flex-col min-h-[580px] justify-between' 
+              : ''
+          }`}>
             <div className="flex items-center justify-between border-b border-slate-100 pb-2.5">
               <span className="text-xs font-black text-slate-800 uppercase flex items-center gap-1.5">
                 <motion.div
@@ -2564,7 +3168,9 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
               </button>
             </div>
 
-            <div className="space-y-3 max-h-56 overflow-y-auto custom-scrollbar pr-1 divide-y divide-slate-150/75">
+            <div className={`space-y-3 overflow-y-auto custom-scrollbar pr-1 divide-y divide-slate-150/75 ${
+              isCartOnlyMode ? 'flex-1 max-h-[500px] xl:max-h-[640px]' : 'max-h-56'
+            }`}>
               <AnimatePresence initial={false}>
                 {cart.map((item, idx) => {
                     const isItemReturn = item.qty < 0;
@@ -2674,7 +3280,9 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
 
           {/* Checkout & Bill Configurations Card */}
           {cart.length > 0 && (
-            <div className="bg-white p-5 rounded-xl border border-slate-150 space-y-4 shadow-3xs">
+            <div className={`bg-white p-5 rounded-xl border border-slate-150 space-y-4 shadow-3xs ${
+              isCartOnlyMode ? 'lg:col-span-5 xl:col-span-4 lg:col-start-8 lg:row-start-3' : ''
+            }`}>
               
               {/* Type Switch BL vs Facture (Segmented slider design) */}
               <div className="bg-slate-100 p-1 rounded-xl grid grid-cols-2 gap-1.5 select-none">
@@ -3053,7 +3661,9 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
           )}
 
           {/* VIRTUAL KEYBOARD & ON-SCREEN NUMPAD DRAWER */}
-          <div className="bg-slate-900 text-white rounded-2xl border border-slate-800 p-4.5 space-y-3.5 shadow-xl select-none no-print mt-4">
+          <div className={`bg-slate-900 text-white rounded-2xl border border-slate-800 p-4.5 space-y-3.5 shadow-xl select-none no-print ${
+            isCartOnlyMode ? 'lg:col-span-5 xl:col-span-4 lg:col-start-8 lg:row-start-4' : 'mt-4'
+          }`}>
             <div className="flex items-center justify-between border-b border-slate-800 pb-2.5">
               <div className="flex items-center gap-2">
                 <span className="text-sm">📟</span>
@@ -3414,6 +4024,7 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
             )}
           </div>
         </div>
+        )}
 
       </div>
 
