@@ -1335,8 +1335,8 @@ encryption_mode: High-Security Advanced
             </h3>
             <p className="text-xs text-slate-500 font-medium leading-relaxed font-sans">
               {language === 'ar' 
-                ? 'يرجى إدخال الرمز السري فائق الأمان لفتح لوحة التهيئة والتحكم بكافة بارامترات النظام (يرجى مراجعة kharoufwala24@gmail.com للحصول على الكود):'
-                : 'Veuillez saisir le code de sécurité fort pour débloquer et gérer tous les paramètres du système (veuillez contacter kharoufwala24@gmail.com pour l’obtenir):'
+                ? 'يرجى إدخال الرمز السري فائق الأمان لفتح لوحة التهيئة والتحكم بكافة بارامترات النظام (يرجى مراجعة walakharouf665@gmail.com للحصول على الكود):'
+                : 'Veuillez saisir le code de sécurité fort pour débloquer et gérer tous les paramètres du système (veuillez contacter walakharouf665@gmail.com pour l’obtenir):'
               }
             </p>
           </div>
@@ -4052,8 +4052,8 @@ encryption_mode: High-Security Advanced
               </h4>
               <p className="text-[11px] text-slate-500 leading-relaxed pr-6">
                 {language === 'ar'
-                  ? 'للحصول على معالج تنزيل .EXE أصلي يمكن تثبيته وتعديله لكل زبائنك وحوانيتك، يمكنك استخدام حزمة (Electron) أو (Tauri) حيث يتم تجميع ملفات build الناتجة وتصدير setup Windows مستقل وجاهز للتشغيل بأمر بسيط، أو الاتصال بالدعم الفني المباشر kharoufwala24@gmail.com لمساعدتكم.'
-                  : 'Pour distribuer un installateur d\'installation Windows (.EXE) hors-ligne officiel pour chaque magasin, vous pouvez coupler les fichiers de build statiques avec Electron ou Tauri (via electron-builder) pour générer des fichiers d\'installation autonome. Support dédié disponible à kharoufwala24@gmail.com.'
+                  ? 'للحصول على معالج تنزيل .EXE أصلي يمكن تثبيته وتعديله لكل زبائنك وحوانيتك، يمكنك استخدام حزمة (Electron) أو (Tauri) حيث يتم تجميع ملفات build الناتجة وتصدير setup Windows مستقل وجاهز للتشغيل بأمر بسيط، أو الاتصال بالدعم الفني المباشر walakharouf665@gmail.com لمساعدتكم.'
+                  : 'Pour distribuer un installateur d\'installation Windows (.EXE) hors-ligne officiel pour chaque magasin, vous pouvez coupler les fichiers de build statiques avec Electron ou Tauri (via electron-builder) pour générer des fichiers d\'installation autonome. Support dédié disponible à walakharouf665@gmail.com.'
                 }
               </p>
             </div>

@@ -732,8 +732,10 @@ function AppContent() {
           const isTrialValid = userLicense.licenseStatus === 'trial' && new Date() <= new Date(userLicense.licenseExpiry);
           const isActiveValid = userLicense.licenseStatus === 'active' && isVerified;
 
-          // Bypass checks if developer is logged in (kharoufwala24@gmail.com)
-          const isDeveloper = currentUser.email === 'kharoufwala24@gmail.com';
+          // Bypass checks if developer is logged in (kharoufwala24@gmail.com, walakharouf665@gmail.com, walakharouf6665@gmail.com)
+          const isDeveloper = currentUser.email === 'kharoufwala24@gmail.com' || 
+                              currentUser.email === 'walakharouf665@gmail.com' ||
+                              currentUser.email === 'walakharouf6665@gmail.com';
 
           if (!isDeveloper && (userLicense.licenseStatus === 'suspended' || (!isTrialValid && !isActiveValid))) {
             setIsLicenseLocked(true);
@@ -1110,8 +1112,12 @@ function AppContent() {
     );
   }
 
-  // Determine if the logged-in user is the super-administrator (kharoufwala24@gmail.com)
-  const isSuperAdmin = user && (user.email === 'kharoufwala24@gmail.com');
+  // Determine if the logged-in user is the super-administrator
+  const isSuperAdmin = user && (
+    user.email === 'kharoufwala24@gmail.com' || 
+    user.email === 'walakharouf665@gmail.com' ||
+    user.email === 'walakharouf6665@gmail.com'
+  );
 
   // Count items below safety stocks alert threshold
   const criticalProductsCount = db?.products ? db.products.filter(p => p.stock <= p.minAlertQty).length : 0;

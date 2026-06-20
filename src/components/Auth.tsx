@@ -369,14 +369,16 @@ export default function Auth({
                     {language === 'ar' ? (
                       <>
                         <li>
-                          <span className="font-black text-white">اسم المشروع المحدّد :</span> يجب إضافة النطاق داخل المشروع ذو المعرّف <strong className="text-emerald-400 font-mono">{auth.app.options.projectId || 'innovapos'}</strong> حصراً في لوحة Firebase.
+                          <span className="font-black text-white">اسم المشروع المحدّد :</span> يجب إضافة النطاق داخل المشروع ذو المعرّف <strong className="text-emerald-400 font-mono">{auth.app.options.projectId || 'the-pod-107pf'}</strong> حصراً في لوحة Firebase.
                         </li>
                         <li>
-                          <span className="font-black text-white">الصيغة الدقيقة للمجال :</span> أدخل النطاق بالضبط كالتالي <code className="bg-slate-900 border border-slate-800 px-1.5 py-0.5 rounded font-mono text-emerald-400 text-xs font-bold select-all">innova-pos.vercel.app</code> (بدون <code className="text-slate-400">https://</code> وبدون أي شرطة مائلة <code className="text-slate-400">/</code>).
+                          <span className="font-black text-white">الصيغة الدقيقة للمجال :</span> أدخل النطاق المفتوح حالياً بالضبط كالتالي <code className="bg-slate-900 border border-slate-800 px-1.5 py-0.5 rounded font-mono text-emerald-400 text-xs font-bold select-all">{typeof window !== 'undefined' ? window.location.hostname : 'innova-pos.vercel.app'}</code> (بدون <code className="text-slate-400">https://</code> وبدون أي شرطة مائلة <code className="text-slate-400">/</code>).
                         </li>
-                        <li>
-                          <span className="font-black text-white">إضافة نطاق الـ WWW :</span> إذا كنت تتصفح من خلال الرابط المزود بـ www، فيجب إضافة نطاق إضافي آخر وهو: <code className="bg-slate-900 border border-slate-800 px-1.5 py-0.5 rounded font-mono text-emerald-400 text-xs font-bold select-all">www.innova-pos.vercel.app</code>
-                        </li>
+                        {typeof window !== 'undefined' && window.location.hostname.includes('vercel.app') && (
+                          <li>
+                            <span className="font-black text-white">إضافة نطاق الـ WWW :</span> إذا كنت تتصفح من خلال الرابط المزود بـ www، فيجب إضافة نطاق إضافي آخر وهو: <code className="bg-slate-900 border border-slate-800 px-1.5 py-0.5 rounded font-mono text-emerald-400 text-xs font-bold select-all">www.{window.location.hostname}</code>
+                          </li>
+                        )}
                         <li>
                           <span className="font-black text-white">تأخر انتشار التحديث :</span> يستغرق تحديث Firebase المعتمد من <strong className="text-amber-400">2 إلى 10 دقائق</strong> للانتشار الفعلي. يرجى تجربة فتح المتصفح بوضع التصفح الخفي (Incognito Mode) أو مسح الذاكرة ممتلئة.
                         </li>
@@ -387,14 +389,16 @@ export default function Auth({
                     ) : (
                       <>
                         <li>
-                          <strong className="text-white">Identifiant Firebase correct :</strong> Assurez-vous d'ajouter le domaine dans le projet avec l'ID exact <strong className="text-emerald-400 font-mono">{auth.app.options.projectId || 'innovapos'}</strong> sur votre console Firebase.
+                          <strong className="text-white">Identifiant Firebase correct :</strong> Assurez-vous d'ajouter le domaine dans le projet avec l'ID exact <strong className="text-emerald-400 font-mono">{auth.app.options.projectId || 'the-pod-107pf'}</strong> sur votre console Firebase.
                         </li>
                         <li>
-                          <strong className="text-white">Format d'hôte strict :</strong> Saisissez l'hôte exact sans aucun préfixe ni suffixe, soit uniquement : <code className="bg-slate-900 border border-slate-800 px-1.5 py-0.5 rounded font-mono text-emerald-400 text-xs font-bold select-all">innova-pos.vercel.app</code> (sans <code className="text-slate-400">https://</code> et sans barre oblique <code className="text-slate-400">/</code>).
+                          <strong className="text-white">Format d'hôte strict :</strong> Saisissez l'hôte ouvert actuellement sans aucun préfixe ni suffixe, soit uniquement : <code className="bg-slate-900 border border-slate-800 px-1.5 py-0.5 rounded font-mono text-emerald-400 text-xs font-bold select-all">{typeof window !== 'undefined' ? window.location.hostname : 'innova-pos.vercel.app'}</code> (sans <code className="text-slate-400">https://</code> et sans barre oblique <code className="text-slate-400">/</code>).
                         </li>
-                        <li>
-                          <strong className="text-white">Ajouter les sous-domaines (WWW) :</strong> Si vous accédez à votre application via www, vous devez également ajouter une ligne pour : <code className="bg-slate-900 border border-slate-800 px-1.5 py-0.5 rounded font-mono text-emerald-400 text-xs font-bold select-all">www.innova-pos.vercel.app</code>
-                        </li>
+                        {typeof window !== 'undefined' && window.location.hostname.includes('vercel.app') && (
+                          <li>
+                            <strong className="text-white">Ajouter les sous-domaines (WWW) :</strong> Si vous accédez à votre application via www, vous devez également ajouter une ligne pour : <code className="bg-slate-900 border border-slate-800 px-1.5 py-0.5 rounded font-mono text-emerald-400 text-xs font-bold select-all">www.{window.location.hostname}</code>
+                          </li>
+                        )}
                         <li>
                           <strong className="text-white">Délai de propagation :</strong> Les mises à jour de domaines autorisés Firebase prennent généralement entre <strong className="text-amber-400">2 et 10 minutes</strong> pour être propagées. Testez en Ouvrant une fenêtre de <strong className="text-white">navigation privée (Incognito)</strong> ou videz le cache.
                         </li>
@@ -496,7 +500,7 @@ export default function Auth({
             {t('stable_version') || 'INNOVA SOLID'}
           </span>
           <span className="text-slate-700 hidden sm:inline">•</span>
-          <span>{t('tech_support') || 'Support email'} : kharoufwala24@gmail.com</span>
+          <span>{t('tech_support') || 'Support email'} : walakharouf665@gmail.com</span>
         </div>
       </footer>
 
