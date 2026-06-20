@@ -13,6 +13,11 @@ export interface UserLicenseData {
   businessName?: string;
   location?: string; // Geographic coordinates or business address location
   
+  // 💰 SaaS Monetization & Sales Tracking
+  paymentStatus?: 'paid' | 'pending' | 'free_trial' | 'refunded';
+  paymentAmount?: number; // Total paid in TND (Tunisian Dinar)
+  adminNotes?: string; // Admin's secret notes for follow-up
+  
   // ⚙️ Configurations managed remotely by Super-Admin / Developer
   remoteAdminEmail?: string;
   remoteEnableCriticalStockEmailAlerts?: boolean;

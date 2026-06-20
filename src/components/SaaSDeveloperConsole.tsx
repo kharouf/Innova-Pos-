@@ -55,6 +55,9 @@ export default function SaaSDeveloperConsole() {
   const [editAnnouncement, setEditAnnouncement] = useState('');
   const [editStoreName, setEditStoreName] = useState('');
   const [editLocation, setEditLocation] = useState('');
+  const [editPaymentStatus, setEditPaymentStatus] = useState<'paid' | 'pending' | 'free_trial' | 'refunded'>('free_trial');
+  const [editPaymentAmount, setEditPaymentAmount] = useState<number>(0);
+  const [editAdminNotes, setEditAdminNotes] = useState('');
 
   // Pre-registration state
   const [showAddTenantForm, setShowAddTenantForm] = useState(false);
@@ -66,6 +69,9 @@ export default function SaaSDeveloperConsole() {
   const [newTenantActivationDate, setNewTenantActivationDate] = useState('');
   const [newTenantExpiry, setNewTenantExpiry] = useState('');
   const [newTenantLocation, setNewTenantLocation] = useState('');
+  const [newTenantPaymentStatus, setNewTenantPaymentStatus] = useState<'paid' | 'pending' | 'free_trial' | 'refunded'>('free_trial');
+  const [newTenantPaymentAmount, setNewTenantPaymentAmount] = useState<number>(0);
+  const [newTenantAdminNotes, setNewTenantAdminNotes] = useState('');
 
   // Updates (Mise à jour) States
   const [updatesList, setUpdatesList] = useState<SystemUpdate[]>([]);
@@ -135,6 +141,9 @@ export default function SaaSDeveloperConsole() {
     setEditAnnouncement(t.remoteAnnouncement || '');
     setEditStoreName(t.businessName || '');
     setEditLocation(t.location || '');
+    setEditPaymentStatus(t.paymentStatus || 'free_trial');
+    setEditPaymentAmount(t.paymentAmount || 0);
+    setEditAdminNotes(t.adminNotes || '');
   };
 
   const handleSaveTenantLicense = async (uid: string) => {
@@ -155,6 +164,9 @@ export default function SaaSDeveloperConsole() {
         remoteAnnouncement: editAnnouncement.trim() || undefined,
         businessName: editStoreName.trim() || undefined,
         location: editLocation.trim() || undefined,
+        paymentStatus: editPaymentStatus,
+        paymentAmount: Number(editPaymentAmount) || 0,
+        adminNotes: editAdminNotes.trim() || undefined,
       };
 
       await saveUserLicense(uid, updatedFields);
@@ -214,6 +226,9 @@ export default function SaaSDeveloperConsole() {
         licenseKey: hashKey,
         businessName: newTenantStoreName.trim() || 'Superette Tunisienne',
         location: newTenantLocation.trim() || '',
+        paymentStatus: newTenantPaymentStatus,
+        paymentAmount: Number(newTenantPaymentAmount) || 0,
+        adminNotes: newTenantAdminNotes.trim() || 'Pré-enregistré.',
         remoteAnnouncement: newTenantStatus === 'trial' 
           ? 'Bienvenue sur INNOVA POS PRO. Version démonstration active.' 
           : 'Votre abonnement annuel Innova POS a été configuré avec succès.'
@@ -231,6 +246,9 @@ export default function SaaSDeveloperConsole() {
       setNewTenantActivationDate('');
       setNewTenantExpiry('');
       setNewTenantLocation('');
+      setNewTenantPaymentStatus('free_trial');
+      setNewTenantPaymentAmount(0);
+      setNewTenantAdminNotes('');
       setShowAddTenantForm(false);
       
       await fetchTenants();
@@ -661,6 +679,52 @@ export default function SaaSDeveloperConsole() {
                   />
                 </div>
 
+                {/* 💰 PARTIE MONETIZATION ET ABONNEMENT BIENVENUE */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2 border-t border-slate-800/60">
+                  <div>
+                    <label className="text-[10px] font-black uppercase tracking-wider text-rose-400 block mb-1">
+                      {language === 'ar' ? 'وضعية الاشتراك المالي للزبون *' : 'Statut de Paiement Client *'}
+                    </label>
+                    <select
+                      value={newTenantPaymentStatus}
+                      onChange={(e) => setNewTenantPaymentStatus(e.target.value as any)}
+                      className="w-full text-xs font-bold border border-slate-800 bg-slate-950 p-2.5 rounded-lg text-white focus:outline-hidden focus:border-rose-500"
+                    >
+                      <option value="paid">{language === 'ar' ? 'مستخلص و مدفوع ✅' : 'Payé (Paid) ✅'}</option>
+                      <option value="pending">{language === 'ar' ? 'قيد الانتظار ودفع الصكوك ⏳' : 'En attente (Pending) ⏳'}</option>
+                      <option value="free_trial">{language === 'ar' ? 'عرض تجريبي مجاني 🎁' : 'Essai Gratuit (Free Trial) 🎁'}</option>
+                      <option value="refunded">{language === 'ar' ? 'مسترجع وموقوف 🛑' : 'Remboursé (Refunded) 🛑'}</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="text-[10px] font-black uppercase tracking-wider text-rose-400 block mb-1">
+                      {language === 'ar' ? 'قيمة الاشتراك السنوي (دينار تونسي)' : 'Montant Abonnement Annuel (TND)'}
+                    </label>
+                    <input
+                      type="number"
+                      step="5.000"
+                      value={newTenantPaymentAmount}
+                      onChange={(e) => setNewTenantPaymentAmount(parseFloat(e.target.value) || 0)}
+                      placeholder="0.000"
+                      className="w-full text-xs font-bold border border-slate-800 bg-slate-950 p-2.5 rounded-lg text-white focus:outline-hidden focus:border-rose-500 text-start font-mono"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 block mb-1">
+                    {language === 'ar' ? 'ملاحظات الأدمن والمطور (خاصة وسرية للمطالبة المادية للزبون)' : 'Notes administratives & Remarques (Dossier Interne)'}
+                  </label>
+                  <textarea
+                    rows={2}
+                    value={newTenantAdminNotes}
+                    onChange={(e) => setNewTenantAdminNotes(e.target.value)}
+                    placeholder={language === 'ar' ? 'اكتب تاريخ الدفع، رقم الهاتف، أو اسم الشخص الفعلي...' : 'Ex: Paiement reçu en espèces, contact direct par téléphone...'}
+                    className="w-full text-xs font-medium border border-slate-800 bg-slate-950 p-2.5 rounded-lg text-white focus:outline-hidden focus:border-rose-500 text-start"
+                  />
+                </div>
+
                 <div className="flex justify-end gap-2 pt-3 border-t border-slate-800">
                   <button
                     type="button"
@@ -735,12 +799,50 @@ export default function SaaSDeveloperConsole() {
                                   className="w-full text-xs font-medium border border-slate-250 p-1.5 rounded-lg bg-white text-slate-850"
                                   placeholder="Maps Coordonnées"
                                 />
+                                <textarea
+                                  rows={2}
+                                  value={editAdminNotes}
+                                  onChange={(e: any) => setEditAdminNotes(e.target.value)}
+                                  className="w-full text-[10px] font-sans font-medium border border-slate-250 p-1.5 rounded-lg bg-white text-slate-850"
+                                  placeholder="Notes administratives secrètes (Dossier Interne)"
+                                />
                                 <div className="text-[10px] text-slate-400 font-mono font-bold truncate">{t.email}</div>
                               </div>
                             ) : (
                               <div>
                                 <p className="font-bold text-slate-850 text-sm">{t.businessName || 'Superette Tunisienne'}</p>
                                 <p className="text-[11px] text-slate-500 font-bold">{t.email || 'Email non fourni'}</p>
+                                
+                                {/* 💰 Premium SaaS Payment Status Row */}
+                                <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
+                                  <span className={`p-0.5 px-2 rounded font-sans text-[8px] font-black border uppercase tracking-wider ${
+                                    t.paymentStatus === 'paid'
+                                      ? 'bg-emerald-50 text-emerald-800 border-emerald-250'
+                                      : t.paymentStatus === 'pending'
+                                      ? 'bg-amber-50 text-amber-800 border-amber-250 animate-pulse'
+                                      : t.paymentStatus === 'refunded'
+                                      ? 'bg-rose-50 text-rose-800 border-rose-250'
+                                      : 'bg-slate-100 text-slate-700 border-slate-200'
+                                  }`}>
+                                    💰 {t.paymentStatus === 'paid' ? (language === 'ar' ? 'خالص ومسدد ✅' : 'PAYÉ ✅') :
+                                        t.paymentStatus === 'pending' ? (language === 'ar' ? 'قيد الانتظار ودفع الصكوك ⏳' : 'Attente paiement ⏳') :
+                                        t.paymentStatus === 'refunded' ? (language === 'ar' ? 'مسترجع مالي 🛑' : 'REFUNDED 🛑') :
+                                        (language === 'ar' ? 'عرض تجريبي مجاني 🎁' : 'ESSAI SANS FRAIS 🎁')}
+                                  </span>
+                                  
+                                  {t.paymentAmount > 0 ? (
+                                    <span className="bg-slate-50 text-slate-800 border border-slate-200 text-[9px] font-mono font-black p-0.5 px-2 rounded">
+                                      {t.paymentAmount.toFixed(3)} TND
+                                    </span>
+                                  ) : null}
+                                </div>
+
+                                {/* 🔒 Intern Admin Notes Display */}
+                                {t.adminNotes ? (
+                                  <div className="bg-slate-50 text-slate-600 border-l-2 border-slate-400 p-1 px-2 font-sans text-[10px] mt-1.5 max-w-xs italic rounded-r select-all text-start">
+                                    ℹ️ {t.adminNotes}
+                                  </div>
+                                ) : null}
                                 
                                 {t.location && (
                                   <div className="flex items-center gap-1 text-[11px] text-rose-600 font-semibold mt-1">
@@ -823,16 +925,44 @@ export default function SaaSDeveloperConsole() {
                           {/* Current software lock status */}
                           <td className="p-4 whitespace-nowrap">
                             {isEditing ? (
-                              <select
-                                value={editStatus}
-                                onChange={(e) => setEditStatus(e.target.value as any)}
-                                className="text-xs font-bold border border-slate-250 p-1.5 rounded bg-white"
-                              >
-                                <option value="active">{language === 'ar' ? 'مفعّل ونشط ✅' : 'Abonnement Actif'}</option>
-                                <option value="trial">{language === 'ar' ? 'فترة تجريبية ⏳' : 'Essai Gratuit'}</option>
-                                <option value="suspended">{language === 'ar' ? 'مغلق ومجمد 🛑' : 'Suspendu / Impayé'}</option>
-                                <option value="expired">{language === 'ar' ? 'منتهي الصلاحية ❌' : 'Expiré'}</option>
-                              </select>
+                              <div className="space-y-2 text-start">
+                                <select
+                                  value={editStatus}
+                                  onChange={(e) => setEditStatus(e.target.value as any)}
+                                  className="w-full text-xs font-bold border border-slate-250 p-1.5 rounded bg-white text-slate-850"
+                                >
+                                  <option value="active">{language === 'ar' ? 'مفعّل ونشط ✅' : 'Abonnement Actif'}</option>
+                                  <option value="trial">{language === 'ar' ? 'فترة تجريبية ⏳' : 'Essai Gratuit'}</option>
+                                  <option value="suspended">{language === 'ar' ? 'مغلق ومجمد 🛑' : 'Suspendu / Impayé'}</option>
+                                  <option value="expired">{language === 'ar' ? 'منتهي الصلاحية ❌' : 'Expiré'}</option>
+                                </select>
+
+                                <div className="space-y-1">
+                                  <label className="text-[8px] font-black uppercase text-slate-500 block">Règlement :</label>
+                                  <select
+                                    value={editPaymentStatus}
+                                    onChange={(e) => setEditPaymentStatus(e.target.value as any)}
+                                    className="w-full text-[10px] font-bold border border-slate-250 p-1 rounded bg-white text-slate-850"
+                                  >
+                                    <option value="paid">{language === 'ar' ? 'خالص ومسدد ✅' : 'Paid ✅'}</option>
+                                    <option value="pending">{language === 'ar' ? 'قيد الانتظار ⏳' : 'Pending ⏳'}</option>
+                                    <option value="free_trial">{language === 'ar' ? 'عرض تجريبي 🎁' : 'Free Trial 🎁'}</option>
+                                    <option value="refunded">{language === 'ar' ? 'مسترجع مالي 🛑' : 'Refunded 🛑'}</option>
+                                  </select>
+                                </div>
+
+                                <div className="space-y-1">
+                                  <label className="text-[8px] font-black uppercase text-slate-500 block">Tarif perçu (TND) :</label>
+                                  <input
+                                    type="number"
+                                    step="5"
+                                    value={editPaymentAmount}
+                                    onChange={(e) => setEditPaymentAmount(parseFloat(e.target.value) || 0)}
+                                    className="w-full text-[10px] font-mono font-bold border border-slate-250 p-1 rounded bg-white text-slate-850"
+                                    placeholder="0.000"
+                                  />
+                                </div>
+                              </div>
                             ) : (
                               <span className={`px-2 py-0.5 rounded-lg text-[10.5px] font-black block text-center capitalize w-26 border ${
                                 t.licenseStatus === 'active'

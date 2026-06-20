@@ -336,6 +336,15 @@ export async function loadUserLicense(userId: string, email: string | null, stor
     const snap = await getDoc(docRef);
     if (snap.exists()) {
       const data = snap.data();
+      
+      // Auto-backfill matching email or businessName if missing on login to maintain clean SaaS logs
+      if ((!data.email && email) || (!data.businessName && storeName)) {
+        const updatePayload: Partial<UserLicenseData> = {};
+        if (!data.email && email) updatePayload.email = email;
+        if (!data.businessName && storeName) updatePayload.businessName = storeName;
+        await setDoc(docRef, updatePayload, { merge: true });
+      }
+
       return {
         uid: userId,
         email: data.email || email,
@@ -347,6 +356,11 @@ export async function loadUserLicense(userId: string, email: string | null, stor
         remoteAnnouncement: data.remoteAnnouncement || '',
         businessName: data.businessName || storeName || '',
         location: data.location || '',
+        
+        // Monetization parameters
+        paymentStatus: data.paymentStatus || 'free_trial',
+        paymentAmount: data.paymentAmount || 0,
+        adminNotes: data.adminNotes || '',
         
         remoteAdminEmail: data.remoteAdminEmail || undefined,
         remoteEnableCriticalStockEmailAlerts: data.remoteEnableCriticalStockEmailAlerts ?? undefined,
@@ -370,7 +384,10 @@ export async function loadUserLicense(userId: string, email: string | null, stor
         licenseKey: generateLicenseKey(userId, trialExpiryDate),
         remoteAnnouncement: 'مرحباً بك في النسخة التجريبية لـ INNOVA POS. اتصل بنا للتنشيط النهائي.',
         businessName: storeName || 'محل تجاري جديد',
-        location: ''
+        location: '',
+        paymentStatus: 'free_trial',
+        paymentAmount: 0,
+        adminNotes: 'Nouveau compte inscrit.'
       };
       
       await setDoc(docRef, defaultLicense);
@@ -431,6 +448,11 @@ export async function loadAllTenantLicenses(): Promise<UserLicenseData[]> {
         remoteAnnouncement: data.remoteAnnouncement || '',
         businessName: data.businessName || storeSettings.storeName || 'Superette',
         location: data.location || storeSettings.storeAddress || '',
+        
+        // Monetization parameters
+        paymentStatus: data.paymentStatus || 'free_trial',
+        paymentAmount: Number(data.paymentAmount) || 0,
+        adminNotes: data.adminNotes || '',
         
         remoteAdminEmail: data.remoteAdminEmail || '',
         remoteEnableCriticalStockEmailAlerts: data.remoteEnableCriticalStockEmailAlerts ?? undefined,
