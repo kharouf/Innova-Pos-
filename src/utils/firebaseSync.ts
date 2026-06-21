@@ -356,6 +356,8 @@ export async function loadUserLicense(userId: string, email: string | null, stor
         remoteAnnouncement: data.remoteAnnouncement || '',
         businessName: data.businessName || storeName || '',
         location: data.location || '',
+        isOnboarded: data.isOnboarded || false,
+        phone: data.phone || '',
         
         // Monetization parameters
         paymentStatus: data.paymentStatus || 'free_trial',
@@ -387,7 +389,9 @@ export async function loadUserLicense(userId: string, email: string | null, stor
         location: '',
         paymentStatus: 'free_trial',
         paymentAmount: 0,
-        adminNotes: 'Nouveau compte inscrit.'
+        adminNotes: 'Nouveau compte inscrit.',
+        isOnboarded: false,
+        phone: ''
       };
       
       await setDoc(docRef, defaultLicense);
@@ -496,6 +500,27 @@ export async function deleteTenantCompletely(userId: string): Promise<void> {
     await batch.commit();
   } catch (error) {
     console.error(`Failed to delete tenant completely for uid ${userId}:`, error);
+    throw error;
+  }
+}
+
+/**
+ * Wipes all SaaS tenant accounts and databases from Firestore completely.
+ */
+export async function wipeAllSaaSTenantsAndDatabases(): Promise<void> {
+  try {
+    const colRef = collection(db, 'users');
+    const snap = await getDocs(colRef);
+    const deletePromises: Promise<void>[] = [];
+    
+    snap.forEach(docSnap => {
+      // Deletes each user document and its subcollections completely
+      deletePromises.push(deleteTenantCompletely(docSnap.id));
+    });
+    
+    await Promise.all(deletePromises);
+  } catch (error) {
+    console.error("Wiping all SaaS database collections failed:", error);
     throw error;
   }
 }

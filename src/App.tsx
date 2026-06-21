@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 const defaultPosLogo = "/innova_pos_logo.png";
 import { DatabaseState, SystemUpdate, Product, StoreSettings, AppUser } from './types';
-import { getDatabase, saveDatabase, DEFAULT_SETTINGS, getSuperetteDatabase, saveSuperetteDatabase } from './utils/db';
+import { getDatabase, saveDatabase, DEFAULT_SETTINGS, getSuperetteDatabase, saveSuperetteDatabase, SAMPLE_PRODUCTS } from './utils/db';
 import { LanguageProvider, useLanguage } from './utils/LanguageContext';
 import { safeLocalStorage } from './utils/storage';
 import { auth } from './utils/firebase';
@@ -21,6 +21,7 @@ import { UserLicenseData, verifyLicenseKey } from './utils/licensing';
 import { sendCriticalStockEmail, sendShiftOpeningEmail, sendShiftClosingEmail, sendDailyLowStockSummaryEmail, EmailLog } from './utils/notifications';
 import { downloadPurchaseOrderPDF, downloadShiftReportPDF } from './utils/pdfGenerator';
 import Auth from './components/Auth';
+import SaaSOnboardingScreen from './components/SaaSOnboardingScreen';
 import Dashboard from './components/Dashboard';
 import POS from './components/POS';
 import Products from './components/Products';
@@ -1077,6 +1078,58 @@ function AppContent() {
         isLockedState={true} 
         user={user}
         db={db || undefined}
+      />
+    );
+  }
+
+  // Show beautiful onboarding / registration screen if the new user is not onboarded yet
+  const isDeveloperUser = user && (
+    user.email === 'kharoufwala24@gmail.com' || 
+    user.email === 'walakharouf665@gmail.com' ||
+    user.email === 'walakharouf6665@gmail.com'
+  );
+
+  if (user && license && !license.isOnboarded && !isDeveloperUser) {
+    return (
+      <SaaSOnboardingScreen 
+        user={user} 
+        license={license} 
+        onOnboardingComplete={(onboardedLicense, selectedSector) => {
+          setLicense(onboardedLicense);
+          
+          // Seed their database with their custom details + sector sample templates
+          const sampleProd = SAMPLE_PRODUCTS[selectedSector] || [];
+          const defaultAppPin = (onboardedLicense as any).ownerPin || '0000';
+          
+          const onboardedDb: DatabaseState = {
+            products: sampleProd,
+            partners: [],
+            invoices: [],
+            payments: [],
+            traites: [],
+            expenses: [],
+            settings: {
+              ...DEFAULT_SETTINGS,
+              storeName: onboardedLicense.businessName || 'INNOVA POS PRO',
+              storePhone: onboardedLicense.phone || '+216 24260711',
+              storeAddress: onboardedLicense.location || 'AVENU HABIB BORGIBA GHANNOUCHE GABES',
+              activitySector: selectedSector,
+              ownerPin: defaultAppPin,
+              users: [
+                { id: 'user-1', name: 'Administrateur', pin: defaultAppPin, role: 'admin' as const, isActive: true, avatar: '👑' },
+                { id: 'user-2', name: 'Agent de Vente', pin: '1111', role: 'sales' as const, isActive: true, avatar: '💼' },
+                { id: 'user-3', name: 'Agent de Stock', pin: '2222', role: 'inventory' as const, isActive: true, avatar: '📦' }
+              ]
+            }
+          };
+          
+          setDb(onboardedDb);
+          saveSuperetteDatabase(user.uid, activeSuperetteId, onboardedDb);
+          seedUserDatabase(user.uid, onboardedDb, activeSuperetteId).catch(err => {
+            console.error("Seeding onboarded database error:", err);
+          });
+        }}
+        onLogout={handleLogout}
       />
     );
   }

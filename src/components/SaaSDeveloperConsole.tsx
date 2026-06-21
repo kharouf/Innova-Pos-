@@ -5,6 +5,7 @@ import {
   loadAllTenantLicenses, 
   saveUserLicense, 
   deleteTenantCompletely,
+  wipeAllSaaSTenantsAndDatabases,
   loadSystemUpdates,
   saveSystemUpdate,
   deleteSystemUpdate
@@ -87,8 +88,31 @@ export default function SaaSDeveloperConsole() {
   const [updateDescFr, setUpdateDescFr] = useState('');
   const [updateDescAr, setUpdateDescAr] = useState('');
 
+  // SaaS Wiping and System Reset States
+  const [wipeConfirmText, setWipeConfirmText] = useState('');
+  const [isWipingModeActive, setIsWipingModeActive] = useState(false);
+
   // Floating Toast State
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  const handleWipeAllSaaSTenants = async () => {
+    if (wipeConfirmText !== 'WIPE') {
+      showToast(language === 'ar' ? '⚠️ يرجى كتابة الرمز WIPE للتأكيد' : '⚠️ Veuillez inscrire WIPE pour valider');
+      return;
+    }
+    setIsWipingModeActive(true);
+    try {
+      await wipeAllSaaSTenantsAndDatabases();
+      showToast(language === 'ar' ? '🗑️ تم مسح وفسخ جميع الحسابات المسجلة وإعادة بدء السيستم من الصفر !' : '🗑️ Tous les comptes locataires ont été supprimés !');
+      setWipeConfirmText('');
+      await fetchTenants();
+    } catch (err) {
+      console.error(err);
+      showToast(language === 'ar' ? '❌ خطأ أثناء مسح الحسابات' : '❌ Erreur de nettoyage général');
+    } finally {
+      setIsWipingModeActive(false);
+    }
+  };
 
   const showToast = (msg: string) => {
     setToastMessage(msg);
@@ -1080,6 +1104,54 @@ export default function SaaSDeveloperConsole() {
               </div>
             )}
           </div>
+
+          {/* SaaS Central Danger Zone Reset Section */}
+          <div className="bg-red-50 border border-red-200 rounded-lg p-5 mt-6 text-start shadow-xs">
+            <h3 className="text-sm font-black text-red-700 uppercase flex items-center gap-2 mb-2">
+              <ShieldAlert className="w-4 h-4 text-red-600 animate-pulse" />
+              <span>{language === 'ar' ? '⚠️ منطقة خطر غاية في الحساسية - تصفير السيرفر بالكامل' : '⚠️ ZONE DE DANGER CRITIQUE - REINITIALISATION TOTALE'}</span>
+            </h3>
+            <p className="text-xs text-red-600 font-semibold leading-relaxed mb-4">
+              {language === 'ar'
+                ? 'تنبيه هام ومصيري: سيقوم هذا الزر بفسخ وحذف جميع حسابات المشتركين، تراخيصهم، وقواعد بيانات محلاتهم (السلع، الفواتير، العمليات) من السيرفر السحابي نهائياً وبلا رجعة! يرجى استخدامه بحذر لتصفير البيانات وبدء تجارب جديدة.'
+                : 'AVERTISSEMENT: En validant cette option, TOUTES les bases de données clients (produits, ventes, factures) et licences souscrites seront définitivement WIPEES de Firestore. Cette action est irréversible.'}
+            </p>
+            
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 bg-red-100/50 p-4 rounded-lg border border-red-200">
+              <div className="space-y-1 flex-1 text-start">
+                <label className="text-[10px] font-black uppercase text-red-850 block">
+                  {language === 'ar' ? 'اكتب كلمة التأكيد "WIPE" بالأعلى للمتابعة :' : 'Inscrivez le code "WIPE" pour déverrouiller :'}
+                </label>
+                <input
+                  type="text"
+                  value={wipeConfirmText}
+                  onChange={(e) => setWipeConfirmText(e.target.value)}
+                  className="w-full sm:max-w-[200px] text-xs font-black font-mono tracking-widest border border-red-300 bg-white p-2 rounded focus:outline-hidden focus:border-red-500 uppercase text-slate-800"
+                  placeholder="WIPE..."
+                  disabled={isWipingModeActive}
+                />
+              </div>
+              
+              <button
+                type="button"
+                onClick={handleWipeAllSaaSTenants}
+                disabled={wipeConfirmText !== 'WIPE' || isWipingModeActive}
+                className={`py-2.5 px-5 rounded-lg text-xs font-black tracking-wider flex items-center justify-center gap-2 transition-all cursor-pointer ${
+                  wipeConfirmText === 'WIPE' && !isWipingModeActive
+                    ? 'bg-red-600 hover:bg-red-700 text-white shadow-md active:scale-95'
+                    : 'bg-slate-300 text-slate-500 cursor-not-allowed'
+                }`}
+              >
+                <span>🗑️</span>
+                <span>
+                  {isWipingModeActive 
+                    ? (language === 'ar' ? 'جاري تدمير وتصفير السيرفر...' : 'Wipe en cours...') 
+                    : (language === 'ar' ? 'تحطيم وتصفير السيرفر فوراً 💀' : 'EFFACER ET REINITIALISER TOUT LE SAAS')}
+                </span>
+              </button>
+            </div>
+          </div>
+
         </div>
       )}
 

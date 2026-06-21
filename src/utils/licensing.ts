@@ -17,7 +17,9 @@ export interface UserLicenseData {
   paymentStatus?: 'paid' | 'pending' | 'free_trial' | 'refunded';
   paymentAmount?: number; // Total paid in TND (Tunisian Dinar)
   adminNotes?: string; // Admin's secret notes for follow-up
-  
+  isOnboarded?: boolean; // Whether the user completed their onboarding setup
+  phone?: string; // Owner/Store phone number
+
   // ⚙️ Configurations managed remotely by Super-Admin / Developer
   remoteAdminEmail?: string;
   remoteEnableCriticalStockEmailAlerts?: boolean;

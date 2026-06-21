@@ -87,6 +87,13 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
   
   // Stand-alone cart full view option is now always enabled (Panier Uniquement)
   const [isCartOnlyMode] = useState<boolean>(true);
+
+  // Special Tictaac-style Industrial Tactile cash register layout toggle
+  const [posLayoutTheme, setPosLayoutTheme] = useState<'modern' | 'classic-tactile'>(() => {
+    return (safeLocalStorage.getItem('pos_layout_theme') as 'modern' | 'classic-tactile') || 'classic-tactile';
+  });
+
+  const [rightPaneView, setRightPaneView] = useState<'cartTable' | 'productGrid'>('cartTable');
   
   // Custom rapid price item addition (Vente libre)
   const [customItemPrice, setCustomItemPrice] = useState<string>('');
@@ -1606,6 +1613,40 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
             </span>
           </button>
 
+          {/* Layout Mode Selector (Modern vs Classic Tactile Tictaac) */}
+          <div className="flex bg-slate-100 p-0.5 rounded-lg border border-slate-200 select-none">
+            <button
+              type="button"
+              onClick={() => {
+                setPosLayoutTheme('modern');
+                safeLocalStorage.setItem('pos_layout_theme', 'modern');
+                showToast(language === 'ar' ? 'المظهر العصري مفعل' : 'Mode Moderne Activé', 'info');
+              }}
+              className={`px-2 py-1 rounded-md text-[10px] font-black tracking-tight transition-all cursor-pointer flex items-center gap-1 ${
+                posLayoutTheme === 'modern'
+                  ? 'bg-indigo-650 text-white font-bold shadow-3xs'
+                  : 'text-slate-650 hover:bg-slate-50'
+              }`}
+            >
+              📊 {language === 'ar' ? 'عصري' : 'Moderne'}
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setPosLayoutTheme('classic-tactile');
+                safeLocalStorage.setItem('pos_layout_theme', 'classic-tactile');
+                showToast(language === 'ar' ? 'المظهر التكتيلي الكلاسيكي مفعل' : 'Mode Caisse Tactile Activé', 'info');
+              }}
+              className={`px-2 py-1 rounded-md text-[10px] font-black tracking-tight transition-all cursor-pointer flex items-center gap-1 ${
+                posLayoutTheme === 'classic-tactile'
+                  ? 'bg-rose-600 text-white font-bold shadow-3xs'
+                  : 'text-slate-650 hover:bg-slate-50'
+              }`}
+            >
+              🖥️ {language === 'ar' ? 'تكتيلي' : 'Tactile'}
+            </button>
+          </div>
+
           {/* Toggle Fullscreen Button */}
           <button
             type="button"
@@ -2260,7 +2301,577 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
 
         {/* Right column: Cart, customer, settings & actions (5 cols in desktop, or 12 cols when cart only mode is active) */}
         {isCartOnlyMode ? (
-          <div className="xl:col-span-12 max-w-[1550px] mx-auto w-full grid grid-cols-1 xl:grid-cols-12 gap-6 items-stretch select-none no-print">
+          posLayoutTheme === 'classic-tactile' ? (
+            /* BRAND NEW INDUSTRIAL TACTILE LAYOUT */
+            <div className="xl:col-span-12 max-w-[1550px] mx-auto w-full grid grid-cols-1 xl:grid-cols-12 gap-5 items-stretch select-none no-print font-sans">
+              
+              {/* LEFT COLUMN (Keypad and Actions) - col-span-4 */}
+              <div className="xl:col-span-4 bg-slate-900 border border-slate-800 p-4.5 rounded-3xl flex flex-col justify-between gap-3 h-[800px] xl:h-[860px] shadow-2xl relative overflow-hidden text-white">
+                {/* Keypad Header Search bar */}
+                <div className="space-y-2 shrink-0">
+                  <div className="text-[10px] uppercase font-black tracking-wider text-cyan-400">
+                    {language === 'ar' ? 'الكمية + الكود / مبيعات سريعة' : 'Qté+Code a barre / Sélection'}
+                  </div>
+                  <form onSubmit={handleRapidBarcodeSubmit} className="flex gap-1.5">
+                    <div className="relative flex-1">
+                      <input
+                        ref={rapidScanInputRef}
+                        type="text"
+                        placeholder={language === 'ar' ? 'سحب سريع بالباركود / كمية...' : 'Entrez Qté / Scannez code-barres...'}
+                        value={rapidScanValue}
+                        onChange={(e) => setRapidScanValue(e.target.value)}
+                        onFocus={() => {
+                          setIsRapidScanFocused(true);
+                          setActiveNumpadTarget('rapidScan');
+                          setKeyboardLayout('numeric');
+                        }}
+                        onBlur={() => setIsRapidScanFocused(false)}
+                        className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs font-mono font-bold text-emerald-400 focus:border-cyan-500 focus:outline-hidden"
+                        autoComplete="off"
+                      />
+                      {rapidScanValue && (
+                        <button type="button" onClick={() => setRapidScanValue('')} className="absolute right-2.5 top-2 text-slate-400 hover:text-white text-xs">✕</button>
+                      )}
+                    </div>
+                    <button type="submit" className="bg-cyan-600 hover:bg-cyan-705 text-white font-black text-xs px-3 rounded-xl active:scale-95 transition-all cursor-pointer">
+                      {language === 'ar' ? 'أضف' : 'Ok'}
+                    </button>
+                  </form>
+                  
+                  {/* Highlighted current active input field target indicator bubble */}
+                  <div className="bg-slate-950 px-2.5 py-1.5 rounded-xl border border-slate-850 flex items-center justify-between text-[10px] font-mono">
+                    <span className="text-slate-400">
+                      {activeNumpadTarget === 'rapidScan' && (language === 'ar' ? '🎯 الإدخال النشط: باركود' : '🎯 TARGET: CODE-BARRES')}
+                      {activeNumpadTarget === 'lastItemQty' && (language === 'ar' ? '🎯 الإدخال النشط: كمية السلعة' : '🎯 TARGET: QUANTITÉ')}
+                      {activeNumpadTarget === 'paidAmount' && (language === 'ar' ? '🎯 الإدخال النشط: كاش مستلم' : '🎯 TARGET: ESPÈCES CASH')}
+                      {activeNumpadTarget === 'discount' && (language === 'ar' ? '🎯 الإدخال النشط: تخفيض' : '🎯 TARGET: REMISE GLOBAL')}
+                      {activeNumpadTarget === 'customPrice' && (language === 'ar' ? '🎯 الإدخال النشط: تعديل السعر' : '🎯 TARGET: TARIF MODIF')}
+                    </span>
+                    <span className="text-cyan-400 font-extrabold max-w-[120px] truncate">
+                      {activeNumpadTarget === 'rapidScan' && (rapidScanValue || '—')}
+                      {activeNumpadTarget === 'lastItemQty' && (cart.length > 0 ? `${cart[selectedCartIdx >= 0 && selectedCartIdx < cart.length ? selectedCartIdx : cart.length - 1]?.qty || 0} u` : '—')}
+                      {activeNumpadTarget === 'paidAmount' && (paidAmount ? `${formatCurrency(parseFloat(paidAmount))} TND` : '0 TND')}
+                      {activeNumpadTarget === 'discount' && (`${globalDiscount} TND`)}
+                      {activeNumpadTarget === 'customPrice' && (customItemPrice ? `${customItemPrice} TND` : '—')}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Real Cash Keypad - grid 3 cols */}
+                <div className="grid grid-cols-3 gap-1.5 flex-1 max-h-[300px]">
+                  {['7', '8', '9', '4', '5', '6', '1', '2', '3'].map((num) => (
+                    <button
+                      key={num}
+                      type="button"
+                      onClick={() => handleNumpadKeyPress(num)}
+                      className="bg-slate-800 hover:bg-slate-705 font-black text-lg rounded-xl transition-all active:scale-95 flex items-center justify-center border-b-2 border-slate-950 cursor-pointer text-slate-100"
+                    >
+                      {num}
+                    </button>
+                  ))}
+                  <button
+                    type="button"
+                    onClick={() => handleNumpadKeyPress('0')}
+                    className="bg-slate-800 hover:bg-slate-705 font-black text-lg rounded-xl transition-all active:scale-95 flex items-center justify-center border-b-2 border-slate-950 cursor-pointer text-slate-100"
+                  >
+                    0
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleNumpadKeyPress('.')}
+                    className="bg-slate-800 hover:bg-slate-705 font-black text-lg rounded-xl transition-all active:scale-95 flex items-center justify-center border-b-2 border-slate-950 cursor-pointer text-slate-100"
+                  >
+                    .
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleNumpadKeyPress('C')}
+                    className="bg-rose-600 hover:bg-rose-700 font-black text-md rounded-xl transition-all active:scale-95 flex items-center justify-center border-b-2 border-rose-800 cursor-pointer text-slate-100"
+                  >
+                    C
+                  </button>
+                </div>
+
+                {/* Color-coded command clusters inspired by Tictaac POS screenshot */}
+                <div className="space-y-1.5 shrink-0">
+                  <div className="grid grid-cols-2 gap-2">
+                    {/* ESPÈCE (Green block) */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (cart.length === 0) {
+                          showToast(language === 'ar' ? 'السلة فارغة!' : 'Ajoutez d\'abord des articles pour encaisser immédiat !', 'error');
+                          return;
+                        }
+                        setPaidAmount(String(finalTotal));
+                        setPaymentMethod('especes');
+                        setTimeout(() => {
+                          handleCheckoutClick();
+                        }, 100);
+                      }}
+                      className="bg-emerald-600 hover:bg-emerald-750 text-white font-black py-3 rounded-2xl transition-all active:scale-95 cursor-pointer flex flex-col items-center justify-center border-b-4 border-emerald-800 shadow-md text-xs leading-4"
+                    >
+                      <span className="text-sm">💵 Espèce (F11)</span>
+                      <span className="text-[9px] text-emerald-100 opacity-90">{formatCurrency(finalTotal)}</span>
+                    </button>
+
+                    {/* PLUS DE RÉGLEMENT (Blue block) */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setActiveNumpadTarget('paidAmount');
+                        showToast(language === 'ar' ? 'الرجاء إدخال المبلغ كاش باللوحة ثم الحفظ' : 'Activez le montant payé pour saisir des chèques ou traites', 'info');
+                      }}
+                      className="bg-sky-600 hover:bg-sky-750 text-white font-black py-3 rounded-2xl transition-all active:scale-95 cursor-pointer flex flex-col items-center justify-center border-b-4 border-sky-800 shadow-md text-xs leading-4"
+                    >
+                      <span className="text-xs">💳 Règlement (F12)</span>
+                      <span className="text-[9px] text-sky-100 opacity-90">Chèques / Crédits</span>
+                    </button>
+                  </div>
+
+                  {/* Key functional shortcuts */}
+                  <div className="grid grid-cols-3 gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setActiveNumpadTarget('lastItemQty');
+                        showToast(language === 'ar' ? 'تعديل الكمية نشط' : 'Saisie Quantité Active', 'info');
+                      }}
+                      className={`py-2 text-[10px] font-black rounded-lg border-b-2 flex flex-col items-center justify-center cursor-pointer transition-all ${
+                        activeNumpadTarget === 'lastItemQty' ? 'bg-purple-600 border-purple-800 text-white font-bold' : 'bg-slate-800 border-slate-950 text-slate-300 hover:bg-slate-750'
+                      }`}
+                    >
+                      <span>Qté (Multiplier)</span>
+                    </button>
+                    
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (cart.length > 0) {
+                          setActiveNumpadTarget('customPrice');
+                          showToast(language === 'ar' ? 'تعديل سعر البيع نشط' : 'Modification Tarif Active', 'info');
+                        } else {
+                          showToast(language === 'ar' ? 'السلة فارغة' : 'Panier vide', 'error');
+                        }
+                      }}
+                      className={`py-2 text-[10px] font-black rounded-lg border-b-2 flex flex-col items-center justify-center cursor-pointer transition-all ${
+                        activeNumpadTarget === 'customPrice' ? 'bg-amber-600 border-amber-805 text-white font-bold' : 'bg-slate-800 border-slate-950 text-slate-300 hover:bg-slate-750'
+                      }`}
+                    >
+                      <span>M.Prix (F10)</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setActiveNumpadTarget('discount');
+                        showToast(language === 'ar' ? 'تخفيض إجمالي نشط' : 'Remise Générale Active', 'info');
+                      }}
+                      className={`py-2 text-[10px] font-black rounded-lg border-b-2 flex flex-col items-center justify-center cursor-pointer transition-all ${
+                        activeNumpadTarget === 'discount' ? 'bg-rose-600 border-rose-805 text-white font-bold' : 'bg-slate-800 border-slate-950 text-slate-300 hover:bg-slate-750'
+                      }`}
+                    >
+                      <span>R.G % / R.Mt</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+
+              {/* MIDDLE ROW (Vertical colorful icons) - col-span-1 */}
+              <div className="xl:col-span-1 bg-slate-950 border border-slate-850 p-2 text-center rounded-3xl flex flex-row xl:flex-col justify-between items-center gap-1.5 shadow-2xl relative overflow-hidden select-none no-print">
+                <div className="flex flex-row xl:flex-col gap-2.5 w-full justify-around xl:justify-start items-center">
+                  {/* QTY + (Green) */}
+                  <button
+                    type="button"
+                    title="Quantité +1"
+                    onClick={() => {
+                      if (cart.length > 0) {
+                        const effIdx = selectedCartIdx >= 0 && selectedCartIdx < cart.length ? selectedCartIdx : cart.length - 1;
+                        const item = cart[effIdx];
+                        handleUpdateQty(item.product.id, item.qty + 1);
+                        playScanBeep();
+                      } else {
+                        showToast(language === 'ar' ? 'السلة فارغة' : 'Panier vide', 'error');
+                      }
+                    }}
+                    className="w-10 h-10 bg-emerald-600 hover:bg-emerald-550 rounded-xl flex items-center justify-center text-white active:scale-90 font-black text-xl cursor-pointer transition-all shadow-md"
+                  >
+                    ＋
+                  </button>
+                  
+                  {/* QTY - (Cyan) */}
+                  <button
+                    type="button"
+                    title="Quantité -1"
+                    onClick={() => {
+                      if (cart.length > 0) {
+                        const effIdx = selectedCartIdx >= 0 && selectedCartIdx < cart.length ? selectedCartIdx : cart.length - 1;
+                        const item = cart[effIdx];
+                        handleUpdateQty(item.product.id, item.qty - 1);
+                        playScanBeep();
+                      } else {
+                        showToast(language === 'ar' ? 'السلة فارغة' : 'Panier vide', 'error');
+                      }
+                    }}
+                    className="w-10 h-10 bg-sky-600 hover:bg-sky-505 rounded-xl flex items-center justify-center text-white active:scale-90 font-black text-xl cursor-pointer transition-all shadow-md"
+                  >
+                    ➖
+                  </button>
+                  
+                  {/* EDIT/PRICE (Blue) */}
+                  <button
+                    type="button"
+                    title="Modifier Prix de Vente"
+                    onClick={() => {
+                      if (cart.length > 0) {
+                        setActiveNumpadTarget('customPrice');
+                        showToast(language === 'ar' ? 'الرجاء إدخال السعر بالنمط الكاشير' : 'Saisissez le nouveau prix sur le clavier', 'info');
+                      } else {
+                        showToast(language === 'ar' ? 'السلة فارغة' : 'Le panier est vide', 'error');
+                      }
+                    }}
+                    className="w-10 h-10 bg-indigo-600 hover:bg-indigo-505 rounded-xl flex items-center justify-center text-white active:scale-90 text-sm cursor-pointer transition-all shadow-md"
+                  >
+                    ✎
+                  </button>
+                  
+                  {/* DELETE ITEM (Red) */}
+                  <button
+                    type="button"
+                    title="Supprimer la ligne"
+                    onClick={() => {
+                      if (cart.length > 0) {
+                        const effIdx = selectedCartIdx >= 0 && selectedCartIdx < cart.length ? selectedCartIdx : cart.length - 1;
+                        const productId = cart[effIdx].product.id;
+                        handleUpdateQty(productId, 0); // resets item to 0 which filters it out
+                        showToast(language === 'ar' ? 'تم حذف السلعة' : 'Ligne supprimée !', 'success');
+                      } else {
+                        showToast(language === 'ar' ? 'السلة فارغة' : 'Panier vide', 'error');
+                      }
+                    }}
+                    className="w-10 h-10 bg-rose-600 hover:bg-rose-505 rounded-xl flex items-center justify-center text-white active:scale-90 text-sm cursor-pointer transition-all shadow-md font-bold"
+                  >
+                    ✕
+                  </button>
+                  
+                  {/* NEW SALE NS (Orange) */}
+                  <button
+                    type="button"
+                    title="Nouvelle Vente (Vider)"
+                    onClick={() => {
+                      setCart([]);
+                      setSelectedCartIdx(-1);
+                      setPaidAmount('');
+                      setGlobalDiscount(0);
+                      showToast(language === 'ar' ? 'تم تصفير وبدء بيع جديد' : 'Nouveau ticket initialisé !', 'info');
+                    }}
+                    className="w-10 h-10 bg-amber-600 hover:bg-amber-505 rounded-xl flex items-center justify-center text-white active:scale-90 font-black text-[11px] cursor-pointer transition-all shadow-md"
+                  >
+                    NS
+                  </button>
+                </div>
+                
+                <div className="flex flex-row xl:flex-col gap-2.5">
+                  {/* CLIENT SELECTION (Green) */}
+                  <button
+                    type="button"
+                    title="Choisir Client"
+                    onClick={() => {
+                      showToast(language === 'ar' ? 'اختر العميل من القائمة باليمين أسفل الشاشة' : 'Sélectionnez un client sur la zone de droite', 'info');
+                    }}
+                    className="w-10 h-10 bg-emerald-700 hover:bg-emerald-600 rounded-xl flex items-center justify-center text-white active:scale-90 text-xs cursor-pointer transition-all"
+                  >
+                    👤
+                  </button>
+
+                  {/* PRINT TICKET (Blue) */}
+                  <button
+                    type="button"
+                    title="Format d'impression"
+                    onClick={() => {
+                      const nextFormat = printFormat === 'ticket' ? 'a4' : 'ticket';
+                      setPrintFormat(nextFormat);
+                      safeLocalStorage.setItem('pos_print_format', nextFormat);
+                      showToast(language === 'ar' ? `نمط الطباعة: ${nextFormat}` : `Ajustement impression: ${nextFormat}`, 'info');
+                    }}
+                    className="w-10 h-10 bg-slate-800 hover:bg-slate-700 rounded-xl flex items-center justify-center text-white active:scale-90 text-xs cursor-pointer transition-all"
+                  >
+                    🖨️
+                  </button>
+
+                  {/* EJECT DRAWER (Green) */}
+                  <button
+                    type="button"
+                    title="Ouvrir Tiroir Caisse"
+                    onClick={handleManualDrawerEject}
+                    className="w-10 h-10 bg-teal-800 hover:bg-teal-705 rounded-xl flex items-center justify-center text-white active:scale-90 text-xs cursor-pointer transition-all"
+                  >
+                    💰
+                  </button>
+                </div>
+              </div>
+
+
+              {/* RIGHT COLUMN (Cart and display tables / or product grids slider) - col-span-7 */}
+              <div className="xl:col-span-7 bg-white border border-slate-200 p-4.5 rounded-3xl flex flex-col justify-between gap-4 h-[800px] xl:h-[860px] shadow-lg">
+                {/* Header LCD Total Screen */}
+                <div className="bg-gradient-to-r from-blue-900 to-indigo-950 border-2 border-indigo-900 p-4 rounded-2xl flex flex-col justify-between relative overflow-hidden font-sans shadow-2xl shrink-0 text-left text-white">
+                  <div className="absolute top-1 right-2 opacity-25 text-[8px] font-mono tracking-widest text-cyan-300">📟 TICTAAC DIGITAL CONSOLE</div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-black uppercase text-cyan-300 tracking-wider">
+                      {language === 'ar' ? 'إجمالي المبيعات المستحق :' : 'TOTAUX PAYABLE :'}
+                    </span>
+                    <div className="text-[9.5px] font-mono font-bold text-slate-300">
+                      📌 {cashRegisterType === 'facture' ? 'FACTURE DIRECTE (19% VAT)' : 'BON DE LIVRAISON'}
+                    </div>
+                  </div>
+                  
+                  <div className="flex items-center justify-between mt-1 border-b border-white/10 pb-3">
+                    <span className="text-4xl xs:text-5xl font-mono font-black text-emerald-400 tracking-tight drop-shadow-[0_0_12px_rgba(52,211,153,0.4)]">
+                      {formatCurrency(finalTotal)} <span className="text-sm font-sans font-black text-emerald-200">TND</span>
+                    </span>
+                    <div className="text-right">
+                      <span className="text-[9px] font-black text-slate-300 block uppercase tracking-wide">
+                        👤 {language === 'ar' ? 'العميل المعتمد' : 'CLIENT ALLOUÉ'}
+                      </span>
+                      <span className="text-xs font-bold text-cyan-200 block truncate max-w-[200px]">
+                        {activePartner ? activePartner.name : (language === 'ar' ? 'زبون عادي' : 'Client Comptoir')}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Mini detailed LCD grids */}
+                  <div className="grid grid-cols-3 gap-2.5 mt-2.5 text-center">
+                    <div className="bg-slate-900/60 p-1.5 rounded-lg border border-white/5">
+                      <span className="text-[8.5px] text-slate-300 block font-extrabold uppercase">{language === 'ar' ? 'الصافي HT' : 'Total H.T'}</span>
+                      <span className="font-mono text-xs font-black text-slate-100">{formatCurrency(subTotal - totalDiscount)} TND</span>
+                    </div>
+                    <div className="bg-slate-900/60 p-1.5 rounded-lg border border-white/5">
+                      <span className="text-[8.5px] text-slate-300 block font-extrabold uppercase text-rose-300">{language === 'ar' ? 'الخصوم' : 'Remises'}</span>
+                      <span className="font-mono text-xs font-black text-rose-400 font-bold">-{formatCurrency(totalDiscount || 0)} TND</span>
+                    </div>
+                    <div className="bg-slate-940/60 p-1.5 rounded-lg border border-white/5">
+                      <span className="text-[8.5px] text-slate-300 block font-extrabold uppercase">{language === 'ar' ? 'الضريبة TVA' : 'Taxe (TVA)'}</span>
+                      <span className="font-mono text-xs font-black text-cyan-300">+{formatCurrency(finalTaxAmount)} TND</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Sliding tab buttons to switch between "Cart list table" and "Product Catalog Grid list" */}
+                <div className="flex bg-slate-100 p-0.5 rounded-xl border border-slate-200 select-none shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setRightPaneView('cartTable');
+                    }}
+                    className={`flex-1 py-1.5 rounded-lg text-xs font-black flex items-center justify-center gap-1.5 cursor-pointer transition-all ${
+                      rightPaneView === 'cartTable' ? 'bg-white text-slate-900 shadow-3xs font-black' : 'text-slate-550 hover:text-slate-700'
+                    }`}
+                  >
+                    🛒 {language === 'ar' ? 'سلة المبيعات وقائمة المواد' : 'Liste de Panier'} ({cart.length})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setRightPaneView('productGrid');
+                    }}
+                    className={`flex-1 py-1.5 rounded-lg text-xs font-black flex items-center justify-center gap-1.5 cursor-pointer transition-all ${
+                      rightPaneView === 'productGrid' ? 'bg-white text-slate-900 shadow-3xs font-black' : 'text-slate-550 hover:text-slate-700'
+                    }`}
+                  >
+                    🍎 {language === 'ar' ? 'كتالوج السلع والمنتجات سريع' : 'Catalogue Galerie'} ({filteredProducts.length})
+                  </button>
+                </div>
+
+                {/* Display depending on the active right pane tab */}
+                <div className="flex-1 min-h-0 flex flex-col justify-between">
+                  {rightPaneView === 'cartTable' ? (
+                    /* CART LIST TABLE */
+                    <div className="flex-1 bg-slate-50 border border-slate-150 rounded-2xl overflow-hidden flex flex-col justify-between h-full min-h-0">
+                      <div className="overflow-y-auto flex-1 custom-scrollbar">
+                        <table className="w-full text-center text-[11px] font-sans border-collapse">
+                          <thead>
+                            <tr className="bg-slate-100 text-slate-500 font-extrabold border-b border-slate-200 uppercase text-[9px] sticky top-0 z-10">
+                              <th className="px-2 py-2.5 w-8">#</th>
+                              <th className="px-2 py-2.5 text-left">{language === 'ar' ? 'البيان' : 'Désignation'}</th>
+                              <th className="px-2 py-2.5 w-16">{language === 'ar' ? 'سعر م' : 'P.U (TND)'}</th>
+                              <th className="px-2 py-2.5 w-12">{language === 'ar' ? 'الكمية' : 'Qté'}</th>
+                              <th className="px-2.5 py-2.5 text-right w-20">{language === 'ar' ? 'الإجمالي' : 'Total'}</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {cart.length === 0 ? (
+                              <tr>
+                                <td colSpan={5} className="text-center py-24 text-slate-400 font-bold">
+                                  <span className="text-4xl block mb-2">🛒</span>
+                                  {language === 'ar' ? 'السلة فارغة حالياً. اضغط على "كتالوج السلع والمنتجات" لإضافة مواد ومبيعات!' : 'Le panier est complètement vide. Choisissez "Catalogue Galerie" pour ajouter des articles !'}
+                                </td>
+                              </tr>
+                            ) : (
+                              cart.map((item, idx) => {
+                                const isSelected = (selectedCartIdx >= 0 && selectedCartIdx < cart.length ? selectedCartIdx : (cart.length > 0 ? cart.length - 1 : -1)) === idx;
+                                const itemTotal = item.qty * item.customPrice;
+                                return (
+                                  <tr
+                                    key={idx}
+                                    onClick={() => setSelectedCartIdx(idx)}
+                                    className={`border-b border-slate-200 cursor-pointer select-none transition-all duration-150 ${
+                                      isSelected
+                                        ? 'bg-indigo-50 border-l-4 border-indigo-600 font-extrabold text-indigo-905'
+                                        : 'hover:bg-slate-100/50 text-slate-705'
+                                    }`}
+                                  >
+                                    <td className="px-2 py-2.5 text-slate-400 text-[10px] font-mono font-bold">
+                                      {idx + 1}
+                                    </td>
+                                    <td className="px-2 py-2.5 text-left font-semibold truncate max-w-[185px]">
+                                      {language === 'ar' ? (item.product.nameAr || item.product.name) : (item.product.nameFr || item.product.name)}
+                                    </td>
+                                    <td className="px-2 py-2.5 font-mono font-bold text-slate-700 font-bold">
+                                      {formatCurrency(item.customPrice)}
+                                    </td>
+                                    <td className="px-2 py-2.5 font-mono">
+                                      <span className={`px-1.5 py-0.5 rounded text-[10.5px] font-black ${item.qty < 0 ? 'bg-rose-100 text-rose-700' : 'bg-slate-100 text-slate-800'}`}>
+                                        {item.qty}
+                                      </span>
+                                    </td>
+                                    <td className="px-2.5 py-2.5 text-right font-mono font-black text-indigo-600">
+                                      {formatCurrency(itemTotal)} TND
+                                    </td>
+                                  </tr>
+                                );
+                              })
+                            )}
+                          </tbody>
+                        </table>
+                      </div>
+
+                      {/* Reste Rendu bottom cash panel */}
+                      {cart.length > 0 && (
+                        <div className="bg-slate-100 p-2.5 border-t border-slate-150 grid grid-cols-3 gap-2 text-[10.5px] font-mono font-bold text-slate-700 shrink-0">
+                          <div>
+                            {language === 'ar' ? 'المدفوع:' : 'REÇU :'} <span className="text-emerald-700 font-black">{formatCurrency(parseFloat(paidAmount) || 0)} DT</span>
+                          </div>
+                          <div className="text-center">
+                            {language === 'ar' ? 'المتبقي:' : 'RENDU :'} <span className="text-cyan-700 font-black">{formatCurrency(Math.max(0, (parseFloat(paidAmount) || 0) - finalTotal))} DT</span>
+                          </div>
+                          <div className="text-right">
+                            {language === 'ar' ? 'السلع:' : 'ARTICLES :'} <span className="text-indigo-700 font-black">{totalItemsCount}</span>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    /* PRODUCTS AND CATEGORIES SELECTION GRID */
+                    <div className="flex-1 flex flex-col gap-3 min-h-0 select-none h-full">
+                      {/* Category Horizontal scroll pills */}
+                      <div className="flex items-center gap-1.5 overflow-x-auto pb-1 shrink-0 scrollbar-none">
+                        {categories.map((cat) => {
+                          const isSelected = selectedCategory === cat;
+                          return (
+                            <button
+                              key={cat}
+                              type="button"
+                              onClick={() => setSelectedCategory(cat)}
+                              className={`px-3.5 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all duration-155 shrink-0 cursor-pointer active:scale-95 border ${
+                                isSelected
+                                  ? 'bg-rose-600 text-white border-rose-750 shadow-md scale-102 font-black'
+                                  : 'bg-slate-100 text-slate-700 border-slate-200 hover:bg-slate-200'
+                              }`}
+                            >
+                              {cat === 'Tous' ? (language === 'ar' ? '🔥 الكل' : '🔥 TOUS') : cat}
+                            </button>
+                          );
+                        })}
+                      </div>
+
+                      {/* Fast Touch list search bar */}
+                      <div className="relative shrink-0">
+                        <input
+                          type="text"
+                          value={searchQuery}
+                          onChange={(e) => setSearchQuery(e.target.value)}
+                          placeholder={language === 'ar' ? 'البحث عن سلعة لمسية في الكتالوج...' : 'Filtrez le catalogue par nom...'}
+                          className="w-full bg-slate-50 border border-slate-205 rounded-xl px-3 py-2 text-xs font-bold text-slate-800 focus:outline-hidden focus:bg-white"
+                        />
+                      </div>
+
+                      {/* Product cards list matrix */}
+                      <div className="flex-1 overflow-y-auto custom-scrollbar min-h-0">
+                        {filteredProducts.length === 0 ? (
+                          <div className="text-center py-12 text-slate-400 text-xs font-bold">
+                            Aucun article ne correspond à vos filtres.
+                          </div>
+                        ) : (
+                          <div className="grid grid-cols-2 xs:grid-cols-3 gap-2.5 pb-1 text-left">
+                            {filteredProducts.map((prod) => {
+                              const isOutOfStock = prod.stock <= 0;
+                              return (
+                                <button
+                                  key={prod.id}
+                                  type="button"
+                                  disabled={isOutOfStock}
+                                  onClick={() => {
+                                    handleAddToCart(prod);
+                                    // Select most recently added item
+                                    setTimeout(() => {
+                                      setSelectedCartIdx(cart.length);
+                                    }, 50);
+                                  }}
+                                  className={`bg-slate-50 border border-slate-150 hover:bg-slate-100 font-sans hover:border-rose-450 p-2.5 rounded-2xl flex flex-col justify-between h-[110px] transition-all cursor-pointer ${
+                                    isOutOfStock ? 'opacity-40 cursor-not-allowed bg-slate-100' : ''
+                                  }`}
+                                >
+                                  <div className="text-[10px] font-black text-slate-805 line-clamp-2 uppercase">
+                                    {language === 'ar' ? (prod.nameAr || prod.name) : (prod.nameFr || prod.name)}
+                                  </div>
+                                  <div className="flex items-center justify-between mt-1">
+                                    <span className="font-mono text-[11px] font-black text-rose-600">{formatCurrency(prod.sellingPrice)} TND</span>
+                                    <span className={`text-[8.5px] px-1.5 py-0.2 rounded font-mono font-bold ${prod.stock < 5 ? 'bg-amber-100 text-amber-800' : 'bg-slate-150 text-slate-600'}`}>
+                                      {prod.stock} u
+                                    </span>
+                                  </div>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Customer / Partner selector footer wrapper */}
+                <div className="bg-slate-50 p-2.5 rounded-2xl flex items-center justify-between gap-2.5 border border-slate-150 select-none shrink-0 text-left">
+                  <div className="flex-1 flex items-center gap-1.5 min-w-0">
+                    <span className="text-[9.5px] font-black text-slate-500 shrink-0">👥 CLIENT:</span>
+                    <select
+                      value={selectedPartnerId}
+                      onChange={(e) => setSelectedPartnerId(e.target.value)}
+                      className="bg-transparent border-0 focus:ring-0 text-[11px] font-extrabold text-indigo-900 cursor-pointer flex-1 min-w-0"
+                    >
+                      <option value="">⚙️ {language === 'ar' ? 'زبون كاش (Comptoir)' : 'Client Comptoir (Anonyme/Espèces)'}</option>
+                      {clients.map(p => (
+                        <option key={p.id} value={p.id}>
+                          👤 {p.name} {p.discountRate ? `(-${p.discountRate}%)` : ''} - {p.phone || 'Pas de numéro'}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setShowNewClientModal(true)}
+                    className="bg-indigo-55 hover:bg-indigo-100 text-indigo-705 border border-indigo-205 px-2 py-1 rounded-xl text-xs font-black transition-colors cursor-pointer active:scale-95 shrink-0"
+                  >
+                    ➕
+                  </button>
+                </div>
+              </div>
+            </div>
+          ) : (
+            /* EXISTING IS_CART_ONLY_MODE LAYOUT */
+            <div className="xl:col-span-12 max-w-[1550px] mx-auto w-full grid grid-cols-1 xl:grid-cols-12 gap-6 items-stretch select-none no-print">
             
             {/* LEFT COLUMN: Cart listing + LCD Total + Numpad & Quick Payment Tabs */}
             <div className="xl:col-span-5 bg-slate-900 border border-slate-800 p-4.5 rounded-3xl flex flex-col justify-between gap-4 h-[800px] xl:h-[860px] shadow-2xl relative overflow-hidden text-white">
@@ -2853,7 +3464,7 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
             </div>
 
           </div>
-        ) : (
+        )) : (
           <div className="lg:col-span-12 xl:col-span-5 bg-slate-50 p-6 border border-slate-200 rounded-3xl no-print shadow-xs transition-all duration-300 space-y-5">
           
           {/* Continuous barcode scanner entry block (Shown in Cart Only Mode) */}
