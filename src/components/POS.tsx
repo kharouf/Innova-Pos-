@@ -903,23 +903,29 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
   useEffect(() => {
     if (!autoFocusScanField) return;
 
-    // Disable global physical focus-stealing click handler on touch/mobile devices to prevent 
-    // the virtual/on-screen keyboard from popping up unexpectedly when tapping around the POS.
-    const isTouchDevice = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
-    if (isTouchDevice) {
-      console.log("[INNOVA FOCUS] Touch/mobile device detected. Bypassing global click focus stealer.");
-      return;
-    }
-
-    // Focus immediately on mount / state activate
+    // Focus immediately on mount / state activate (including touch/mobile devices on initial view)
     const triggerFocus = () => {
       if (rapidScanInputRef.current && document.activeElement !== rapidScanInputRef.current) {
         rapidScanInputRef.current.focus();
       }
     };
     
-    // Tiny delay to ensure DOM is fully ready
-    const initTimer = setTimeout(triggerFocus, 150);
+    // Multiple intervals to ensure focus fits right after CSS layout transitions and animations complete
+    const initTimer1 = setTimeout(triggerFocus, 100);
+    const initTimer2 = setTimeout(triggerFocus, 350);
+    const initTimer3 = setTimeout(triggerFocus, 700);
+
+    // Disable global physical focus-stealing click handler on touch/mobile devices to prevent 
+    // the virtual/on-screen keyboard from popping up unexpectedly when tapping around the POS.
+    const isTouchDevice = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+    if (isTouchDevice) {
+      console.log("[INNOVA FOCUS] Touch/mobile device detected. Focusing on mount but bypassing global click focus stealer.");
+      return () => {
+        clearTimeout(initTimer1);
+        clearTimeout(initTimer2);
+        clearTimeout(initTimer3);
+      };
+    }
 
     const handleGlobalClick = (e: MouseEvent) => {
       const activeElement = document.activeElement;
@@ -954,7 +960,9 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
 
     document.addEventListener('click', handleGlobalClick);
     return () => {
-      clearTimeout(initTimer);
+      clearTimeout(initTimer1);
+      clearTimeout(initTimer2);
+      clearTimeout(initTimer3);
       document.removeEventListener('click', handleGlobalClick);
     };
   }, [autoFocusScanField]);
@@ -1395,6 +1403,13 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
     setRedeemedPoints(0); // Reset points state
     setIsReturnMode(false); // Reset Return Mode to normal on successful checkout
     showToast(language === 'ar' ? `تم إنشاء الوثيقة ${invoiceNumber}` : `Document ${invoiceNumber} créé avec succès`);
+    
+    // Auto-focus barcode scanner input back ready for the next client scan
+    if (autoFocusScanField) {
+      setTimeout(() => {
+        rapidScanInputRef.current?.focus();
+      }, 100);
+    }
   };
 
   const handleCheckoutClick = () => {
