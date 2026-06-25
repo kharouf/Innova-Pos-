@@ -33,12 +33,13 @@ import {
   Info,
   Check,
   X,
-  PlusCircle
+  PlusCircle,
+  Phone,
+  Mail
 } from 'lucide-react';
 
 export default function SaaSDeveloperConsole() {
   const { language, formatCurrency } = useLanguage();
-  const [activeTab, setActiveTab] = useState<'tenants' | 'updates'>('tenants');
   
   // Tenants (Clients) States
   const [tenants, setTenants] = useState<UserLicenseData[]>([]);
@@ -59,60 +60,10 @@ export default function SaaSDeveloperConsole() {
   const [editPaymentStatus, setEditPaymentStatus] = useState<'paid' | 'pending' | 'free_trial' | 'refunded'>('free_trial');
   const [editPaymentAmount, setEditPaymentAmount] = useState<number>(0);
   const [editAdminNotes, setEditAdminNotes] = useState('');
-
-  // Pre-registration state
-  const [showAddTenantForm, setShowAddTenantForm] = useState(false);
-  const [newTenantEmail, setNewTenantEmail] = useState('');
-  const [newTenantUid, setNewTenantUid] = useState('');
-  const [newTenantStoreName, setNewTenantStoreName] = useState('');
-  const [newTenantStatus, setNewTenantStatus] = useState<'trial' | 'active' | 'suspended' | 'expired'>('trial');
-  const [newTenantRegisteredAt, setNewTenantRegisteredAt] = useState('');
-  const [newTenantActivationDate, setNewTenantActivationDate] = useState('');
-  const [newTenantExpiry, setNewTenantExpiry] = useState('');
-  const [newTenantLocation, setNewTenantLocation] = useState('');
-  const [newTenantPaymentStatus, setNewTenantPaymentStatus] = useState<'paid' | 'pending' | 'free_trial' | 'refunded'>('free_trial');
-  const [newTenantPaymentAmount, setNewTenantPaymentAmount] = useState<number>(0);
-  const [newTenantAdminNotes, setNewTenantAdminNotes] = useState('');
-
-  // Updates (Mise à jour) States
-  const [updatesList, setUpdatesList] = useState<SystemUpdate[]>([]);
-  const [updatesLoading, setUpdatesLoading] = useState(false);
-  const [showAddUpdateForm, setShowAddUpdateForm] = useState(false);
-  const [editUpdateId, setEditUpdateId] = useState<string | null>(null); // holds update ID if editing
-  
-  // Form fields for system update
-  const [updateId, setUpdateId] = useState(''); // e.g., 'v1.4.0'
-  const [updateTitleFr, setUpdateTitleFr] = useState('');
-  const [updateTitleAr, setUpdateTitleAr] = useState('');
-  const [updateType, setUpdateType] = useState<'major' | 'feature' | 'patch'>('feature');
-  const [updateDescFr, setUpdateDescFr] = useState('');
-  const [updateDescAr, setUpdateDescAr] = useState('');
-
-  // SaaS Wiping and System Reset States
-  const [wipeConfirmText, setWipeConfirmText] = useState('');
-  const [isWipingModeActive, setIsWipingModeActive] = useState(false);
+  const [editPhone, setEditPhone] = useState('');
 
   // Floating Toast State
   const [toastMessage, setToastMessage] = useState<string | null>(null);
-
-  const handleWipeAllSaaSTenants = async () => {
-    if (wipeConfirmText !== 'WIPE') {
-      showToast(language === 'ar' ? '⚠️ يرجى كتابة الرمز WIPE للتأكيد' : '⚠️ Veuillez inscrire WIPE pour valider');
-      return;
-    }
-    setIsWipingModeActive(true);
-    try {
-      await wipeAllSaaSTenantsAndDatabases();
-      showToast(language === 'ar' ? '🗑️ تم مسح وفسخ جميع الحسابات المسجلة وإعادة بدء السيستم من الصفر !' : '🗑️ Tous les comptes locataires ont été supprimés !');
-      setWipeConfirmText('');
-      await fetchTenants();
-    } catch (err) {
-      console.error(err);
-      showToast(language === 'ar' ? '❌ خطأ أثناء مسح الحسابات' : '❌ Erreur de nettoyage général');
-    } finally {
-      setIsWipingModeActive(false);
-    }
-  };
 
   const showToast = (msg: string) => {
     setToastMessage(msg);
@@ -132,27 +83,12 @@ export default function SaaSDeveloperConsole() {
     }
   };
 
-  const fetchUpdates = async () => {
-    setUpdatesLoading(true);
-    try {
-      const list = await loadSystemUpdates();
-      setUpdatesList(list);
-    } catch (err) {
-      console.error(err);
-      showToast('❌ Failed to fetch system updates catalog');
-    } finally {
-      setUpdatesLoading(false);
-    }
-  };
-
   useEffect(() => {
     fetchTenants();
-    fetchUpdates();
   }, []);
 
   const handleRefreshAll = () => {
     fetchTenants();
-    fetchUpdates();
     showToast(language === 'ar' ? '🔄 تم تحديث السيرفر السحابي وقاعدة البيانات!' : '🔄 Données SaaS actualisées depuis Firestore !');
   };
 
@@ -168,6 +104,7 @@ export default function SaaSDeveloperConsole() {
     setEditPaymentStatus(t.paymentStatus || 'free_trial');
     setEditPaymentAmount(t.paymentAmount || 0);
     setEditAdminNotes(t.adminNotes || '');
+    setEditPhone(t.phone || '');
   };
 
   const handleSaveTenantLicense = async (uid: string) => {
@@ -191,6 +128,7 @@ export default function SaaSDeveloperConsole() {
         paymentStatus: editPaymentStatus,
         paymentAmount: Number(editPaymentAmount) || 0,
         adminNotes: editAdminNotes.trim() || undefined,
+        phone: editPhone.trim() || undefined,
       };
 
       await saveUserLicense(uid, updatedFields);
@@ -217,131 +155,6 @@ export default function SaaSDeveloperConsole() {
       showToast('❌ Error deleting tenant database');
     } finally {
       setActionLoading(null);
-    }
-  };
-
-  const handleCreateNewTenant = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newTenantUid.trim() || !newTenantEmail.trim()) {
-      showToast(language === 'ar' ? '⚠️ يرجى إدخال البريد الإلكتروني و كود الـ UID' : '⚠️ Email et UID obligatoires !');
-      return;
-    }
-
-    const targetUid = newTenantUid.trim();
-    setActionLoading(targetUid);
-    try {
-      const regDate = newTenantRegisteredAt || new Date().toISOString().split('T')[0];
-      const expiryDate = newTenantExpiry || new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]; // 1 Year default
-      
-      let actDate = newTenantActivationDate.trim();
-      if (newTenantStatus === 'active' && !actDate) {
-        actDate = new Date().toISOString().split('T')[0];
-      }
-
-      const hashKey = generateLicenseKey(targetUid, expiryDate);
-
-      const payload: UserLicenseData = {
-        uid: targetUid,
-        email: newTenantEmail.trim(),
-        registeredAt: regDate,
-        activationDate: actDate || undefined,
-        licenseExpiry: expiryDate,
-        licenseStatus: newTenantStatus,
-        licenseKey: hashKey,
-        businessName: newTenantStoreName.trim() || 'Superette Tunisienne',
-        location: newTenantLocation.trim() || '',
-        paymentStatus: newTenantPaymentStatus,
-        paymentAmount: Number(newTenantPaymentAmount) || 0,
-        adminNotes: newTenantAdminNotes.trim() || 'Pré-enregistré.',
-        remoteAnnouncement: newTenantStatus === 'trial' 
-          ? 'Bienvenue sur INNOVA POS PRO. Version démonstration active.' 
-          : 'Votre abonnement annuel Innova POS a été configuré avec succès.'
-      };
-
-      await saveUserLicense(targetUid, payload);
-      showToast(language === 'ar' ? '✅ تم تسجيل المشترك وحفظ رخصته بنجاح!' : '✅ Utilisateur pré-enregistré avec succès !');
-      
-      // Reset variables
-      setNewTenantUid('');
-      setNewTenantEmail('');
-      setNewTenantStoreName('');
-      setNewTenantStatus('trial');
-      setNewTenantRegisteredAt('');
-      setNewTenantActivationDate('');
-      setNewTenantExpiry('');
-      setNewTenantLocation('');
-      setNewTenantPaymentStatus('free_trial');
-      setNewTenantPaymentAmount(0);
-      setNewTenantAdminNotes('');
-      setShowAddTenantForm(false);
-      
-      await fetchTenants();
-    } catch (err) {
-      console.error(err);
-      showToast('❌ Failed to register new tenant');
-    } finally {
-      setActionLoading(null);
-    }
-  };
-
-  // ----- SYSTEM UPDATE (MISE A JOUR) ACTIONS -----
-  const handleSaveSystemUpdate = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!updateId.trim() || !updateTitleFr.trim() || !updateTitleAr.trim()) {
-      showToast(language === 'ar' ? '⚠️ يرجى تعبئة الحقول الأساسية ورقم الإصدار' : '⚠️ Remplissez les champs obligatoires');
-      return;
-    }
-
-    const payload: SystemUpdate = {
-      id: updateId.trim(),
-      date: new Date().toLocaleDateString('fr-FR') + ' - ' + new Date().toLocaleTimeString('fr-FR', {hour: '2-digit', minute:'2-digit'}),
-      titleFr: updateTitleFr.trim(),
-      titleAr: updateTitleAr.trim(),
-      descriptionFr: updateDescFr.split('\n').map(line => line.trim()).filter(Boolean),
-      descriptionAr: updateDescAr.split('\n').map(line => line.trim()).filter(Boolean),
-      type: updateType
-    };
-
-    try {
-      await saveSystemUpdate(payload);
-      showToast(language === 'ar' ? '🚀 تم حفظ ونشر ملف التحديث بنجاح!' : '🚀 Mise à jour publiée avec succès !');
-      setShowAddUpdateForm(false);
-      // Clear form
-      setUpdateId('');
-      setUpdateTitleFr('');
-      setUpdateTitleAr('');
-      setUpdateDescFr('');
-      setUpdateDescAr('');
-      setEditUpdateId(null);
-      await fetchUpdates();
-    } catch (err) {
-      console.error(err);
-      showToast('❌ Failed to save system update');
-    }
-  };
-
-  const handleStartEditUpdate = (up: SystemUpdate) => {
-    setEditUpdateId(up.id);
-    setUpdateId(up.id);
-    setUpdateTitleFr(up.titleFr);
-    setUpdateTitleAr(up.titleAr);
-    setUpdateType(up.type);
-    setUpdateDescFr(up.descriptionFr.join('\n'));
-    setUpdateDescAr(up.descriptionAr.join('\n'));
-    setShowAddUpdateForm(true);
-  };
-
-  const handleDeleteSystemUpdate = async (id: string) => {
-    if (!window.confirm(language === 'ar' ? `⚠️ هل أنت متأكد من رغبتك في حذف وإلغاء الإصدار ${id}؟` : `Voulez-vous vraiment retirer la mise à jour ${id} ?`)) {
-      return;
-    }
-    try {
-      await deleteSystemUpdate(id);
-      showToast(language === 'ar' ? '🗑️ تم إزالة ملف التحديث وسحبه بنجاح!' : '🗑️ Version mise à jour retirée !');
-      await fetchUpdates();
-    } catch (err) {
-      console.error(err);
-      showToast('❌ Error deleting system update');
     }
   };
 
@@ -430,43 +243,15 @@ export default function SaaSDeveloperConsole() {
 
         <button
           onClick={handleRefreshAll}
-          disabled={loading || updatesLoading}
+          disabled={loading}
           className="self-start sm:self-auto flex items-center justify-center gap-1.5 py-2 px-4 rounded-lg border border-slate-700 bg-slate-800 hover:bg-slate-75 * bg-linear-to-b text-xs font-bold text-white transition-all cursor-pointer shadow-3xs hover:shadow-2xs active:scale-95 text-center"
         >
-          <RefreshCw className={`w-3.5 h-3.5 text-rose-400 ${(loading || updatesLoading) ? 'animate-spin' : ''}`} />
+          <RefreshCw className={`w-3.5 h-3.5 text-rose-400 ${loading ? 'animate-spin' : ''}`} />
           <span>{language === 'ar' ? 'تحديث وتزامن السيرفر' : 'Actualiser Firebase'}</span>
         </button>
       </div>
 
-      {/* Elegant Nav Tabs Switcher */}
-      <div className="flex border-b border-slate-200">
-        <button 
-          onClick={() => setActiveTab('tenants')}
-          className={`py-3 px-6 text-xs font-black uppercase tracking-wider border-b-2 transition-all flex items-center gap-2 cursor-pointer ${
-            activeTab === 'tenants' 
-              ? 'border-rose-600 text-rose-600 font-extrabold' 
-              : 'border-transparent text-slate-500 hover:text-slate-800'
-          }`}
-        >
-          <Users className="w-4 h-4" />
-          <span>{language === 'ar' ? '📁 قائمة المشتركين ونطاق التراخيص' : '📁 Clients & Contrôle des Licences'}</span>
-        </button>
-        <button 
-          onClick={() => setActiveTab('updates')}
-          className={`py-3 px-6 text-xs font-black uppercase tracking-wider border-b-2 transition-all flex items-center gap-2 cursor-pointer ${
-            activeTab === 'updates' 
-              ? 'border-rose-600 text-rose-600 font-extrabold' 
-              : 'border-transparent text-slate-500 hover:text-slate-800'
-          }`}
-        >
-          <Rocket className="w-4 h-4" />
-          <span>{language === 'ar' ? '🚀 إدارة وتحديثات النظام (Mise à Jour)' : '🚀 Mises à Jour & Annonces SaaS'}</span>
-        </button>
-      </div>
-
-      {/* TAB 1: TENANTS LIST */}
-      {activeTab === 'tenants' && (
-        <div className="space-y-6 animate-fade-in animate-duration-300">
+      <div className="space-y-6 animate-fade-in animate-duration-300">
           
           {/* KPI Dashboard Grid */}
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
@@ -525,28 +310,10 @@ export default function SaaSDeveloperConsole() {
                     : 'Fiches d\'identification, dates de souscription et réglage d\'activation globale'}
                 </p>
               </div>
-
-              <div className="flex flex-col sm:flex-row gap-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowAddTenantForm(!showAddTenantForm);
-                    if (!showAddTenantForm) {
-                      setNewTenantRegisteredAt(new Date().toISOString().split('T')[0]);
-                      setNewTenantExpiry(new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]);
-                      setNewTenantActivationDate(new Date().toISOString().split('T')[0]);
-                    }
-                  }}
-                  className="py-1.5 px-3 bg-rose-600 hover:bg-rose-700 text-white font-extrabold rounded-lg text-xs shrink-0 flex items-center justify-center gap-1.5 cursor-pointer shadow-3xs transition-all"
-                >
-                  <span>{showAddTenantForm ? '✕' : '➕'}</span>
-                  <span>{language === 'ar' ? 'تسجيل زبون جديد' : 'Pré-enregistrer un client (Gmail)'}</span>
-                </button>
-              </div>
             </div>
 
             {/* Filter and query toolbar */}
-            <div className="p-4 bg-slate-50 border-b border-slate-200 flex flex-col md:flex-row gap-3 items-center justify-between">
+            <div className="p-4 bg-slate-50 border-b border-slate-200 flex flex-col md:flex-row gap-3 items-center justify-between text-start">
               <div className="relative w-full md:max-w-md">
                 <Search className="absolute top-2.5 right-3 w-4 h-4 text-slate-400" />
                 <input
@@ -573,203 +340,6 @@ export default function SaaSDeveloperConsole() {
                 </select>
               </div>
             </div>
-
-            {/* Pre-registration form drop-down */}
-            {showAddTenantForm && (
-              <form onSubmit={handleCreateNewTenant} className="bg-slate-900 border-b border-rose-500/15 text-white p-5 space-y-4 text-start animate-fadeIn">
-                <div className="flex items-center justify-between border-b border-slate-800 pb-2.5">
-                  <h4 className="text-xs font-black uppercase tracking-widest text-rose-450 font-mono flex items-center gap-1.5">
-                    <span>➕ {language === 'ar' ? 'تسجيل مشترك Gmail وحجز وترخيص بياناته' : 'PRÉ-ENREGISTRER UN LOGICIEL CLIENT (SAAS CONSOLE)'}</span>
-                  </h4>
-                  <span className="text-[8px] bg-rose-500/10 text-rose-400 border border-rose-500/20 px-2 py-0.5 font-bold font-mono rounded">SaaS CONFIG</span>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div>
-                    <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 block mb-1">
-                      {language === 'ar' ? 'البريد الإلكتروني للعميل (Gmail) *' : 'Adresse Email du Client (Gmail) *'}
-                    </label>
-                    <input
-                      type="email"
-                      required
-                      value={newTenantEmail}
-                      onChange={(e) => setNewTenantEmail(e.target.value)}
-                      placeholder="exemple@gmail.com"
-                      className="w-full text-xs font-bold border border-slate-800 bg-slate-950 p-2.5 rounded-lg text-white focus:outline-hidden focus:border-rose-500 text-start"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 block mb-1">
-                      {language === 'ar' ? 'معرف المستخدم الفردي UID *' : 'Firebase UID Client *'}
-                    </label>
-                    <div className="flex gap-1">
-                      <input
-                        type="text"
-                        required
-                        value={newTenantUid}
-                        onChange={(e) => setNewTenantUid(e.target.value)}
-                        placeholder="Saisir ou générer un UID..."
-                        className="w-full text-xs font-bold font-mono border border-slate-800 bg-slate-950 p-2.5 rounded-lg text-white focus:outline-hidden focus:border-rose-500 text-start"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => setNewTenantUid('usr_' + Math.random().toString(36).substring(2, 11))}
-                        className="p-2 bg-slate-800 hover:bg-slate-750 border border-slate-700 text-[10px] rounded-lg text-slate-300 font-mono cursor-pointer"
-                      >
-                        Gen
-                      </button>
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 block mb-1">
-                      {language === 'ar' ? 'اسم المحل / الشركة' : 'Nom de la Boutique / Business Name'}
-                    </label>
-                    <input
-                      type="text"
-                      value={newTenantStoreName}
-                      onChange={(e) => setNewTenantStoreName(e.target.value)}
-                      placeholder="Ex: Superette Tunisienne"
-                      className="w-full text-xs font-bold border border-slate-800 bg-slate-950 p-2.5 rounded-lg text-white focus:outline-hidden focus:border-rose-500 text-start"
-                    />
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                  <div>
-                    <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 block mb-1">
-                      {language === 'ar' ? 'نوع حالة الحساب صلوحية الجبايات *' : 'Type de Statut *'}
-                    </label>
-                    <select
-                      value={newTenantStatus}
-                      onChange={(e) => setNewTenantStatus(e.target.value as any)}
-                      className="w-full text-xs font-bold border border-slate-800 bg-slate-950 p-2.5 rounded-lg text-white focus:outline-hidden focus:border-rose-500"
-                    >
-                      <option value="active">{language === 'ar' ? 'نشط مفعل (Active) ✅' : 'Actif / Abonné ✅'}</option>
-                      <option value="trial">{language === 'ar' ? 'فترة تجريبية (Trial) ⏳' : 'Essai Gratuit ⏳'}</option>
-                      <option value="suspended">{language === 'ar' ? 'معطل ومغلق 🛑' : 'Suspendu / Fermé 🛑'}</option>
-                      <option value="expired">{language === 'ar' ? 'منتهي الصلاحية ❌' : 'Expiré ❌'}</option>
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 block mb-1">
-                      {language === 'ar' ? 'تاريخ التفعيل (Activation)' : "Date d'activation"}
-                    </label>
-                    <input
-                      type="date"
-                      value={newTenantActivationDate}
-                      onChange={(e) => setNewTenantActivationDate(e.target.value)}
-                      className="w-full text-xs font-semibold border border-slate-800 bg-slate-950 p-2.5 rounded-lg text-white focus:outline-hidden font-mono"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 block mb-1">
-                      {language === 'ar' ? 'تاريخ الاستحقاق والانتهاء' : "Date d'expiration"}
-                    </label>
-                    <input
-                      type="date"
-                      value={newTenantExpiry}
-                      onChange={(e) => setNewTenantExpiry(e.target.value)}
-                      className="w-full text-xs font-semibold border border-slate-800 bg-slate-950 p-2.5 rounded-lg text-white focus:outline-hidden font-mono"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 block mb-1">
-                      {language === 'ar' ? 'تاريخ التسجيل باللوجيسيال' : "Date d'inscription"}
-                    </label>
-                    <input
-                      type="date"
-                      value={newTenantRegisteredAt}
-                      onChange={(e) => setNewTenantRegisteredAt(e.target.value)}
-                      className="w-full text-xs font-semibold border border-slate-800 bg-slate-950 p-2.5 rounded-lg text-white focus:outline-hidden font-mono"
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 block mb-1">
-                    {language === 'ar' ? 'مربع الموقع الجغرافي (رابط خرائط جوجل)' : 'Coordonnées GPS / URL Google Maps (Optionnel)'}
-                  </label>
-                  <input
-                    type="text"
-                    value={newTenantLocation}
-                    onChange={(e) => setNewTenantLocation(e.target.value)}
-                    placeholder="Ex: Tunis, Tunisie ou coordonnées GPS"
-                    className="w-full text-xs font-medium border border-slate-800 bg-slate-950 p-2.5 rounded-lg text-white focus:outline-hidden text-start"
-                  />
-                </div>
-
-                {/* 💰 PARTIE MONETIZATION ET ABONNEMENT BIENVENUE */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2 border-t border-slate-800/60">
-                  <div>
-                    <label className="text-[10px] font-black uppercase tracking-wider text-rose-400 block mb-1">
-                      {language === 'ar' ? 'وضعية الاشتراك المالي للزبون *' : 'Statut de Paiement Client *'}
-                    </label>
-                    <select
-                      value={newTenantPaymentStatus}
-                      onChange={(e) => setNewTenantPaymentStatus(e.target.value as any)}
-                      className="w-full text-xs font-bold border border-slate-800 bg-slate-950 p-2.5 rounded-lg text-white focus:outline-hidden focus:border-rose-500"
-                    >
-                      <option value="paid">{language === 'ar' ? 'مستخلص و مدفوع ✅' : 'Payé (Paid) ✅'}</option>
-                      <option value="pending">{language === 'ar' ? 'قيد الانتظار ودفع الصكوك ⏳' : 'En attente (Pending) ⏳'}</option>
-                      <option value="free_trial">{language === 'ar' ? 'عرض تجريبي مجاني 🎁' : 'Essai Gratuit (Free Trial) 🎁'}</option>
-                      <option value="refunded">{language === 'ar' ? 'مسترجع وموقوف 🛑' : 'Remboursé (Refunded) 🛑'}</option>
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="text-[10px] font-black uppercase tracking-wider text-rose-400 block mb-1">
-                      {language === 'ar' ? 'قيمة الاشتراك السنوي (دينار تونسي)' : 'Montant Abonnement Annuel (TND)'}
-                    </label>
-                    <input
-                      type="number"
-                      step="5.000"
-                      value={newTenantPaymentAmount}
-                      onChange={(e) => setNewTenantPaymentAmount(parseFloat(e.target.value) || 0)}
-                      placeholder="0.000"
-                      className="w-full text-xs font-bold border border-slate-800 bg-slate-950 p-2.5 rounded-lg text-white focus:outline-hidden focus:border-rose-500 text-start font-mono"
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 block mb-1">
-                    {language === 'ar' ? 'ملاحظات الأدمن والمطور (خاصة وسرية للمطالبة المادية للزبون)' : 'Notes administratives & Remarques (Dossier Interne)'}
-                  </label>
-                  <textarea
-                    rows={2}
-                    value={newTenantAdminNotes}
-                    onChange={(e) => setNewTenantAdminNotes(e.target.value)}
-                    placeholder={language === 'ar' ? 'اكتب تاريخ الدفع، رقم الهاتف، أو اسم الشخص الفعلي...' : 'Ex: Paiement reçu en espèces, contact direct par téléphone...'}
-                    className="w-full text-xs font-medium border border-slate-800 bg-slate-950 p-2.5 rounded-lg text-white focus:outline-hidden focus:border-rose-500 text-start"
-                  />
-                </div>
-
-                <div className="flex justify-end gap-2 pt-3 border-t border-slate-800">
-                  <button
-                    type="button"
-                     onClick={() => setShowAddTenantForm(false)}
-                    className="py-1.5 px-4 rounded-lg text-xs bg-slate-800 hover:bg-slate-750 text-slate-300 cursor-pointer"
-                  >
-                    {language === 'ar' ? 'إلغاء' : 'Annuler'}
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={actionLoading !== null}
-                    className="py-1.5 px-5 rounded-lg text-xs bg-rose-600 hover:bg-rose-700 text-white font-extrabold cursor-pointer transition-colors shadow-2xs flex items-center gap-1.5"
-                  >
-                    {actionLoading ? '...' : '🚀'}
-                    <span>{language === 'ar' ? 'حفظ رخصة وإتاحة صلاحية المشترك' : 'Créer et Sauvegarder'}</span>
-                  </button>
-                </div>
-              </form>
-            )}
-
-            {/* Core Tenants Table Database */}
             {loading ? (
               <div className="py-20 text-center space-y-4">
                 <div className="w-10 h-10 border-4 border-rose-500 border-t-transparent rounded-full animate-spin mx-auto"></div>
@@ -823,6 +393,13 @@ export default function SaaSDeveloperConsole() {
                                   className="w-full text-xs font-medium border border-slate-250 p-1.5 rounded-lg bg-white text-slate-850"
                                   placeholder="Maps Coordonnées"
                                 />
+                                <input
+                                  type="text"
+                                  value={editPhone}
+                                  onChange={(e) => setEditPhone(e.target.value)}
+                                  className="w-full text-xs font-medium border border-slate-250 p-1.5 rounded-lg bg-white text-slate-850"
+                                  placeholder={language === 'ar' ? 'رقم الهاتف (اختياري)' : 'Numéro de téléphone (Optionnel)'}
+                                />
                                 <textarea
                                   rows={2}
                                   value={editAdminNotes}
@@ -836,6 +413,30 @@ export default function SaaSDeveloperConsole() {
                               <div>
                                 <p className="font-bold text-slate-850 text-sm">{t.businessName || 'Superette Tunisienne'}</p>
                                 <p className="text-[11px] text-slate-500 font-bold">{t.email || 'Email non fourni'}</p>
+                                
+                                {/* 📞 Quick Action Contact Buttons */}
+                                <div className="flex flex-wrap gap-1.5 mt-1.5">
+                                  {t.email && (
+                                    <a
+                                      href={`mailto:${t.email}`}
+                                      className="inline-flex items-center gap-1 px-2 py-0.5 bg-sky-50 hover:bg-sky-100 text-sky-800 text-[10px] font-bold rounded border border-sky-200 transition-colors cursor-pointer"
+                                      title={language === 'ar' ? 'إرسال بريد إلكتروني' : 'Envoyer un e-mail'}
+                                    >
+                                      <Mail className="w-3 h-3 text-sky-600 shrink-0" />
+                                      <span>{language === 'ar' ? 'بريد' : 'E-mail'}</span>
+                                    </a>
+                                  )}
+                                  {t.phone ? (
+                                    <a
+                                      href={`tel:${t.phone}`}
+                                      className="inline-flex items-center gap-1 px-2 py-0.5 bg-rose-50 hover:bg-rose-100 text-rose-800 text-[10px] font-bold rounded border border-rose-200 transition-colors cursor-pointer"
+                                      title={language === 'ar' ? 'اتصال هاتفي سريع' : 'Appeler rapidement'}
+                                    >
+                                      <Phone className="w-3 h-3 text-rose-600 shrink-0" />
+                                      <span>{t.phone}</span>
+                                    </a>
+                                  ) : null}
+                                </div>
                                 
                                 {/* 💰 Premium SaaS Payment Status Row */}
                                 <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
@@ -1104,339 +705,7 @@ export default function SaaSDeveloperConsole() {
               </div>
             )}
           </div>
-
-          {/* SaaS Central Danger Zone Reset Section */}
-          <div className="bg-red-50 border border-red-200 rounded-lg p-5 mt-6 text-start shadow-xs">
-            <h3 className="text-sm font-black text-red-700 uppercase flex items-center gap-2 mb-2">
-              <ShieldAlert className="w-4 h-4 text-red-600 animate-pulse" />
-              <span>{language === 'ar' ? '⚠️ منطقة خطر غاية في الحساسية - تصفير السيرفر بالكامل' : '⚠️ ZONE DE DANGER CRITIQUE - REINITIALISATION TOTALE'}</span>
-            </h3>
-            <p className="text-xs text-red-600 font-semibold leading-relaxed mb-4">
-              {language === 'ar'
-                ? 'تنبيه هام ومصيري: سيقوم هذا الزر بفسخ وحذف جميع حسابات المشتركين، تراخيصهم، وقواعد بيانات محلاتهم (السلع، الفواتير، العمليات) من السيرفر السحابي نهائياً وبلا رجعة! يرجى استخدامه بحذر لتصفير البيانات وبدء تجارب جديدة.'
-                : 'AVERTISSEMENT: En validant cette option, TOUTES les bases de données clients (produits, ventes, factures) et licences souscrites seront définitivement WIPEES de Firestore. Cette action est irréversible.'}
-            </p>
-            
-            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 bg-red-100/50 p-4 rounded-lg border border-red-200">
-              <div className="space-y-1 flex-1 text-start">
-                <label className="text-[10px] font-black uppercase text-red-850 block">
-                  {language === 'ar' ? 'اكتب كلمة التأكيد "WIPE" بالأعلى للمتابعة :' : 'Inscrivez le code "WIPE" pour déverrouiller :'}
-                </label>
-                <input
-                  type="text"
-                  value={wipeConfirmText}
-                  onChange={(e) => setWipeConfirmText(e.target.value)}
-                  className="w-full sm:max-w-[200px] text-xs font-black font-mono tracking-widest border border-red-300 bg-white p-2 rounded focus:outline-hidden focus:border-red-500 uppercase text-slate-800"
-                  placeholder="WIPE..."
-                  disabled={isWipingModeActive}
-                />
-              </div>
-              
-              <button
-                type="button"
-                onClick={handleWipeAllSaaSTenants}
-                disabled={wipeConfirmText !== 'WIPE' || isWipingModeActive}
-                className={`py-2.5 px-5 rounded-lg text-xs font-black tracking-wider flex items-center justify-center gap-2 transition-all cursor-pointer ${
-                  wipeConfirmText === 'WIPE' && !isWipingModeActive
-                    ? 'bg-red-600 hover:bg-red-700 text-white shadow-md active:scale-95'
-                    : 'bg-slate-300 text-slate-500 cursor-not-allowed'
-                }`}
-              >
-                <span>🗑️</span>
-                <span>
-                  {isWipingModeActive 
-                    ? (language === 'ar' ? 'جاري تدمير وتصفير السيرفر...' : 'Wipe en cours...') 
-                    : (language === 'ar' ? 'تحطيم وتصفير السيرفر فوراً 💀' : 'EFFACER ET REINITIALISER TOUT LE SAAS')}
-                </span>
-              </button>
-            </div>
-          </div>
-
         </div>
-      )}
-
-      {/* TAB 2: SYSTEM UPDATES (MISE A JOUR) MANAGEMENT */}
-      {activeTab === 'updates' && (
-        <div className="space-y-6 animate-fade-in animate-duration-300">
-          
-          {/* SaaS Updates Publisher Block */}
-          <div className="bg-white border border-slate-200 rounded-lg overflow-hidden shadow-3xs text-start">
-            <div className="p-4 bg-slate-900 border-b border-rose-500/10 flex flex-col sm:flex-row items-stretch sm:items-center justify-between text-white gap-3">
-              <div>
-                <h2 className="text-xs font-black uppercase tracking-wider font-mono text-slate-100 flex items-center gap-1.5">
-                  <Rocket className="w-4 h-4 text-rose-500" />
-                  <span>{language === 'ar' ? '🚀 إدارة وتحديثات النظام الأساسي (Software Updates Rollout)' : '🚀 MODULE DE GESTION DES MISES À JOUR SYSTÈME'}</span>
-                </h2>
-                <p className="text-[10px] text-slate-450 font-bold mt-0.5">
-                  {language === 'ar' 
-                    ? 'صياغة ونشر إعلانات الإصدارات وخط وخصائص الميزات الجديدة للمحلات والمستخدمين.' 
-                    : 'Configurez la liste des versions logicielles et affichez les nouveautés directement sur la caisse client.'}
-                </p>
-              </div>
-
-              <button
-                type="button"
-                onClick={() => {
-                  setShowAddUpdateForm(!showAddUpdateForm);
-                  if (!showAddUpdateForm) {
-                    setUpdateId('');
-                    setUpdateTitleFr('');
-                    setUpdateTitleAr('');
-                    setUpdateDescFr('');
-                    setUpdateDescAr('');
-                    setEditUpdateId(null);
-                  }
-                }}
-                className="py-1.5 px-3 bg-rose-600 hover:bg-rose-700 text-white font-extrabold rounded-lg text-xs shrink-0 flex items-center justify-center gap-1.5 cursor-pointer shadow-3xs transition-all"
-              >
-                <span>{showAddUpdateForm ? '✕' : '➕'}</span>
-                <span>{language === 'ar' ? 'صياغة إصدار نظام جديد' : 'Rédiger une mise à jour'}</span>
-              </button>
-            </div>
-
-            {/* Publishing System Update Bulletin Form */}
-            {showAddUpdateForm && (
-              <form onSubmit={handleSaveSystemUpdate} className="p-5 border-b border-slate-200 bg-slate-50 space-y-4">
-                <div className="flex items-center justify-between border-b border-slate-200 pb-2.5">
-                  <h4 className="text-xs font-black uppercase tracking-wider text-rose-600 font-mono flex items-center gap-1">
-                    <span>{editUpdateId ? '⚙️' : '➕'}</span>
-                    <span>{editUpdateId ? (language === 'ar' ? `تعديل ملف الإصدار ${editUpdateId}` : `MODIFIER LA VERSION ${editUpdateId}`) : (language === 'ar' ? 'صياغة بطاقة تحديث نظام جديد' : 'REDIGER UN BULLETIN DE MISE À JOUR GLOBAL')}</span>
-                  </h4>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div>
-                    <label className="text-[10px] font-black uppercase tracking-wider text-slate-500 block mb-1">
-                      {language === 'ar' ? 'رقم الإصدار (Version Code ID) *' : 'Code Version unique (e.g., v1.3.0) *'}
-                    </label>
-                    <input
-                      type="text"
-                      required
-                      disabled={!!editUpdateId}
-                      value={updateId}
-                      onChange={(e) => setUpdateId(e.target.value)}
-                      placeholder="v1.2.6"
-                      className="w-full text-xs font-bold font-mono border border-slate-250 p-2 rounded-lg bg-white text-slate-800 disabled:bg-slate-100 placeholder-slate-400"
-                    />
-                  </div>
-
-                  <div className="md:col-span-2">
-                    <label className="text-[10px] font-black uppercase tracking-wider text-slate-500 block mb-1">
-                      {language === 'ar' ? 'نوع هذا الإصدار / تصنيف التغيير *' : 'Importance de la Version *'}
-                    </label>
-                    <select
-                      value={updateType}
-                      onChange={(e) => setUpdateType(e.target.value as any)}
-                      className="w-full text-xs font-bold border border-slate-250 p-2 rounded-lg bg-white text-slate-800"
-                    >
-                      <option value="feature">{language === 'ar' ? 'ميزة جديدة وإضافة للمتجر (Feature Update) ✨' : 'Nouvelle Fonctionnalité Importante ✨'}</option>
-                      <option value="major">{language === 'ar' ? 'تحديث جذري وتوطيد الخادم (Major Upgrade) 🚀' : 'Mise à niveau Majeure du Système 🚀'}</option>
-                      <option value="patch">{language === 'ar' ? 'إصلاح برمي وتعديل أخطاء (Patch Fix) 🔧' : 'Correction de bug & Patch technique 🔧'}</option>
-                    </select>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <label className="text-[10px] font-black uppercase tracking-wider text-slate-500 block mb-1">
-                      {language === 'ar' ? 'عنوان التحديث بالفرنسية *' : 'Titre de la mise à jour (Français) *'}
-                    </label>
-                    <input
-                      type="text"
-                      required
-                      value={updateTitleFr}
-                      onChange={(e) => setUpdateTitleFr(e.target.value)}
-                      placeholder="e.g. Optimisation et impression thermique"
-                      className="w-full text-xs font-bold border border-slate-250 p-2.5 rounded-lg bg-white text-slate-800 placeholder-slate-400 text-start"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="text-[10px] font-black uppercase tracking-wider text-slate-500 block mb-1">
-                      {language === 'ar' ? 'عنوان التحديث بالعربية *' : 'Titre de la mise à jour (Arabe) *'}
-                    </label>
-                    <input
-                      type="text"
-                      required
-                      value={updateTitleAr}
-                      onChange={(e) => setUpdateTitleAr(e.target.value)}
-                      placeholder="مثال: تحسين سرعة ومجالات الطباعة للفاتورة"
-                      className="w-full text-xs font-bold border border-slate-250 p-2.5 rounded-lg bg-white text-slate-800 placeholder-slate-400 text-start"
-                    />
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <label className="text-[10px] font-black uppercase tracking-wider text-slate-500 block mb-1">
-                      {language === 'ar' ? 'تفصيل الميزات بالفرنسية (سطر لكل سطر) *' : 'Améliorations en Français (Une par ligne) *'}
-                    </label>
-                    <textarea
-                      required
-                      rows={4}
-                      value={updateDescFr}
-                      onChange={(e) => setUpdateDescFr(e.target.value)}
-                      placeholder="Ajout du support imprimante thermique 80mm&#10;Correctif de défilement des stocks en caisse&#10;Optimisation base locale"
-                      className="w-full text-xs font-medium border border-slate-250 p-2.5 rounded-lg bg-white text-slate-800 font-sans focus:outline-hidden text-start placeholder-slate-450"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="text-[10px] font-black uppercase tracking-wider text-slate-500 block mb-1">
-                      {language === 'ar' ? 'تفصيل الميزات بالعربية (سطر لكل سطر) *' : 'Améliorations en Arabe (Une par ligne) *'}
-                    </label>
-                    <textarea
-                      required
-                      rows={4}
-                      value={updateDescAr}
-                      onChange={(e) => setUpdateDescAr(e.target.value)}
-                      placeholder="إضافة الدعم الكامل للطباعة مقاس 80 مم&#10;إصلاح مشكلة تراكم الحسابات على الكاشير&#10;تسريع رفع النسخ الاحتياطية"
-                      className="w-full text-xs font-medium border border-slate-250 p-2.5 rounded-lg bg-white text-slate-800 font-sans focus:outline-hidden text-start placeholder-slate-450"
-                    />
-                  </div>
-                </div>
-
-                <div className="flex justify-end gap-2 pt-3 border-t border-slate-200">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setShowAddUpdateForm(false);
-                      setEditUpdateId(null);
-                    }}
-                    className="py-1.5 px-4 rounded-lg text-xs bg-white text-slate-700 border border-slate-250 hover:bg-slate-50 cursor-pointer"
-                  >
-                    {language === 'ar' ? 'إلغاء' : 'Annuler'}
-                  </button>
-                  <button
-                    type="submit"
-                    className="py-1.5 px-5 rounded-lg text-xs bg-slate-900 border border-slate-900 hover:bg-slate-850 text-white font-extrabold cursor-pointer transition-colors shadow-2xs flex items-center gap-1.5"
-                  >
-                    <Rocket className="w-3.5 h-3.5 text-rose-450 shrink-0" />
-                    <span>{editUpdateId ? (language === 'ar' ? 'حفظ التحديث 💾' : 'Sauvegarder les modifications') : (language === 'ar' ? 'نشر وتحديث النظام 🚀' : 'Diffuser la Version 🚀')}</span>
-                  </button>
-                </div>
-              </form>
-            )}
-
-            {/* List of Rolled-out Releases */}
-            <div className="p-4">
-              <h3 className="text-xs font-black uppercase text-slate-450 tracking-wider mb-4 flex items-center gap-1.5">
-                <Info className="w-3.5 h-3.5" />
-                <span>{language === 'ar' ? 'مخطط زمني للتحديثات النشطة على قاعدة البيانات' : 'LOG DES CONFIGURATIONS ET VERSIONS PUBLIÉES'}</span>
-              </h3>
-
-              {updatesLoading ? (
-                <div className="py-12 text-center space-y-2">
-                  <div className="w-8 h-8 border-4 border-rose-500 border-t-transparent rounded-full animate-spin mx-auto"></div>
-                  <p className="text-[11px] text-slate-400 font-bold uppercase font-mono">{language === 'ar' ? 'تحميل أرشيف إصدارات السيرفر...' : 'Lecture du log Firebase...'}</p>
-                </div>
-              ) : updatesList.length === 0 ? (
-                <div className="py-12 text-center border border-dashed border-slate-200 rounded-lg text-slate-400 space-y-2">
-                  <Rocket className="w-10 h-10 mx-auto text-slate-200" />
-                  <p className="text-sm font-bold text-slate-600">{language === 'ar' ? 'لم يتم نشر أي تحديث بعد' : 'Aucune mise à jour publiée'}</p>
-                  <p className="text-xs text-slate-450 max-w-sm mx-auto">{language === 'ar' ? 'استخدم الزر بالأعلى لصياغة ونشر التحديث الأول للسيستم' : 'Activez le bouton ci-dessus pour publier le premier bulletin de mise à jour.'}</p>
-                </div>
-              ) : (
-                <div className="space-y-4">
-                  {updatesList.map((up) => {
-                    const isMajor = up.type === 'major';
-                    const isPatch = up.type === 'patch';
-
-                    return (
-                      <div 
-                        key={up.id} 
-                        className={`p-4 rounded-lg border text-start transition-shadow hover:shadow-2xs relative bg-white flex flex-col sm:flex-row sm:items-start justify-between gap-4 ${
-                          isMajor 
-                            ? 'border-indigo-150 bg-indigo-50/5' 
-                            : isPatch 
-                            ? 'border-slate-200 bg-slate-50/15' 
-                            : 'border-slate-200'
-                        }`}
-                      >
-                        {/* Bullet detail card */}
-                        <div className="space-y-2">
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <span className="p-1 px-2.5 bg-slate-900 text-white font-mono text-xs font-black rounded-lg">
-                              {up.id}
-                            </span>
-                            <span className={`px-2 py-0.5 rounded-full text-[9px] font-black border uppercase ${
-                              isMajor 
-                                ? 'bg-indigo-50 text-indigo-800 border-indigo-200' 
-                                : isPatch 
-                                ? 'bg-amber-50 text-amber-800 border-amber-200'
-                                : 'bg-emerald-50 text-emerald-800 border-emerald-250'
-                            }`}>
-                              {up.type === 'major' && (language === 'ar' ? 'ترقية كبرى 🚀' : 'Mise à niveau Majeure 🚀')}
-                              {up.type === 'feature' && (language === 'ar' ? 'ميزة جديدة ✨' : 'Nouvelle Option ✨')}
-                              {up.type === 'patch' && (language === 'ar' ? 'إصلاح برمجي 🔧' : 'Patch technique 🔧')}
-                            </span>
-                            <span className="text-[10px] text-slate-400 font-mono font-bold">{up.date}</span>
-                          </div>
-
-                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-1.5">
-                            {/* French version details */}
-                            <div className="space-y-1.5">
-                              <h4 className="font-bold text-slate-800 text-sm flex items-center gap-1.5">
-                                <span className="text-slate-400 font-mono text-xs">[FR]</span>
-                                <span>{up.titleFr}</span>
-                              </h4>
-                              <ul className="list-disc list-inside text-[11px] text-slate-555 space-y-1 pr-1.5">
-                                {(up.descriptionFr || []).map((bullet, i) => (
-                                  <li key={i} className="leading-relaxed">
-                                    <span className="text-slate-600 pl-1">{bullet}</span>
-                                  </li>
-                                ))}
-                              </ul>
-                            </div>
-
-                            {/* Arabic version details */}
-                            <div className="space-y-1.5" dir="rtl">
-                              <h4 className="font-bold text-slate-800 text-sm flex items-center gap-1.5">
-                                <span className="text-slate-400 font-mono text-xs">[AR]</span>
-                                <span>{up.titleAr}</span>
-                              </h4>
-                              <ul className="list-disc list-inside text-[11px] text-slate-555 space-y-1 pl-1.5 text-right">
-                                {(up.descriptionAr || []).map((bullet, i) => (
-                                  <li key={i} className="leading-relaxed">
-                                    <span className="text-slate-600 pr-1">{bullet}</span>
-                                  </li>
-                                ))}
-                              </ul>
-                            </div>
-                          </div>
-                        </div>
-
-                        {/* Top corner actions */}
-                        <div className="shrink-0 flex sm:flex-col gap-1.5 justify-end">
-                          <button
-                            type="button"
-                            onClick={() => handleStartEditUpdate(up)}
-                            className="p-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 rounded-lg text-[10px] font-bold flex items-center gap-1 cursor-pointer transition-all"
-                            title="Edit version"
-                          >
-                            <Edit className="w-3.5 h-3.5" />
-                            <span className="hidden sm:inline">{language === 'ar' ? 'تعديل' : 'Modifier'}</span>
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleDeleteSystemUpdate(up.id)}
-                            className="p-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-100 rounded-lg text-[10px] font-bold flex items-center gap-1 cursor-pointer transition-all"
-                            title="Delete version"
-                          >
-                            <Trash2 className="w-3.5 h-3.5 text-rose-600" />
-                            <span className="hidden sm:inline">{language === 'ar' ? 'سحب' : 'Retirer'}</span>
-                          </button>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-
-    </div>
+      </div>
   );
 }

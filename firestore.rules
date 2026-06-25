@@ -78,6 +78,52 @@ service cloud.firestore {
         allow list: if isOwner(userId);
         allow write: if isOwner(userId) && isValidId(expenseId);
       }
+
+      match /superettes_meta/{superetteId} {
+        allow get, write: if isOwner(userId) && isValidId(superetteId);
+        allow list: if isOwner(userId);
+      }
+
+      match /superettes/{superetteId} {
+        allow get, write: if isOwner(userId) && isValidId(superetteId);
+        allow list: if isOwner(userId);
+
+        match /products/{productId} {
+          allow get: if isOwner(userId) && isValidId(productId);
+          allow list: if isOwner(userId);
+          allow write: if isOwner(userId) && isValidId(productId);
+        }
+        
+        match /partners/{partnerId} {
+          allow get: if isOwner(userId) && isValidId(partnerId);
+          allow list: if isOwner(userId);
+          allow write: if isOwner(userId) && isValidId(partnerId);
+        }
+        
+        match /invoices/{invoiceId} {
+          allow get: if isOwner(userId) && isValidId(invoiceId);
+          allow list: if isOwner(userId);
+          allow write: if isOwner(userId) && isValidId(invoiceId);
+        }
+        
+        match /payments/{paymentId} {
+          allow get: if isOwner(userId) && isValidId(paymentId);
+          allow list: if isOwner(userId);
+          allow write: if isOwner(userId) && isValidId(paymentId);
+        }
+        
+        match /traites/{traiteId} {
+          allow get: if isOwner(userId) && isValidId(traiteId);
+          allow list: if isOwner(userId);
+          allow write: if isOwner(userId) && isValidId(traiteId);
+        }
+        
+        match /expenses/{expenseId} {
+          allow get: if isOwner(userId) && isValidId(expenseId);
+          allow list: if isOwner(userId);
+          allow write: if isOwner(userId) && isValidId(expenseId);
+        }
+      }
     }
   }
 }

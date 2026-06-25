@@ -710,6 +710,19 @@ function AppContent() {
           // Fetch the license document with a 3.5s safe timeout
           const storeName = dbInstance?.settings?.storeName || '';
           const trialExpiryDate = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+          
+          let localIsOnboarded = false;
+          if (typeof window !== 'undefined') {
+            localIsOnboarded = localStorage.getItem(`innova_pos_onboarded_${currentUser.uid}`) === 'true';
+            if (!localIsOnboarded && dbInstance?.settings?.storeName) {
+              const sName = dbInstance.settings.storeName;
+              if (sName !== 'INNOVA POS PRO' && sName !== 'Superette Principale') {
+                localIsOnboarded = true;
+                localStorage.setItem(`innova_pos_onboarded_${currentUser.uid}`, 'true');
+              }
+            }
+          }
+
           const defaultOfflineLicense = {
             uid: currentUser.uid,
             email: currentUser.email,
@@ -719,13 +732,17 @@ function AppContent() {
             licenseKey: '',
             remoteAnnouncement: 'Remarque: Connexion lente. Validation locale activée.',
             businessName: storeName || 'Etablissement',
-            location: ''
+            location: '',
+            isOnboarded: localIsOnboarded
           };
           const userLicense = await withTimeout(
             loadUserLicense(currentUser.uid, currentUser.email, storeName),
             3505,
             defaultOfflineLicense
           );
+          if (userLicense.isOnboarded && typeof window !== 'undefined') {
+            localStorage.setItem(`innova_pos_onboarded_${currentUser.uid}`, 'true');
+          }
           setLicense(userLicense);
 
           // Verify the license signature validity and expiry
@@ -1096,6 +1113,9 @@ function AppContent() {
         license={license} 
         onOnboardingComplete={(onboardedLicense, selectedSector) => {
           setLicense(onboardedLicense);
+          if (typeof window !== 'undefined') {
+            localStorage.setItem(`innova_pos_onboarded_${user.uid}`, 'true');
+          }
           
           // Seed their database with their custom details + sector sample templates
           const sampleProd = SAMPLE_PRODUCTS[selectedSector] || [];

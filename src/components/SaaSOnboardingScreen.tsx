@@ -61,14 +61,28 @@ export default function SaaSOnboardingScreen({ user, license, onOnboardingComple
         adminNotes: `Gérant: ${ownerName.trim()}, Pin: ${ownerPin}`
       };
 
-      // 1. Save license details securely to Firestore
-      await saveUserLicense(user.uid, {
-        businessName: storeName.trim(),
-        location: address.trim(),
-        phone: phone.trim(),
-        isOnboarded: true,
-        adminNotes: `Gérant: ${ownerName.trim()}, Pin: ${ownerPin}`
-      });
+      // Save locally first to make sure safety fallbacks know we are onboarded
+      if (typeof window !== 'undefined') {
+        localStorage.setItem(`innova_pos_onboarded_${user.uid}`, 'true');
+      }
+
+      // 1. Save license details securely to Firestore (with 2.5s safe timeout fallback)
+      try {
+        await Promise.race([
+          saveUserLicense(user.uid, {
+            businessName: storeName.trim(),
+            location: address.trim(),
+            phone: phone.trim(),
+            isOnboarded: true,
+            adminNotes: `Gérant: ${ownerName.trim()}, Pin: ${ownerPin}`
+          }),
+          new Promise((_, reject) => setTimeout(() => reject(new Error("Timeout")), 2500))
+        ]).catch(err => {
+          console.warn("[ONBOARDING SAFETY] Cloud save took too long or failed. Proceeding with local onboarding activation.", err);
+        });
+      } catch (cloudErr) {
+        console.warn("[ONBOARDING SAFETY] Error during cloud save, proceeding anyway", cloudErr);
+      }
 
       // 2. Trigger parent completed callback (updates database on client/remote)
       const licenseWithPin = { ...updatedLicense, ownerPin };

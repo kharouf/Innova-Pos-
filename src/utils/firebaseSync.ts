@@ -401,6 +401,25 @@ export async function loadUserLicense(userId: string, email: string | null, stor
     console.log("[FIRESTORE SYSTEM INFO] Failed to load user license. Using default safety instance.", error);
     // Return a default safety instance
     const trialExpiryDate = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+    
+    let localIsOnboarded = false;
+    if (typeof window !== 'undefined') {
+      localIsOnboarded = localStorage.getItem(`innova_pos_onboarded_${userId}`) === 'true';
+      if (!localIsOnboarded) {
+        const savedActiveId = localStorage.getItem('active_superette_id_' + userId) || 'default';
+        const localDbStr = localStorage.getItem(`commercial_management_db_${userId}_${savedActiveId}`) || localStorage.getItem('commercial_management_db');
+        if (localDbStr) {
+          try {
+            const parsed = JSON.parse(localDbStr);
+            if (parsed?.settings?.storeName && parsed?.settings?.storeName !== 'INNOVA POS PRO' && parsed?.settings?.storeName !== 'Superette Principale') {
+              localIsOnboarded = true;
+              localStorage.setItem(`innova_pos_onboarded_${userId}`, 'true');
+            }
+          } catch (e) {}
+        }
+      }
+    }
+
     return {
       uid: userId,
       email: email,
@@ -411,7 +430,12 @@ export async function loadUserLicense(userId: string, email: string | null, stor
       licenseKey: generateLicenseKey(userId, trialExpiryDate),
       remoteAnnouncement: 'ملاحظة: فشل التحميل من السيرفر. تم تفعيل النظام محلياً.',
       businessName: storeName || 'محل تجاري جديد',
-      location: ''
+      location: '',
+      isOnboarded: localIsOnboarded,
+      paymentStatus: 'free_trial',
+      paymentAmount: 0,
+      adminNotes: 'Failsafe recovery',
+      phone: ''
     };
   }
 }

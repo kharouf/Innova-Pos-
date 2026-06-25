@@ -532,6 +532,15 @@ export default function Partners({ db, onUpdateDb }: PartnersProps) {
             const hasDebt = isClient ? p.currentBalance > 0 : p.currentBalance < 0;
             const absBalance = Math.abs(p.currentBalance);
             const associatedLogs = (db.payments || []).filter(l => l.partnerId === p.id);
+            const partnerInvoices = (db.invoices || []).filter(inv => inv.partnerId === p.id);
+            const partnerPayments = (db.payments || []).filter(pay => pay.partnerId === p.id);
+            const allDates = [
+              ...partnerInvoices.map(i => i.date),
+              ...partnerPayments.map(pay => pay.date)
+            ].filter(Boolean);
+            const latestTransactionDate = allDates.length > 0 
+              ? allDates.reduce((latest, current) => current > latest ? current : latest) 
+              : null;
 
             return (
               <div key={p.id} className="bg-white rounded border border-slate-200 p-5 flex flex-col justify-between space-y-4">
@@ -610,11 +619,13 @@ export default function Partners({ db, onUpdateDb }: PartnersProps) {
 
                   {/* Visual debts badges */}
                   <div className="text-right">
-                    <p className="text-[10px] uppercase font-bold text-slate-400">Solde de Compte</p>
+                    <p className="text-[10px] uppercase font-bold text-slate-400">
+                      {language === 'ar' ? 'رصيد الحساب' : 'Solde de Compte'}
+                    </p>
                     <p className={`text-base font-black font-mono mt-0.5 ${
                       isClient 
                         ? p.currentBalance > 0 
-                          ? 'text-amber-600' 
+                          ? 'text-rose-600' 
                           : 'text-emerald-600'
                         : p.currentBalance < 0 
                           ? 'text-rose-600' 
@@ -625,21 +636,61 @@ export default function Partners({ db, onUpdateDb }: PartnersProps) {
                     <span className={`text-[9px] font-bold px-1 rounded block mt-0.5 ${
                       isClient 
                         ? p.currentBalance > 0 
-                          ? 'bg-amber-50 text-amber-800' 
-                          : 'bg-emerald-50 text-emerald-800'
+                          ? 'bg-rose-50 text-rose-800 border border-rose-100' 
+                          : 'bg-emerald-50 text-emerald-800 border border-emerald-100'
                         : p.currentBalance < 0 
-                          ? 'bg-rose-50 text-rose-800' 
-                          : 'bg-slate-100/80 text-slate-700 font-bold'
+                          ? 'bg-rose-50 text-rose-800 border border-rose-100' 
+                          : 'bg-slate-100/80 text-slate-700 font-bold border border-slate-200'
                     }`}>
                       {isClient 
                         ? p.currentBalance > 0 
-                          ? 'Créance (Il nous doit)' 
-                          : 'À jour'
+                          ? (language === 'ar' ? 'ديون مستحقة (عليه)' : 'Créance (Il nous doit)') 
+                          : (language === 'ar' ? 'خالٍ من الديون (مسوّى)' : 'À jour (Aucune dette)')
                         : p.currentBalance < 0 
-                          ? 'Crédit (On lui doit)' 
-                          : 'À jour'
+                          ? (language === 'ar' ? 'رصيد دائن (له)' : 'Crédit (On lui doit)') 
+                          : (language === 'ar' ? 'مسوّى' : 'À jour')
                       }
                     </span>
+                  </div>
+                </div>
+
+                {/* 📊 Résumé d'activité (Summary View) */}
+                <div className="bg-slate-50 border border-slate-200/65 rounded-lg p-3 space-y-2 text-start">
+                  <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+                    <span>📊</span>
+                    <span>{language === 'ar' ? 'ملخص النشاط التجاري للمتعامل' : 'Résumé d\'activité'}</span>
+                  </h4>
+                  <div className="grid grid-cols-3 gap-2">
+                    <div className="bg-white p-2 rounded border border-slate-100 flex flex-col justify-between">
+                      <span className="text-[8px] text-slate-400 font-extrabold uppercase tracking-wide leading-tight">
+                        {language === 'ar' ? 'الرصيد المستحق' : 'Solde outstanding'}
+                      </span>
+                      <span className={`text-[11px] font-black font-mono mt-1 ${
+                        isClient 
+                          ? p.currentBalance > 0 ? 'text-rose-600' : 'text-emerald-600'
+                          : p.currentBalance < 0 ? 'text-rose-600' : 'text-emerald-600'
+                      }`}>
+                        {formatCurrency(absBalance)}
+                      </span>
+                    </div>
+
+                    <div className="bg-white p-2 rounded border border-slate-100 flex flex-col justify-between">
+                      <span className="text-[8px] text-slate-400 font-extrabold uppercase tracking-wide leading-tight">
+                        {language === 'ar' ? 'عدد الفواتير' : 'Nombre de factures'}
+                      </span>
+                      <span className="text-xs font-black font-mono text-slate-700 mt-1">
+                        {partnerInvoices.length} {language === 'ar' ? 'فواتير' : 'doc(s)'}
+                      </span>
+                    </div>
+
+                    <div className="bg-white p-2 rounded border border-slate-100 flex flex-col justify-between">
+                      <span className="text-[8px] text-slate-400 font-extrabold uppercase tracking-wide leading-tight">
+                        {language === 'ar' ? 'آخر معاملة' : 'Dernière transaction'}
+                      </span>
+                      <span className="text-[9.5px] font-bold font-mono text-slate-600 mt-1 truncate">
+                        {latestTransactionDate ? latestTransactionDate : (language === 'ar' ? 'لا يوجد' : 'Aucune')}
+                      </span>
+                    </div>
                   </div>
                 </div>
 
