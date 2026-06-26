@@ -40,88 +40,88 @@ service cloud.firestore {
     match /users/{userId} {
       // Allows user's single metadata or config read/write
       allow get, list: if true;
-      allow write: if isOwner(userId) && isValidId(userId);
+      allow write: if isOwner(userId);
 
       // Secure subcollections
       match /products/{productId} {
-        allow get: if isOwner(userId) && isValidId(productId);
+        allow get: if isOwner(userId);
         allow list: if isOwner(userId);
-        allow write: if isOwner(userId) && isValidId(productId);
+        allow write: if isOwner(userId);
       }
       
       match /partners/{partnerId} {
-        allow get: if isOwner(userId) && isValidId(partnerId);
+        allow get: if isOwner(userId);
         allow list: if isOwner(userId);
-        allow write: if isOwner(userId) && isValidId(partnerId);
+        allow write: if isOwner(userId);
       }
       
       match /invoices/{invoiceId} {
-        allow get: if isOwner(userId) && isValidId(invoiceId);
+        allow get: if isOwner(userId);
         allow list: if isOwner(userId);
-        allow write: if isOwner(userId) && isValidId(invoiceId);
+        allow write: if isOwner(userId);
       }
       
       match /payments/{paymentId} {
-        allow get: if isOwner(userId) && isValidId(paymentId);
+        allow get: if isOwner(userId);
         allow list: if isOwner(userId);
-        allow write: if isOwner(userId) && isValidId(paymentId);
+        allow write: if isOwner(userId);
       }
       
       match /traites/{traiteId} {
-        allow get: if isOwner(userId) && isValidId(traiteId);
+        allow get: if isOwner(userId);
         allow list: if isOwner(userId);
-        allow write: if isOwner(userId) && isValidId(traiteId);
+        allow write: if isOwner(userId);
       }
       
       match /expenses/{expenseId} {
-        allow get: if isOwner(userId) && isValidId(expenseId);
+        allow get: if isOwner(userId);
         allow list: if isOwner(userId);
-        allow write: if isOwner(userId) && isValidId(expenseId);
+        allow write: if isOwner(userId);
       }
 
       match /superettes_meta/{superetteId} {
-        allow get, write: if isOwner(userId) && isValidId(superetteId);
+        allow get, write: if isOwner(userId);
         allow list: if isOwner(userId);
       }
 
       match /superettes/{superetteId} {
-        allow get, write: if isOwner(userId) && isValidId(superetteId);
+        allow get, write: if isOwner(userId);
         allow list: if isOwner(userId);
 
         match /products/{productId} {
-          allow get: if isOwner(userId) && isValidId(productId);
+          allow get: if isOwner(userId);
           allow list: if isOwner(userId);
-          allow write: if isOwner(userId) && isValidId(productId);
+          allow write: if isOwner(userId);
         }
         
         match /partners/{partnerId} {
-          allow get: if isOwner(userId) && isValidId(partnerId);
+          allow get: if isOwner(userId);
           allow list: if isOwner(userId);
-          allow write: if isOwner(userId) && isValidId(partnerId);
+          allow write: if isOwner(userId);
         }
         
         match /invoices/{invoiceId} {
-          allow get: if isOwner(userId) && isValidId(invoiceId);
+          allow get: if isOwner(userId);
           allow list: if isOwner(userId);
-          allow write: if isOwner(userId) && isValidId(invoiceId);
+          allow write: if isOwner(userId);
         }
         
         match /payments/{paymentId} {
-          allow get: if isOwner(userId) && isValidId(paymentId);
+          allow get: if isOwner(userId);
           allow list: if isOwner(userId);
-          allow write: if isOwner(userId) && isValidId(paymentId);
+          allow write: if isOwner(userId);
         }
         
         match /traites/{traiteId} {
-          allow get: if isOwner(userId) && isValidId(traiteId);
+          allow get: if isOwner(userId);
           allow list: if isOwner(userId);
-          allow write: if isOwner(userId) && isValidId(traiteId);
+          allow write: if isOwner(userId);
         }
         
         match /expenses/{expenseId} {
-          allow get: if isOwner(userId) && isValidId(expenseId);
+          allow get: if isOwner(userId);
           allow list: if isOwner(userId);
-          allow write: if isOwner(userId) && isValidId(expenseId);
+          allow write: if isOwner(userId);
         }
       }
     }

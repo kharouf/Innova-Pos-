@@ -44,6 +44,7 @@ export default function SaaSDeveloperConsole() {
   // Tenants (Clients) States
   const [tenants, setTenants] = useState<UserLicenseData[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [filterStatus, setFilterStatus] = useState<string>('all');
   const [actionLoading, setActionLoading] = useState<string | null>(null);
@@ -72,11 +73,13 @@ export default function SaaSDeveloperConsole() {
 
   const fetchTenants = async () => {
     setLoading(true);
+    setError(null);
     try {
       const data = await loadAllTenantLicenses();
       setTenants(data);
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
+      setError(err?.message || String(err));
       showToast('❌ Failed to fetch tenants database');
     } finally {
       setLoading(false);
@@ -344,6 +347,17 @@ export default function SaaSDeveloperConsole() {
               <div className="py-20 text-center space-y-4">
                 <div className="w-10 h-10 border-4 border-rose-500 border-t-transparent rounded-full animate-spin mx-auto"></div>
                 <p className="text-xs text-slate-400 font-bold uppercase tracking-wider">{language === 'ar' ? 'جاري تحميل هويات المشتركين وتراخيصهم...' : 'Synchro Cloud Firestore...'}</p>
+              </div>
+            ) : error ? (
+              <div className="py-12 px-4 text-center space-y-3 bg-rose-50/50 border border-rose-100 rounded-lg m-4">
+                <p className="text-sm font-bold text-rose-700">{language === 'ar' ? 'فشل الاتصال بقاعدة البيانات السحابية' : 'Erreur de connexion Firestore'}</p>
+                <p className="text-xs text-rose-500 font-mono max-w-lg mx-auto">{error}</p>
+                <button 
+                  onClick={fetchTenants} 
+                  className="px-4 py-2 bg-rose-600 text-white rounded-md text-xs font-bold hover:bg-rose-700"
+                >
+                  {language === 'ar' ? 'إعادة المحاولة 🔄' : 'Réessayer 🔄'}
+                </button>
               </div>
             ) : filteredTenants.length === 0 ? (
               <div className="py-20 text-center space-y-2 bg-white">

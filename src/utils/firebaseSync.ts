@@ -536,8 +536,8 @@ export async function loadAllTenantLicenses(): Promise<UserLicenseData[]> {
     });
     return licenses;
   } catch (error) {
-    console.log("[FIRESTORE SYSTEM INFO] Failed to load global tenant list. Returning empty list.", error);
-    return [];
+    console.error("[FIRESTORE SYSTEM INFO] Failed to load global tenant list.", error);
+    throw error;
   }
 }
 
