@@ -819,14 +819,21 @@ export function getActiveProductPrice(product: Product): number {
 }
 
 /**
- * Gets database for a specific superette and user. Fallbacks to default if not found.
+ * Gets database for a specific superette and user. Fallbacks to default if not found and not owned by another user.
  */
 export function getSuperetteDatabase(userId: string, superetteId: string): DatabaseState {
   if (typeof window === 'undefined') return INITIAL_DATABASE;
   const key = `commercial_management_db_${userId}_${superetteId}`;
   let data = safeLocalStorage.getItem(key);
   if (!data && superetteId === 'default') {
-    data = safeLocalStorage.getItem('commercial_management_db');
+    const owner = safeLocalStorage.getItem('commercial_management_db_owner');
+    if (!owner || owner === userId) {
+      data = safeLocalStorage.getItem('commercial_management_db');
+      if (data) {
+        // Mark the anonymous/migrated database as owned by this user
+        safeLocalStorage.setItem('commercial_management_db_owner', userId);
+      }
+    }
   }
   if (!data) {
     return { ...INITIAL_DATABASE, settings: { ...DEFAULT_SETTINGS, storeName: superetteId === 'default' ? DEFAULT_SETTINGS.storeName : `Superette ${superetteId.toUpperCase()}` } };
@@ -855,7 +862,9 @@ export function saveSuperetteDatabase(userId: string, superetteId: string, db: D
   if (typeof window === 'undefined') return;
   const key = `commercial_management_db_${userId}_${superetteId}`;
   safeLocalStorage.setItem(key, JSON.stringify(db));
-  if (superetteId === 'default') {
+  
+  // Only write to the shared 'commercial_management_db' key if there is no logged-in user
+  if (!userId || userId === 'default') {
     safeLocalStorage.setItem('commercial_management_db', JSON.stringify(db));
   }
 }

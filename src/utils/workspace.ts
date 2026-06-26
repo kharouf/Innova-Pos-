@@ -21,7 +21,8 @@ export interface DriveBackupFile {
 export async function getOrCreateDriveFolder(token: string): Promise<string | null> {
   try {
     // 1. Search for folder first
-    const searchUrl = `https://www.googleapis.com/drive/v3/files?q=name='INNOVA_POS_PRO' and mimeType='application/vnd.google-apps.folder' and trashed=false&fields=files(id)`;
+    const query = "name='INNOVA_POS_PRO' and mimeType='application/vnd.google-apps.folder' and trashed=false";
+    const searchUrl = `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(query)}&fields=files(id)`;
     const searchRes = await fetch(searchUrl, {
       headers: { Authorization: `Bearer ${token}` }
     });

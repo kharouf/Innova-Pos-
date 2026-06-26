@@ -15,6 +15,7 @@ import {
   loadUserSuperettesList,
   saveUserSuperetteMeta,
   deleteUserSuperetteMeta,
+  ensureUserSaaSRecord,
   SuperetteMeta 
 } from './utils/firebaseSync';
 import { UserLicenseData, verifyLicenseKey } from './utils/licensing';
@@ -659,6 +660,11 @@ function AppContent() {
       setLoadingAuth(false);
       
       if (currentUser) {
+        // Guarantee instant SaaS registration/update in the background so the admin can always see them immediately
+        ensureUserSaaSRecord(currentUser.uid, currentUser.email).catch(err => {
+          console.warn("[SAAS PROACTIVE REGISTRATION] Background call error:", err);
+        });
+
         setDemoMode(false);
         setSyncingCloud(true);
         try {
@@ -737,7 +743,7 @@ function AppContent() {
           };
           const userLicense = await withTimeout(
             loadUserLicense(currentUser.uid, currentUser.email, storeName),
-            3505,
+            7500,
             defaultOfflineLicense
           );
           if (userLicense.isOnboarded && typeof window !== 'undefined') {

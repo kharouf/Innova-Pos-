@@ -407,7 +407,10 @@ export async function loadUserLicense(userId: string, email: string | null, stor
       localIsOnboarded = localStorage.getItem(`innova_pos_onboarded_${userId}`) === 'true';
       if (!localIsOnboarded) {
         const savedActiveId = localStorage.getItem('active_superette_id_' + userId) || 'default';
-        const localDbStr = localStorage.getItem(`commercial_management_db_${userId}_${savedActiveId}`) || localStorage.getItem('commercial_management_db');
+        const userSpecificDb = localStorage.getItem(`commercial_management_db_${userId}_${savedActiveId}`);
+        const owner = localStorage.getItem('commercial_management_db_owner');
+        const fallbackDb = (!owner || owner === userId) ? localStorage.getItem('commercial_management_db') : null;
+        const localDbStr = userSpecificDb || fallbackDb;
         if (localDbStr) {
           try {
             const parsed = JSON.parse(localDbStr);
@@ -437,6 +440,45 @@ export async function loadUserLicense(userId: string, email: string | null, stor
       adminNotes: 'Failsafe recovery',
       phone: ''
     };
+  }
+}
+
+/**
+ * Ensures the user has a registration document in Firestore immediately upon login, so they are guaranteed to appear in the Admin SaaS Console.
+ */
+export async function ensureUserSaaSRecord(userId: string, email: string | null): Promise<void> {
+  const docRef = doc(db, 'users', userId);
+  try {
+    const snap = await getDoc(docRef);
+    if (!snap.exists()) {
+      const trialExpiryDate = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+      const defaultLicense: UserLicenseData = {
+        uid: userId,
+        email: email,
+        registeredAt: new Date().toISOString().split('T')[0],
+        activationDate: '',
+        licenseExpiry: trialExpiryDate,
+        licenseStatus: 'trial',
+        licenseKey: generateLicenseKey(userId, trialExpiryDate),
+        remoteAnnouncement: 'مرحباً بك في النسخة التجريبية لـ INNOVA POS. اتصل بنا للتنشيط النهائي.',
+        businessName: 'محل تجاري جديد',
+        location: '',
+        paymentStatus: 'free_trial',
+        paymentAmount: 0,
+        adminNotes: 'Inscrit via Connexion Auto.',
+        isOnboarded: false,
+        phone: ''
+      };
+      await setDoc(docRef, defaultLicense);
+    } else {
+      // If document exists, make sure email is synchronized
+      const data = snap.data();
+      if (!data.email && email) {
+        await setDoc(docRef, { email: email }, { merge: true });
+      }
+    }
+  } catch (error) {
+    console.warn("[SAAS REGISTRATION] Failed to proactively ensure SaaS record:", error);
   }
 }
 
