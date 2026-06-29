@@ -408,8 +408,7 @@ export async function loadUserLicense(userId: string, email: string | null, stor
       if (!localIsOnboarded) {
         const savedActiveId = localStorage.getItem('active_superette_id_' + userId) || 'default';
         const userSpecificDb = localStorage.getItem(`commercial_management_db_${userId}_${savedActiveId}`);
-        const owner = localStorage.getItem('commercial_management_db_owner');
-        const fallbackDb = (!owner || owner === userId) ? localStorage.getItem('commercial_management_db') : null;
+        const fallbackDb = localStorage.getItem('commercial_management_db');
         const localDbStr = userSpecificDb || fallbackDb;
         if (localDbStr) {
           try {

@@ -465,7 +465,7 @@ const INITIAL_DATABASE: DatabaseState = {
 const STORAGE_KEY = 'commercial_management_db';
 
 export const DEFAULT_SETTINGS = {
-  storeName: 'INNOVA POS PRO',
+  storeName: 'Innova POS',
   storePhone: '+216 24260711',
   storeAddress: 'AVENU HABIB BORGIBA GHANNOUCHE GABES',
   activitySector: 'superette' as const,
@@ -566,29 +566,12 @@ export function getDatabase(): DatabaseState {
       settings.storeLogo = DEFAULT_SETTINGS.storeLogo;
     }
     
-    // Auto-migrate legacy name/logo to INNOVA POS PRO defaults only if it is completely empty or matches old preset names
-    if (settings && (!settings.storeName || settings.storeName === 'Innova POS' || settings.storeName === 'Alimentation Générale El Hana (القناعة)' || settings.storeName === 'Alimentation Générale BEN ABDESELEM (بن عبد السلام)')) {
-      settings = {
-        ...settings,
-        storeName: settings.storeName && settings.storeName !== 'Innova POS' && settings.storeName !== 'Alimentation Générale El Hana (القناعة)' && settings.storeName !== 'Alimentation Générale BEN ABDESELEM (بن عبد السلام)' ? settings.storeName : DEFAULT_SETTINGS.storeName,
-        storePhone: settings.storePhone || DEFAULT_SETTINGS.storePhone,
-        storeAddress: settings.storeAddress || DEFAULT_SETTINGS.storeAddress,
-        matriculeFiscal: settings.matriculeFiscal || DEFAULT_SETTINGS.matriculeFiscal,
-        storeLogo: settings.storeLogo && settings.storeLogo !== '🛒' ? settings.storeLogo : DEFAULT_SETTINGS.storeLogo
-      };
-      // Defer-save the migrated DB back into safeLocalStorage safely
-      setTimeout(() => {
-        try {
-          const currentDBStr = safeLocalStorage.getItem(STORAGE_KEY);
-          if (currentDBStr) {
-            const currentDB = JSON.parse(currentDBStr);
-            currentDB.settings = settings;
-            safeLocalStorage.setItem(STORAGE_KEY, JSON.stringify(currentDB));
-          }
-        } catch (err) {
-          console.warn('Deferred auto-migration save failed', err);
-        }
-      }, 100);
+    // Ensure storeName is initialized if empty
+    if (settings && !settings.storeName) {
+      settings.storeName = DEFAULT_SETTINGS.storeName;
+      settings.storePhone = settings.storePhone || DEFAULT_SETTINGS.storePhone;
+      settings.storeAddress = settings.storeAddress || DEFAULT_SETTINGS.storeAddress;
+      settings.matriculeFiscal = settings.matriculeFiscal || DEFAULT_SETTINGS.matriculeFiscal;
     }
 
     return {
@@ -826,14 +809,7 @@ export function getSuperetteDatabase(userId: string, superetteId: string): Datab
   const key = `commercial_management_db_${userId}_${superetteId}`;
   let data = safeLocalStorage.getItem(key);
   if (!data && superetteId === 'default') {
-    const owner = safeLocalStorage.getItem('commercial_management_db_owner');
-    if (!owner || owner === userId) {
-      data = safeLocalStorage.getItem('commercial_management_db');
-      if (data) {
-        // Mark the anonymous/migrated database as owned by this user
-        safeLocalStorage.setItem('commercial_management_db_owner', userId);
-      }
-    }
+    data = safeLocalStorage.getItem('commercial_management_db');
   }
   if (!data) {
     return { ...INITIAL_DATABASE, settings: { ...DEFAULT_SETTINGS, storeName: superetteId === 'default' ? DEFAULT_SETTINGS.storeName : `Superette ${superetteId.toUpperCase()}` } };
