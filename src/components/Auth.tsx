@@ -9,7 +9,7 @@ import {
   LogIn, Globe, Shield, Sparkles, Store, Phone, MapPin, BadgeCheck, Settings, Database, Sparkle, HelpCircle, Save, RotateCcw
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-const defaultPosLogo = "/innova_pos_logo.png";
+const defaultPosLogo = "/innova_pos_logo.jpg";
 
 // Extractor helper to parse both Web app JSON config and pasted raw JavaScript code declarations
 const extractFirebaseConfig = (rawText: string) => {

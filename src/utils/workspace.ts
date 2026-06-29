@@ -60,7 +60,7 @@ export async function getOrCreateDriveFolder(token: string): Promise<string | nu
     const createdFolder = await createRes.json();
     return createdFolder.id;
   } catch (error) {
-    console.error('getOrCreateDriveFolder failed:', error);
+    console.warn('getOrCreateDriveFolder warning:', error);
     return null;
   }
 }
@@ -119,7 +119,7 @@ export async function uploadBackupToDrive(
       sizeKB
     };
   } catch (err: any) {
-    console.error('uploadBackupToDrive error:', err);
+    console.warn('uploadBackupToDrive warning:', err);
     return {
       success: false,
       error: err.message || String(err)
@@ -151,7 +151,7 @@ export async function listDriveBackups(token: string, folderId: string | null): 
     const data = await response.json();
     return data.files || [];
   } catch (error) {
-    console.error('listDriveBackups error:', error);
+    console.warn('listDriveBackups warning:', error);
     return [];
   }
 }
@@ -237,7 +237,7 @@ export async function sendEmailViaGmailAPI(
       messageId: data.id
     };
   } catch (error: any) {
-    console.error('sendEmailViaGmailAPI failure:', error);
+    console.warn('sendEmailViaGmailAPI warning:', error);
     return {
       success: false,
       error: error.message || String(error)

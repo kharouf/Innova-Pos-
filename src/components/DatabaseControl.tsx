@@ -204,7 +204,7 @@ export default function DatabaseControl({ db, onUpdateDb, license, user }: Datab
         );
       }
     } catch (err: any) {
-      console.error('Google Workspace connect error:', err);
+      console.warn('Google Workspace connect error:', err);
       showToast(
         language === 'ar'
           ? "❌ فشل الاتصال بحساب Google. يرجى محاولة فتح التطبيق في نافذة مستقلة وقبول الصلاحيات."
@@ -234,7 +234,7 @@ export default function DatabaseControl({ db, onUpdateDb, license, user }: Datab
       const files = await listDriveBackups(token, folderId);
       setGoogleDriveBackups(files);
     } catch (e) {
-      console.error('Fetch Google backups failed:', e);
+      console.warn('Fetch Google backups failed:', e);
     } finally {
       setIsBackupLoading(false);
     }
@@ -272,7 +272,7 @@ export default function DatabaseControl({ db, onUpdateDb, license, user }: Datab
         throw new Error(res.error || 'Upload failed');
       }
     } catch (err: any) {
-      console.error('Drive Backup failed:', err);
+      console.warn('Drive Backup failed:', err);
       setGoogleDriveStatus('failed');
       setGoogleDriveError(err.message || String(err));
     }
@@ -307,7 +307,7 @@ export default function DatabaseControl({ db, onUpdateDb, license, user }: Datab
         throw new Error('Format de fichier invalide ou vide');
       }
     } catch (err: any) {
-      console.error('Restore from Drive failed:', err);
+      console.warn('Restore from Drive failed:', err);
       showToast(
         language === 'ar'
           ? `❌ فشل استعادة البيانات: ${err.message || String(err)}`
@@ -338,7 +338,7 @@ export default function DatabaseControl({ db, onUpdateDb, license, user }: Datab
         );
       }
     } catch (e) {
-      console.error('Delete Drive Backup failed:', e);
+      console.warn('Delete Drive Backup failed:', e);
     }
   };
 
@@ -417,7 +417,7 @@ export default function DatabaseControl({ db, onUpdateDb, license, user }: Datab
         throw new Error(res.error || 'Gmail dispatch error');
       }
     } catch (err: any) {
-      console.error('Gmail Test Sending failed:', err);
+      console.warn('Gmail Test Sending failed:', err);
       setGmailStatus('failed');
       setGmailError(err.message || String(err));
     }

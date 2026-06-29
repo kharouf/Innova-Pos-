@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-const defaultPosLogo = "/innova_pos_logo.png";
+const defaultPosLogo = "/innova_pos_logo.jpg";
 import { DatabaseState, SystemUpdate, Product, StoreSettings, AppUser } from './types';
 import { getDatabase, saveDatabase, DEFAULT_SETTINGS, getSuperetteDatabase, saveSuperetteDatabase, SAMPLE_PRODUCTS } from './utils/db';
 import { LanguageProvider, useLanguage } from './utils/LanguageContext';

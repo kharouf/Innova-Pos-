@@ -46,7 +46,6 @@ export const googleSignInForWorkspace = async (): Promise<string> => {
   const provider = new GoogleAuthProvider();
   // Force Google account picker so users can select different accounts
   provider.setCustomParameters({ prompt: 'select_account' });
-  provider.addScope('https://www.googleapis.com/auth/drive.file');
   provider.addScope('https://www.googleapis.com/auth/userinfo.email');
   provider.addScope('https://www.googleapis.com/auth/userinfo.profile');
 
