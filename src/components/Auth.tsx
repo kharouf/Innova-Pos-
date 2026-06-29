@@ -2,6 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { signInWithPopup, GoogleAuthProvider } from 'firebase/auth';
 import { auth, setCachedAccessToken } from '../utils/firebase';
 import { useLanguage } from '../utils/LanguageContext';
+import { safeLocalStorage } from '../utils/storage';
 import { getDatabase } from '../utils/db';
 import { DatabaseState } from '../types';
 import { 
@@ -59,7 +60,7 @@ export default function Auth({
 
   const [showFirebaseModal, setShowFirebaseModal] = useState(false);
   const [configText, setConfigText] = useState(() => {
-    const saved = localStorage.getItem('CUSTOM_FIREBASE_CONFIG');
+    const saved = safeLocalStorage.getItem('CUSTOM_FIREBASE_CONFIG');
     if (!saved) return '';
     try {
       return JSON.stringify(JSON.parse(saved), null, 2);
@@ -176,7 +177,7 @@ export default function Auth({
       return;
     }
 
-    localStorage.setItem('CUSTOM_FIREBASE_CONFIG', JSON.stringify(parsedConfig));
+    safeLocalStorage.setItem('CUSTOM_FIREBASE_CONFIG', JSON.stringify(parsedConfig));
     setConfigSuccess(true);
     setTimeout(() => {
       window.location.reload();
@@ -184,7 +185,7 @@ export default function Auth({
   };
 
   const handleResetConfig = () => {
-    localStorage.removeItem('CUSTOM_FIREBASE_CONFIG');
+    safeLocalStorage.removeItem('CUSTOM_FIREBASE_CONFIG');
     setConfigSuccess(true);
     setTimeout(() => {
       window.location.reload();
@@ -243,14 +244,14 @@ export default function Auth({
               onClick={() => setShowFirebaseModal(true)}
               title={language === 'ar' ? 'تهيئة قاعدة بيانات سحابية مخصصة' : 'Configurer votre Cloud Firebase'}
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-bold transition-all cursor-pointer shadow-md shadow-black/20 ${
-                localStorage.getItem('CUSTOM_FIREBASE_CONFIG')
+                safeLocalStorage.getItem('CUSTOM_FIREBASE_CONFIG')
                   ? 'bg-emerald-950/70 text-emerald-300 border-emerald-500/40 hover:bg-emerald-900/80 hover:text-white'
                   : 'bg-slate-900/80 text-slate-300 border-slate-800 hover:bg-slate-800 hover:text-white'
               }`}
             >
-              <Settings className={`w-3.5 h-3.5 ${localStorage.getItem('CUSTOM_FIREBASE_CONFIG') ? 'text-emerald-400 animate-pulse' : 'text-slate-400'}`} />
+              <Settings className={`w-3.5 h-3.5 ${safeLocalStorage.getItem('CUSTOM_FIREBASE_CONFIG') ? 'text-emerald-400 animate-pulse' : 'text-slate-400'}`} />
               <span className="hidden sm:inline">
-                {localStorage.getItem('CUSTOM_FIREBASE_CONFIG')
+                {safeLocalStorage.getItem('CUSTOM_FIREBASE_CONFIG')
                   ? (language === 'ar' ? 'سحابة نشطة' : 'Cloud custom active')
                   : (language === 'ar' ? 'سحابتي الخاصة' : 'Firebase custom')}
               </span>
@@ -540,7 +541,7 @@ export default function Auth({
                   <span className="text-slate-400 font-bold">
                     {language === 'ar' ? 'مشروع قاعدة البيانات النشط :' : 'Projet Firebase Actif :'}
                   </span>
-                  {localStorage.getItem('CUSTOM_FIREBASE_CONFIG') ? (
+                  {safeLocalStorage.getItem('CUSTOM_FIREBASE_CONFIG') ? (
                     <span className="font-extrabold text-emerald-400 bg-emerald-950/60 px-2 py-0.5 rounded border border-emerald-900/30 font-sans flex items-center gap-1 leading-none text-[10px] uppercase">
                       <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping"></span>
                       {language === 'ar' ? 'سحابة خاصة نشطة' : 'Cloud Privé'}
@@ -614,7 +615,7 @@ export default function Auth({
 
               {/* ACTIONS */}
               <div className="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-slate-800/60">
-                {localStorage.getItem('CUSTOM_FIREBASE_CONFIG') ? (
+                {safeLocalStorage.getItem('CUSTOM_FIREBASE_CONFIG') ? (
                   <button
                     type="button"
                     onClick={handleResetConfig}

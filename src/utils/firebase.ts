@@ -3,10 +3,11 @@ import { getAuth, GoogleAuthProvider, signInWithPopup } from 'firebase/auth';
 import { initializeFirestore, setLogLevel } from 'firebase/firestore';
 import { getStorage } from 'firebase/storage';
 import firebaseConfig from '../../firebase-applet-config.json';
+import { safeLocalStorage } from './storage';
 
 // Dynamically support loading a customized Firebase config from localized web storage
 let activeConfig = firebaseConfig as any;
-const customConfigStr = typeof window !== 'undefined' ? localStorage.getItem('CUSTOM_FIREBASE_CONFIG') : null;
+const customConfigStr = safeLocalStorage.getItem('CUSTOM_FIREBASE_CONFIG');
 if (customConfigStr) {
   try {
     const parsed = JSON.parse(customConfigStr);

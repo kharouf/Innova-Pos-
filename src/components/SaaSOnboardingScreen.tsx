@@ -3,6 +3,7 @@ import { motion } from 'motion/react';
 import { useLanguage } from '../utils/LanguageContext';
 import { saveUserLicense } from '../utils/firebaseSync';
 import { UserLicenseData } from '../utils/licensing';
+import { safeLocalStorage } from '../utils/storage';
 import { 
   Store, 
   User, 
@@ -62,9 +63,7 @@ export default function SaaSOnboardingScreen({ user, license, onOnboardingComple
       };
 
       // Save locally first to make sure safety fallbacks know we are onboarded
-      if (typeof window !== 'undefined') {
-        localStorage.setItem(`innova_pos_onboarded_${user.uid}`, 'true');
-      }
+      safeLocalStorage.setItem(`innova_pos_onboarded_${user.uid}`, 'true');
 
       // 1. Save license details securely to Firestore (with 2.5s safe timeout fallback)
       try {

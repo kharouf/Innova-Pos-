@@ -13,11 +13,12 @@ service cloud.firestore {
     }
 
     function isAdmin() {
-      return isSignedIn() && (
-        request.auth.token.email == "kharoufwala24@gmail.com" || 
-        request.auth.token.email == "walakharouf665@gmail.com" || 
-        request.auth.token.email == "walakharouf6665@gmail.com"
-      );
+      return isSignedIn() && 
+             'email' in request.auth.token && (
+               request.auth.token.email == "kharoufwala24@gmail.com" || 
+               request.auth.token.email == "walakharouf665@gmail.com" || 
+               request.auth.token.email == "walakharouf6665@gmail.com"
+             );
     }
 
     // Tenant Isolation match rule helper
@@ -39,7 +40,8 @@ service cloud.firestore {
     // Tenant Isolation match rule
     match /users/{userId} {
       // Allows user's single metadata or config read/write
-      allow get, list: if true;
+      allow get: if isOwner(userId);
+      allow list: if isAdmin();
       allow write: if isOwner(userId);
 
       // Secure subcollections

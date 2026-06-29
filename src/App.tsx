@@ -718,14 +718,12 @@ function AppContent() {
           const trialExpiryDate = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
           
           let localIsOnboarded = false;
-          if (typeof window !== 'undefined') {
-            localIsOnboarded = localStorage.getItem(`innova_pos_onboarded_${currentUser.uid}`) === 'true';
-            if (!localIsOnboarded && dbInstance?.settings?.storeName) {
-              const sName = dbInstance.settings.storeName;
-              if (sName !== 'INNOVA POS PRO' && sName !== 'Superette Principale') {
-                localIsOnboarded = true;
-                localStorage.setItem(`innova_pos_onboarded_${currentUser.uid}`, 'true');
-              }
+          localIsOnboarded = safeLocalStorage.getItem(`innova_pos_onboarded_${currentUser.uid}`) === 'true';
+          if (!localIsOnboarded && dbInstance?.settings?.storeName) {
+            const sName = dbInstance.settings.storeName;
+            if (sName !== 'INNOVA POS PRO' && sName !== 'Superette Principale') {
+              localIsOnboarded = true;
+              safeLocalStorage.setItem(`innova_pos_onboarded_${currentUser.uid}`, 'true');
             }
           }
 
@@ -746,8 +744,8 @@ function AppContent() {
             7500,
             defaultOfflineLicense
           );
-          if (userLicense.isOnboarded && typeof window !== 'undefined') {
-            localStorage.setItem(`innova_pos_onboarded_${currentUser.uid}`, 'true');
+          if (userLicense.isOnboarded) {
+            safeLocalStorage.setItem(`innova_pos_onboarded_${currentUser.uid}`, 'true');
           }
           setLicense(userLicense);
 
@@ -1119,9 +1117,7 @@ function AppContent() {
         license={license} 
         onOnboardingComplete={(onboardedLicense, selectedSector) => {
           setLicense(onboardedLicense);
-          if (typeof window !== 'undefined') {
-            localStorage.setItem(`innova_pos_onboarded_${user.uid}`, 'true');
-          }
+          safeLocalStorage.setItem(`innova_pos_onboarded_${user.uid}`, 'true');
           
           // Seed their database with their custom details + sector sample templates
           const sampleProd = SAMPLE_PRODUCTS[selectedSector] || [];

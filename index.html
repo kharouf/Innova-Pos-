@@ -10,16 +10,58 @@
     <title>INNOVA POS - Logiciel de Gestion Commerciale / نظام نقاط البيع</title>
     <script>
       try {
-        if ('serviceWorker' in navigator) {
-          window.addEventListener('load', () => {
-            try {
-              navigator.serviceWorker.register('/sw.js')
-                .then((reg) => console.log('[INNOVA POS INFO] Service Worker registered:', reg.scope))
-                .catch((err) => console.log('[INNOVA POS INFO] Service Worker registration skipped gracefully:', err.message));
-            } catch (innerErr) {
-              console.log('[INNOVA POS INFO] Service Worker inner registration failed:', innerErr);
+        const hostname = (window && window.location && window.location.hostname) || '';
+        const isDevOrPreview = hostname === 'localhost' || 
+                              hostname.includes('run.app') || 
+                              hostname.includes('webcontainer');
+
+        if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator && typeof navigator.serviceWorker.getRegistrations === 'function') {
+          if (isDevOrPreview) {
+            // Clean up any existing service workers and caches to prevent chunk mismatch "Script error."
+            navigator.serviceWorker.getRegistrations().then((registrations) => {
+              if (registrations && registrations.length > 0) {
+                for (let registration of registrations) {
+                  if (registration && typeof registration.unregister === 'function') {
+                    registration.unregister().then(() => {
+                      console.log('[INNOVA POS INFO] Dev/Preview environment detected: Service Worker unregistered successfully.');
+                    }).catch((unregisterErr) => {
+                      console.log('[INNOVA POS INFO] Service Worker unregister rejected:', unregisterErr);
+                    });
+                  }
+                }
+              }
+            }).catch((getRegsErr) => {
+              console.log('[INNOVA POS INFO] getRegistrations rejected:', getRegsErr);
+            });
+
+            if (typeof window !== 'undefined' && 'caches' in window && typeof caches.keys === 'function') {
+              caches.keys().then((names) => {
+                if (names && names.length > 0) {
+                  for (let name of names) {
+                    if (typeof caches.delete === 'function') {
+                      caches.delete(name).then((deleted) => {
+                        console.log('[INNOVA POS INFO] Cache deleted:', name, deleted);
+                      }).catch((deleteErr) => {
+                        console.log('[INNOVA POS INFO] Cache delete rejected:', name, deleteErr);
+                      });
+                    }
+                  }
+                }
+              }).catch((keysErr) => {
+                console.log('[INNOVA POS INFO] Cache keys rejected:', keysErr);
+              });
             }
-          });
+          } else {
+            window.addEventListener('load', () => {
+              try {
+                navigator.serviceWorker.register('/sw.js')
+                  .then((reg) => console.log('[INNOVA POS INFO] Service Worker registered:', reg.scope))
+                  .catch((err) => console.log('[INNOVA POS INFO] Service Worker registration skipped gracefully:', err.message));
+              } catch (innerErr) {
+                console.log('[INNOVA POS INFO] Service Worker inner registration failed:', innerErr);
+              }
+            });
+          }
         }
       } catch (err) {
         console.log('[INNOVA POS INFO] Service Worker feature not supported/allowed in this browser context:', err);

@@ -10,6 +10,7 @@ import {
 import { db, handleFirestoreError, OperationType } from './firebase';
 import { DatabaseState, Product, Partner, Invoice, PaymentTransaction, Traite, DailyExpense, SystemUpdate } from '../types';
 import { UserLicenseData, generateLicenseKey } from './licensing';
+import { safeLocalStorage } from './storage';
 
 /**
  * Recursively removes all undefined fields from an object so that it can be safely saved to Firestore.
@@ -403,22 +404,20 @@ export async function loadUserLicense(userId: string, email: string | null, stor
     const trialExpiryDate = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
     
     let localIsOnboarded = false;
-    if (typeof window !== 'undefined') {
-      localIsOnboarded = localStorage.getItem(`innova_pos_onboarded_${userId}`) === 'true';
-      if (!localIsOnboarded) {
-        const savedActiveId = localStorage.getItem('active_superette_id_' + userId) || 'default';
-        const userSpecificDb = localStorage.getItem(`commercial_management_db_${userId}_${savedActiveId}`);
-        const fallbackDb = localStorage.getItem('commercial_management_db');
-        const localDbStr = userSpecificDb || fallbackDb;
-        if (localDbStr) {
-          try {
-            const parsed = JSON.parse(localDbStr);
-            if (parsed?.settings?.storeName && parsed?.settings?.storeName !== 'INNOVA POS PRO' && parsed?.settings?.storeName !== 'Superette Principale') {
-              localIsOnboarded = true;
-              localStorage.setItem(`innova_pos_onboarded_${userId}`, 'true');
-            }
-          } catch (e) {}
-        }
+    localIsOnboarded = safeLocalStorage.getItem(`innova_pos_onboarded_${userId}`) === 'true';
+    if (!localIsOnboarded) {
+      const savedActiveId = safeLocalStorage.getItem('active_superette_id_' + userId) || 'default';
+      const userSpecificDb = safeLocalStorage.getItem(`commercial_management_db_${userId}_${savedActiveId}`);
+      const fallbackDb = safeLocalStorage.getItem('commercial_management_db');
+      const localDbStr = userSpecificDb || fallbackDb;
+      if (localDbStr) {
+        try {
+          const parsed = JSON.parse(localDbStr);
+          if (parsed?.settings?.storeName && parsed?.settings?.storeName !== 'INNOVA POS PRO' && parsed?.settings?.storeName !== 'Superette Principale') {
+            localIsOnboarded = true;
+            safeLocalStorage.setItem(`innova_pos_onboarded_${userId}`, 'true');
+          }
+        } catch (e) {}
       }
     }
 
