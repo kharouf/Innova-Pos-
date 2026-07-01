@@ -21,9 +21,14 @@ if (customConfigStr) {
 
 const app = getApps().length === 0 ? initializeApp(activeConfig) : getApps()[0];
 
+// If firestoreDatabaseId is provided, we MUST use it to target the correct database instance,
+// regardless of the project name prefix, so that custom/personal projects can still access their
+// specific custom database instances. Otherwise, it falls back to "(default)".
+const firestoreDbId = activeConfig.firestoreDatabaseId || undefined;
+
 export const db = initializeFirestore(app, {
   experimentalForceLongPolling: true,
-}, activeConfig.firestoreDatabaseId); /* CRITICAL: The app will break without this line */
+}, firestoreDbId); /* CRITICAL: The app will break without this line when using default project */
 export const auth = getAuth(app);
 export const storage = getStorage(app);
 

@@ -33,7 +33,7 @@ service cloud.firestore {
 
     // System Updates
     match /updates/{updateId} {
-      allow read: if isSignedIn();
+      allow read: if true;
       allow write: if isAdmin();
     }
 

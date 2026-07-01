@@ -66,6 +66,22 @@ export default function SaaSDeveloperConsole() {
   // Floating Toast State
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
+  // New Tenant Creation State
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [newEmail, setNewEmail] = useState('');
+  const [newStoreName, setNewStoreName] = useState('');
+  const [newPhone, setNewPhone] = useState('');
+  const [newLocation, setNewLocation] = useState('');
+  const [newStatus, setNewStatus] = useState<'trial' | 'active' | 'suspended'>('trial');
+  const [newExpiry, setNewExpiry] = useState(() => {
+    const date = new Date();
+    date.setDate(date.getDate() + 30); // 30 days trial/active period by default
+    return date.toISOString().split('T')[0];
+  });
+  const [newPaymentStatus, setNewPaymentStatus] = useState<'paid' | 'pending' | 'free_trial' | 'refunded'>('free_trial');
+  const [newPaymentAmount, setNewPaymentAmount] = useState<string>('0');
+  const [newAdminNotes, setNewAdminNotes] = useState('');
+
   const showToast = (msg: string) => {
     setToastMessage(msg);
     setTimeout(() => setToastMessage(null), 3050);
@@ -156,6 +172,60 @@ export default function SaaSDeveloperConsole() {
     } catch (err) {
       console.error(err);
       showToast('❌ Error deleting tenant database');
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const handleCreateTenant = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newEmail.trim() || !newStoreName.trim()) {
+      showToast(language === 'ar' ? '⚠️ يرجى إدخال البريد الإلكتروني واسم المحل!' : '⚠️ Veuillez saisir l\'email et le nom du commerce !');
+      return;
+    }
+
+    // Generate a unique clean ID for the brand new tenant
+    const tempUid = 'user-' + Math.random().toString(36).substring(2, 9);
+    const key = generateLicenseKey(tempUid, newExpiry);
+
+    const newTenant: UserLicenseData = {
+      uid: tempUid,
+      email: newEmail.trim().toLowerCase(),
+      registeredAt: new Date().toISOString().split('T')[0],
+      activationDate: newStatus === 'active' ? new Date().toISOString().split('T')[0] : '',
+      licenseExpiry: newExpiry,
+      licenseStatus: newStatus,
+      licenseKey: key,
+      remoteAnnouncement: language === 'ar' ? 'مرحباً بك في نظام INNOVA POS.' : 'Bienvenue sur INNOVA POS.',
+      businessName: newStoreName.trim(),
+      location: newLocation.trim(),
+      phone: newPhone.trim(),
+      paymentStatus: newPaymentStatus,
+      paymentAmount: Number(newPaymentAmount) || 0,
+      adminNotes: newAdminNotes.trim(),
+      isOnboarded: false
+    };
+
+    setActionLoading('create');
+    try {
+      await saveUserLicense(tempUid, newTenant);
+      showToast(language === 'ar' ? '✅ تم إضافة المشترك الجديد بنجاح في قاعدة البيانات!' : '✅ Client SaaS créé avec succès !');
+      setShowAddModal(false);
+      
+      // Reset form fields
+      setNewEmail('');
+      setNewStoreName('');
+      setNewPhone('');
+      setNewLocation('');
+      setNewStatus('trial');
+      setNewPaymentStatus('free_trial');
+      setNewPaymentAmount('0');
+      setNewAdminNotes('');
+
+      await fetchTenants();
+    } catch (err) {
+      console.error(err);
+      showToast('❌ Error creating new tenant record');
     } finally {
       setActionLoading(null);
     }
@@ -313,6 +383,15 @@ export default function SaaSDeveloperConsole() {
                     : 'Fiches d\'identification, dates de souscription et réglage d\'activation globale'}
                 </p>
               </div>
+
+              <button
+                type="button"
+                onClick={() => setShowAddModal(true)}
+                className="flex items-center justify-center gap-1.5 py-1.5 px-3 rounded-lg bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold transition-all cursor-pointer shadow-sm active:scale-95"
+              >
+                <Plus className="w-4 h-4" />
+                <span>{language === 'ar' ? 'سجل مشترك جديد' : 'Inscrire un abonné'}</span>
+              </button>
             </div>
 
             {/* Filter and query toolbar */}
@@ -720,6 +799,184 @@ export default function SaaSDeveloperConsole() {
             )}
           </div>
         </div>
+
+        {/* ➕ Modal: Add Subscriber */}
+        {showAddModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-fade-in">
+            <div className="bg-white rounded-xl shadow-2xl border border-slate-200 max-w-lg w-full overflow-hidden text-start animate-scale-up" dir={language === 'ar' ? 'rtl' : 'ltr'}>
+              <div className="p-5 bg-slate-900 text-white flex items-center justify-between border-b border-rose-500/10">
+                <div className="flex items-center gap-2">
+                  <PlusCircle className="w-5 h-5 text-rose-500" />
+                  <h3 className="font-display font-black text-sm">
+                    {language === 'ar' ? 'تسجيل مشترك جديد في السحابة' : 'Inscrire un nouvel abonné'}
+                  </h3>
+                </div>
+                <button 
+                  type="button"
+                  onClick={() => setShowAddModal(false)}
+                  className="text-slate-400 hover:text-white transition-colors cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <form onSubmit={handleCreateTenant} className="p-5 space-y-4 max-h-[80vh] overflow-y-auto">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  {/* Email address */}
+                  <div className="space-y-1">
+                    <label className="text-[11px] font-black uppercase text-slate-500 block">
+                      {language === 'ar' ? 'البريد الإلكتروني للعميل *' : 'Email du client *'}
+                    </label>
+                    <input
+                      type="email"
+                      required
+                      value={newEmail}
+                      onChange={(e) => setNewEmail(e.target.value)}
+                      className="w-full text-xs font-semibold border border-slate-250 p-2 rounded-lg bg-slate-50 focus:bg-white focus:outline-hidden focus:ring-2 focus:ring-rose-500/20 text-slate-800"
+                      placeholder="client@gmail.com"
+                    />
+                  </div>
+
+                  {/* Business Name */}
+                  <div className="space-y-1">
+                    <label className="text-[11px] font-black uppercase text-slate-500 block">
+                      {language === 'ar' ? 'اسم المتجر / الشركة *' : 'Nom du commerce *'}
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      value={newStoreName}
+                      onChange={(e) => setNewStoreName(e.target.value)}
+                      className="w-full text-xs font-semibold border border-slate-250 p-2 rounded-lg bg-slate-50 focus:bg-white focus:outline-hidden focus:ring-2 focus:ring-rose-500/20 text-slate-800"
+                      placeholder={language === 'ar' ? 'مثال: سوبرماركت الياسمين' : 'Ex: Superette Jasmin'}
+                    />
+                  </div>
+
+                  {/* Phone */}
+                  <div className="space-y-1">
+                    <label className="text-[11px] font-black uppercase text-slate-500 block">
+                      {language === 'ar' ? 'رقم الهاتف (اختياري)' : 'Téléphone (Optionnel)'}
+                    </label>
+                    <input
+                      type="tel"
+                      value={newPhone}
+                      onChange={(e) => setNewPhone(e.target.value)}
+                      className="w-full text-xs font-semibold border border-slate-250 p-2 rounded-lg bg-slate-50 focus:bg-white focus:outline-hidden focus:ring-2 focus:ring-rose-500/20 text-slate-800"
+                      placeholder="+216 99 999 999"
+                    />
+                  </div>
+
+                  {/* Location */}
+                  <div className="space-y-1">
+                    <label className="text-[11px] font-black uppercase text-slate-500 block">
+                      {language === 'ar' ? 'العنوان / الموقع الجغرافي' : 'Localisation / Adresse'}
+                    </label>
+                    <input
+                      type="text"
+                      value={newLocation}
+                      onChange={(e) => setNewLocation(e.target.value)}
+                      className="w-full text-xs font-semibold border border-slate-250 p-2 rounded-lg bg-slate-50 focus:bg-white focus:outline-hidden focus:ring-2 focus:ring-rose-500/20 text-slate-800"
+                      placeholder={language === 'ar' ? 'مثال: تونس العاصمة أو رابط خرائط' : 'Ex: Tunis or Google Maps Link'}
+                    />
+                  </div>
+
+                  {/* License Status */}
+                  <div className="space-y-1">
+                    <label className="text-[11px] font-black uppercase text-slate-500 block">
+                      {language === 'ar' ? 'حالة الاشتراك' : 'Statut d\'accès'}
+                    </label>
+                    <select
+                      value={newStatus}
+                      onChange={(e) => setNewStatus(e.target.value as any)}
+                      className="w-full text-xs font-bold border border-slate-250 p-2 rounded-lg bg-slate-50 focus:bg-white text-slate-800"
+                    >
+                      <option value="trial">{language === 'ar' ? 'فترة تجريبية ⏳' : 'Période d\'essai'}</option>
+                      <option value="active">{language === 'ar' ? 'نشط ومفعّل بالكامل ✅' : 'Actif / Abonné'}</option>
+                      <option value="suspended">{language === 'ar' ? 'معلق ومغلق مؤقتاً 🛑' : 'Suspendu / Bloqué'}</option>
+                    </select>
+                  </div>
+
+                  {/* Expiry Date */}
+                  <div className="space-y-1">
+                    <label className="text-[11px] font-black uppercase text-slate-500 block">
+                      {language === 'ar' ? 'تاريخ انتهاء الصلاحية' : 'Date d\'expiration'}
+                    </label>
+                    <input
+                      type="date"
+                      required
+                      value={newExpiry}
+                      onChange={(e) => setNewExpiry(e.target.value)}
+                      className="w-full text-xs font-bold font-mono border border-slate-250 p-2 rounded-lg bg-slate-50 focus:bg-white text-slate-800"
+                    />
+                  </div>
+
+                  {/* Payment Status */}
+                  <div className="space-y-1">
+                    <label className="text-[11px] font-black uppercase text-slate-500 block">
+                      {language === 'ar' ? 'حالة الدفع' : 'Règlement'}
+                    </label>
+                    <select
+                      value={newPaymentStatus}
+                      onChange={(e) => setNewPaymentStatus(e.target.value as any)}
+                      className="w-full text-xs font-bold border border-slate-250 p-2 rounded-lg bg-slate-50 focus:bg-white text-slate-800"
+                    >
+                      <option value="free_trial">{language === 'ar' ? 'عرض تجريبي مجاني 🎁' : 'Essai sans frais'}</option>
+                      <option value="paid">{language === 'ar' ? 'خالص ومسدد بالكامل ✅' : 'Payé'}</option>
+                      <option value="pending">{language === 'ar' ? 'قيد الانتظار ودفع الصكوك ⏳' : 'Attente règlement'}</option>
+                      <option value="refunded">{language === 'ar' ? 'مسترجع مالي 🛑' : 'Remboursé 🛑'}</option>
+                    </select>
+                  </div>
+
+                  {/* Payment Amount */}
+                  <div className="space-y-1">
+                    <label className="text-[11px] font-black uppercase text-slate-500 block">
+                      {language === 'ar' ? 'المبلغ المستخلص (د.ت)' : 'Montant perçu (TND)'}
+                    </label>
+                    <input
+                      type="number"
+                      step="5"
+                      value={newPaymentAmount}
+                      onChange={(e) => setNewPaymentAmount(e.target.value)}
+                      className="w-full text-xs font-mono font-bold border border-slate-250 p-2 rounded-lg bg-slate-50 focus:bg-white text-slate-800"
+                      placeholder="0.000"
+                    />
+                  </div>
+                </div>
+
+                {/* Admin Notes */}
+                <div className="space-y-1">
+                  <label className="text-[11px] font-black uppercase text-slate-500 block">
+                    {language === 'ar' ? 'ملاحظات إدارية سرية' : 'Notes administratives secrètes'}
+                  </label>
+                  <textarea
+                    rows={2}
+                    value={newAdminNotes}
+                    onChange={(e) => setNewAdminNotes(e.target.value)}
+                    className="w-full text-xs font-medium border border-slate-250 p-2 rounded-lg bg-slate-50 focus:bg-white text-slate-800"
+                    placeholder={language === 'ar' ? 'أي ملاحظات للمتابعة اللاحقة للمشترك...' : 'Notes privées de suivi...'}
+                  />
+                </div>
+
+                <div className="flex items-center justify-end gap-2 pt-4 border-t border-slate-100">
+                  <button
+                    type="button"
+                    onClick={() => setShowAddModal(false)}
+                    className="py-2 px-4 text-xs font-bold rounded-lg bg-slate-100 border border-slate-200 hover:bg-slate-200 text-slate-700 cursor-pointer transition-colors"
+                  >
+                    {language === 'ar' ? 'إلغاء' : 'Annuler'}
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={actionLoading === 'create'}
+                    className="py-2 px-5 text-xs font-bold rounded-lg bg-rose-600 hover:bg-rose-500 text-white flex items-center gap-1 cursor-pointer transition-colors"
+                  >
+                    {actionLoading === 'create' ? '...' : (language === 'ar' ? 'إضافة وتفعيل المشترك 💾' : 'Créer et activer 💾')}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
       </div>
   );
 }
