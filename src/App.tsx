@@ -164,6 +164,17 @@ function AppContent() {
     safeLocalStorage.setItem('isWorkerMode', isWorkerMode ? 'true' : 'false');
   }, [isWorkerMode]);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [isAppFullscreen, setIsAppFullscreen] = useState(false);
+
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      setIsAppFullscreen(!!document.fullscreenElement);
+    };
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    return () => {
+      document.removeEventListener('fullscreenchange', handleFullscreenChange);
+    };
+  }, []);
 
   const [showPinModal, setShowPinModal] = useState(false);
   const [pinInput, setPinInput] = useState('');
@@ -189,6 +200,7 @@ function AppContent() {
   const switchSuperette = async (targetId: string) => {
     if (!user) return;
     setSyncingCloud(true);
+    isInitialLoginRef.current = true; // Reset alert trigger so newly loaded superette is checked
     try {
       setActiveSuperetteId(targetId);
       safeLocalStorage.setItem('active_superette_id_' + user.uid, targetId);
@@ -791,6 +803,15 @@ function AppContent() {
         setShowStockAlertBanner(true);
         setShowMobileNotifySim(true);
 
+        // Always dispatch a beautiful in-app toast notification so it functions inside cross-origin sandbox iframes
+        const toastMsg = language === 'ar'
+          ? `⚠️ تنبيه المخزون: يوجد ${criticalCount} من السلع الهامة في المحل التي نفدت أو شارفت على النفاد!`
+          : `⚠️ Alerte Stock : ${criticalCount} articles de vente critiques ont atteint leur seuil minimal de sécurité !`;
+        
+        window.dispatchEvent(new CustomEvent('show-toast', {
+          detail: { message: toastMsg, type: 'error' }
+        }));
+
         // Mobile Notification double-tone chime sound simulation (pure Web Audio synthesizer)
         try {
           const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
@@ -954,7 +975,7 @@ function AppContent() {
       }
     }
 
-    // 4. Automatically generate a supplier purchase order (PDF) for products having reached their critical threshold during stock alert
+    // 4. Automatically generate a supplier purchase order (PDF) and trigger real-time on-screen alerts for products having reached their critical threshold during stock alert
     if (oldDb && oldDb.products && updatedDb.products) {
       const oldProductsMap = new Map<string, Product>(oldDb.products.map(p => [p.id, p]));
       const itemsToOrder: Product[] = [];
@@ -966,6 +987,15 @@ function AppContent() {
 
         if (isCurrentlyCritical && wasPreviouslyNotCritical) {
           itemsToOrder.push(newPrd);
+
+          // Dispatch an elegant real-time in-app warning toast
+          const alertMessage = language === 'ar'
+            ? `🚨 تنبيه المخزون: وصلت السلعة "${newPrd.name}" إلى المستوى الحرج (${newPrd.stock} ${newPrd.unit || 'قطعة'})`
+            : `🚨 Alerte Stock : L'article "${newPrd.name}" a atteint son niveau critique (${newPrd.stock} ${newPrd.unit || 'U'}) !`;
+          
+          window.dispatchEvent(new CustomEvent('show-toast', {
+            detail: { message: alertMessage, type: 'error' }
+          }));
         }
       }
 
@@ -1214,9 +1244,35 @@ function AppContent() {
     }
 
     if (status === 'active') {
+      let expiryInfo = '';
+      if (license.licenseExpiry) {
+        try {
+          const expiryDateObj = new Date(license.licenseExpiry);
+          const today = new Date();
+          today.setHours(0, 0, 0, 0);
+          expiryDateObj.setHours(0, 0, 0, 0);
+          const diffTime = expiryDateObj.getTime() - today.getTime();
+          const diffDays = Math.max(0, Math.ceil(diffTime / (1000 * 60 * 60 * 24)));
+          
+          const formattedDate = expiryDateObj.toLocaleDateString(language === 'ar' ? 'ar-DZ' : 'fr-FR', {
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit',
+          });
+          
+          if (language === 'ar') {
+            expiryInfo = ` (تاريخ الانتهاء: ${formattedDate} | الأيام المتبقية: ${diffDays} يوم)`;
+          } else {
+            expiryInfo = ` (Date d'expiration : ${formattedDate} | Jours restants : ${diffDays})`;
+          }
+        } catch (e) {
+          console.error(e);
+        }
+      }
+
       return language === 'ar'
-        ? '✅ اشتراككم مفعّل بالكامل في نظام INNOVA POS PRO. شكراً لكم على اختيار خدماتنا وثقتكم بنا!'
-        : '✅ Votre abonnement INNOVA POS PRO est entièrement actif. Merci pour votre fidélité et votre confiance !';
+        ? `✅ اشتراككم مفعّل بالكامل في نظام INNOVA POS PRO. شكراً لكم على اختيار خدماتنا وثقتكم بنا!${expiryInfo}`
+        : `✅ Votre abonnement INNOVA POS PRO est entièrement actif. Merci pour votre fidélité et votre confiance !${expiryInfo}`;
     } else {
       // trial/default
       return language === 'ar'
@@ -1288,7 +1344,7 @@ function AppContent() {
     <div className="min-h-screen bg-slate-100 flex flex-col lg:flex-row text-slate-800 font-sans" dir={language === 'ar' ? 'rtl' : 'ltr'}>
       
       {/* SIDEBAR NAVIGATION - DESKTOP SCREEN (Persistent) */}
-      <aside className="hidden lg:flex flex-col w-64 h-screen sticky top-0 bg-slate-900 text-white shrink-0 border-r border-slate-800 shadow-xl no-print overflow-y-auto custom-scrollbar">
+      <aside className={`${isAppFullscreen && activeTab === 'pos' ? 'hidden' : 'hidden lg:flex'} flex-col w-64 h-screen sticky top-0 bg-slate-900 text-white shrink-0 border-r border-slate-800 shadow-xl no-print overflow-y-auto custom-scrollbar`}>
         {/* Brand identity */}
         <div className="p-6 flex items-center gap-3 border-b border-slate-800">
           {resolveStoreLogo(db.settings?.storeLogo) ? (
@@ -1504,7 +1560,7 @@ function AppContent() {
       </aside>
 
       {/* MOBILE HEADER BAR & HAMBURGER (Visible on small screen) */}
-      <div className="lg:hidden fixed top-0 left-0 right-0 h-16 bg-slate-900 text-white flex items-center justify-between px-5 border-b border-slate-800 z-40 no-print">
+      <div className={`${isAppFullscreen && activeTab === 'pos' ? 'hidden' : 'lg:hidden'} fixed top-0 left-0 right-0 h-16 bg-slate-900 text-white flex items-center justify-between px-5 border-b border-slate-800 z-40 no-print`}>
         <div className="flex items-center gap-2.5">
           {resolveStoreLogo(db.settings?.storeLogo) ? (
             ((resolveStoreLogo(db.settings?.storeLogo) || '').startsWith('data:') || (resolveStoreLogo(db.settings?.storeLogo) || '').startsWith('http') || (resolveStoreLogo(db.settings?.storeLogo) || '').startsWith('/') || (resolveStoreLogo(db.settings?.storeLogo) || '').includes('.') || (resolveStoreLogo(db.settings?.storeLogo) || '').length > 15) ? (
@@ -1535,6 +1591,35 @@ function AppContent() {
         </div>
 
         <div className="flex items-center gap-2">
+          {/* Real-time Mobile Stock Notification Bell */}
+          {db && db.products && (
+            <button
+              type="button"
+              onClick={() => {
+                setShowStockAlertBanner(true);
+                const toastMsg = language === 'ar'
+                  ? `⚠️ تنبيه المخزون: يوجد ${criticalProductsCount} من السلع الهامة تحت حد الإنذار!`
+                  : `⚠️ Alerte Stock : ${criticalProductsCount} articles de vente critiques ont atteint leur seuil minimal de sécurité !`;
+                window.dispatchEvent(new CustomEvent('show-toast', {
+                  detail: { message: toastMsg, type: criticalProductsCount > 0 ? 'error' : 'info' }
+                }));
+              }}
+              className={`relative p-2 rounded-lg transition-all shrink-0 cursor-pointer ${
+                criticalProductsCount > 0 
+                  ? 'text-rose-400 bg-rose-500/10' 
+                  : 'text-slate-400 hover:text-white'
+              }`}
+              title={language === 'ar' ? 'إشعارات مستويات المخزون' : 'Seuils de stock critique'}
+            >
+              <Bell className={`w-5 h-5 ${criticalProductsCount > 0 ? 'text-rose-500 animate-pulse' : ''}`} />
+              {criticalProductsCount > 0 && (
+                <span className="absolute top-1 right-1 bg-rose-600 text-white font-sans text-[8px] font-bold h-3.5 w-3.5 rounded-full flex items-center justify-center animate-bounce border border-slate-900">
+                  {criticalProductsCount}
+                </span>
+              )}
+            </button>
+          )}
+
           {!isSystemFullyUpdated && (
             <button
               onClick={() => {
@@ -1564,7 +1649,7 @@ function AppContent() {
       </div>
 
       {/* MOBILE DRAWERS OVERLAY SIDEBAR */}
-      {mobileMenuOpen && (
+      {mobileMenuOpen && !(isAppFullscreen && activeTab === 'pos') && (
         <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs z-30 lg:hidden no-print" onClick={() => setMobileMenuOpen(false)}>
           <aside 
             className="w-72 bg-slate-950 h-full flex flex-col justify-between pt-20 overflow-y-auto custom-scrollbar"
@@ -1717,7 +1802,7 @@ function AppContent() {
       <div className="flex-1 flex flex-col min-h-screen overflow-hidden">
         
         {/* Top Header */}
-        <header className="h-16 bg-white border-b border-slate-200 hidden lg:flex items-center justify-between px-8 shrink-0 no-print">
+        <header className={`${isAppFullscreen && activeTab === 'pos' ? 'hidden' : 'hidden lg:flex'} h-16 bg-white border-b border-slate-200 items-center justify-between px-8 shrink-0 no-print`}>
           <div className="flex items-center gap-4">
             <h1 className="text-lg font-bold text-slate-900 uppercase tracking-tighter italic">
               {activeItem?.label || "Vue d'Ensemble"}
@@ -1809,6 +1894,35 @@ function AppContent() {
               )}
             </div>
 
+            {/* Real-time Stock Notification Bell */}
+            {db && db.products && (
+              <button
+                type="button"
+                onClick={() => {
+                  setShowStockAlertBanner(true);
+                  const toastMsg = language === 'ar'
+                    ? `⚠️ تنبيه المخزون: يوجد ${criticalProductsCount} من السلع الهامة تحت حد الإنذار!`
+                    : `⚠️ Alerte Stock : ${criticalProductsCount} articles de vente critiques ont atteint leur seuil minimal de sécurité !`;
+                  window.dispatchEvent(new CustomEvent('show-toast', {
+                    detail: { message: toastMsg, type: criticalProductsCount > 0 ? 'error' : 'info' }
+                  }));
+                }}
+                className={`relative p-2 rounded-lg transition-all shrink-0 cursor-pointer border ${
+                  criticalProductsCount > 0 
+                    ? 'bg-rose-50 border-rose-200 text-rose-700 hover:bg-rose-100 hover:text-rose-800' 
+                    : 'bg-slate-50 border-slate-200 text-slate-500 hover:bg-slate-100 hover:text-slate-800'
+                }`}
+                title={language === 'ar' ? 'إشعارات مستويات المخزون' : 'Seuils de stock critique'}
+              >
+                <Bell className={`w-4 h-4 ${criticalProductsCount > 0 ? 'text-rose-600 fill-rose-100 animate-pulse' : ''}`} />
+                {criticalProductsCount > 0 && (
+                  <span className="absolute -top-1.5 -right-1.5 bg-rose-600 text-white font-sans text-[9px] font-bold h-4.5 w-4.5 rounded-full flex items-center justify-center animate-bounce border border-white">
+                    {criticalProductsCount}
+                  </span>
+                )}
+              </button>
+            )}
+
             {/* Simple Header Logout button if logged in */}
             {user && (
               <button
@@ -1826,9 +1940,9 @@ function AppContent() {
         </header>
 
         {/* CONTAINER FOR CONTENT */}
-        <div className="flex-1 overflow-y-auto custom-scrollbar flex flex-col justify-between pt-16 lg:pt-0">
-          <main className="flex-1 p-4 md:p-8">
-            <div className="max-w-7xl mx-auto pb-12 print-card">
+        <div className={`flex-1 overflow-y-auto custom-scrollbar flex flex-col justify-between ${isAppFullscreen && activeTab === 'pos' ? 'pt-0' : 'pt-16 lg:pt-0'}`}>
+          <main className={`flex-1 ${isAppFullscreen && activeTab === 'pos' ? 'p-0' : 'p-4 md:p-8'}`}>
+            <div className={`${isAppFullscreen && activeTab === 'pos' ? 'w-full pb-0' : 'max-w-7xl mx-auto pb-12'} print-card`}>
               
               {/* Responsive Offline Alert Strip */}
               {isEffectiveOffline && (

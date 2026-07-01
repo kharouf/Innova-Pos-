@@ -164,7 +164,7 @@ export default function Partners({ db, onUpdateDb }: PartnersProps) {
             discountRate: selectedTabIsClient ? rateNum : undefined,
             loyaltyPoints: ptsNum,
             contactPerson: !selectedTabIsClient && contactPerson.trim() ? contactPerson.trim() : undefined,
-            creditLimit: !selectedTabIsClient && creditLimit.trim() ? Number(creditLimit) : undefined,
+            creditLimit: creditLimit.trim() ? Number(creditLimit) : undefined,
             supplyChainType: !selectedTabIsClient && supplyChainType.trim() ? supplyChainType.trim() : undefined,
             paymentTerms: !selectedTabIsClient && paymentTerms.trim() ? paymentTerms.trim() : undefined
           };
@@ -187,7 +187,7 @@ export default function Partners({ db, onUpdateDb }: PartnersProps) {
         discountRate: selectedTabIsClient ? rateNum : undefined,
         loyaltyPoints: ptsNum,
         contactPerson: !selectedTabIsClient && contactPerson.trim() ? contactPerson.trim() : undefined,
-        creditLimit: !selectedTabIsClient && creditLimit.trim() ? Number(creditLimit) : undefined,
+        creditLimit: creditLimit.trim() ? Number(creditLimit) : undefined,
         supplyChainType: !selectedTabIsClient && supplyChainType.trim() ? supplyChainType.trim() : undefined,
         paymentTerms: !selectedTabIsClient && paymentTerms.trim() ? paymentTerms.trim() : undefined
       };
@@ -651,6 +651,22 @@ export default function Partners({ db, onUpdateDb }: PartnersProps) {
                           : (language === 'ar' ? 'مسوّى' : 'À jour')
                       }
                     </span>
+
+                    {isClient && p.creditLimit !== undefined && p.creditLimit > 0 && (
+                      <div className="mt-2 text-right">
+                        <span className="text-[10px] text-slate-400 block font-bold leading-none">
+                          {language === 'ar' ? 'سقف الائتمان:' : 'Limite de Crédit :'}
+                        </span>
+                        <span className="text-xs font-bold font-mono text-indigo-700 block mt-0.5">
+                          {formatCurrency(p.creditLimit)}
+                        </span>
+                        {p.currentBalance > p.creditLimit && (
+                          <span className="text-[9.5px] font-extrabold px-1.5 py-0.5 rounded bg-rose-50 border border-rose-100 text-rose-600 block mt-1 animate-pulse">
+                            ⚠️ {language === 'ar' ? 'تجاوز سقف الائتمان!' : 'Limite Dépassée !'}
+                          </span>
+                        )}
+                      </div>
+                    )}
                   </div>
                 </div>
 
@@ -986,23 +1002,43 @@ export default function Partners({ db, onUpdateDb }: PartnersProps) {
               </div>
 
               {selectedTabIsClient && (
-                <div>
-                  <label className="text-xs font-bold text-slate-700 block mb-1">
-                    {language === 'ar' ? '🏷️ نسبة التخفيض التلقائي للزبون (%)' : '🏷️ Remise Client par Défaut (%)'}
-                  </label>
-                  <input
-                    type="number"
-                    min="0"
-                    max="100"
-                    step="0.01"
-                    placeholder="Ex : 5"
-                    value={discountRate}
-                    onChange={(e) => setDiscountRate(e.target.value)}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl py-2 px-3 focus:outline-hidden font-mono text-emerald-700 font-bold"
-                  />
-                  <span className="text-[10px] text-slate-400 block mt-0.5">
-                    {language === 'ar' ? 'سيتم تطبيق هذا التخفيض تلقائياً عند اختيار هذا الزبون في المبيعات.' : 'Sera appliquée automatiquement au POS lorsque ce client est sélectionné.'}
-                  </span>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="text-xs font-bold text-slate-700 block mb-1">
+                      {language === 'ar' ? '🏷️ نسبة التخفيض التلقائي للزبون (%)' : '🏷️ Remise Client par Défaut (%)'}
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      max="100"
+                      step="0.01"
+                      placeholder="Ex : 5"
+                      value={discountRate}
+                      onChange={(e) => setDiscountRate(e.target.value)}
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl py-2 px-3 focus:outline-hidden font-mono text-emerald-700 font-bold"
+                    />
+                    <span className="text-[10px] text-slate-400 block mt-0.5">
+                      {language === 'ar' ? 'سيتم تطبيق هذا التخفيض تلقائياً عند اختيار هذا الزبون في المبيعات.' : 'Sera appliquée automatiquement au POS lorsque ce client est sélectionné.'}
+                    </span>
+                  </div>
+
+                  <div>
+                    <label className="text-xs font-bold text-slate-700 block mb-1">
+                      🛑 {language === 'ar' ? 'سقف الائتمان الأقصى المسموح (DZD)' : '🛑 Limite de Crédit Autorisée (DZD)'}
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="any"
+                      placeholder="Ex : 10000"
+                      value={creditLimit}
+                      onChange={(e) => setCreditLimit(e.target.value)}
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl py-2 px-3 focus:outline-hidden font-mono text-rose-700 font-bold"
+                    />
+                    <span className="text-[10px] text-slate-400 block mt-0.5">
+                      {language === 'ar' ? 'تنبيه في المبيعات إذا تجاوز الدين الحالي هذا الحد.' : 'Avertissement visuel au POS si le solde dépasse cette limite.'}
+                    </span>
+                  </div>
                 </div>
               )}
 

@@ -93,6 +93,10 @@ export default function Products({ db, onUpdateDb }: ProductsProps) {
   const [editPurchasePrice, setEditPurchasePrice] = useState<number>(0);
   const [editSellingPrice, setEditSellingPrice] = useState<number>(0);
 
+  // Direct stock edit states
+  const [editingStockProductId, setEditingStockProductId] = useState<string | null>(null);
+  const [tempStockValue, setTempStockValue] = useState<string>('');
+
   // Price history modal state
   const [historyProduct, setHistoryProduct] = useState<Product | null>(null);
 
@@ -243,6 +247,31 @@ export default function Products({ db, onUpdateDb }: ProductsProps) {
       return p;
     });
     onUpdateDb({ ...db, products: updatedProducts });
+  };
+
+  // Handle direct stock input update
+  const handleDirectStockUpdate = (productId: string, valStr: string) => {
+    const num = Number(valStr);
+    if (isNaN(num) || num < 0) {
+      showToast(
+        language === 'ar' ? 'الرجاء إدخال كمية صالحة' : 'Veuillez saisir une quantité valide',
+        'error'
+      );
+      return;
+    }
+
+    const updatedProducts = db.products.map(p => {
+      if (p.id === productId) {
+        return { ...p, stock: num };
+      }
+      return p;
+    });
+    onUpdateDb({ ...db, products: updatedProducts });
+    setEditingStockProductId(null);
+    showToast(
+      language === 'ar' ? 'تم تحديث كمية المخزون بنجاح' : 'Quantité de stock mise à jour avec succès',
+      'success'
+    );
   };
 
   // Handle fast price adjustments from simple modal
@@ -1052,31 +1081,86 @@ export default function Products({ db, onUpdateDb }: ProductsProps) {
                       {/* Interactive Stock Column */}
                       <td className="p-4">
                         <div className="flex flex-col items-center justify-center space-y-1.5 min-w-[140px]">
-                          <div className="flex items-center space-x-1.5">
-                            <button
-                              onClick={() => handleQuickStockAdjust(prod.id, -1)}
-                              className="w-5 h-5 bg-white border border-slate-200 hover:bg-slate-100 rounded flex items-center justify-center text-slate-500 font-bold shrink-0 transition-colors cursor-pointer"
-                            >
-                              -
-                            </button>
-                            
-                            <span className={`font-mono text-xs font-bold px-2.5 py-0.5 rounded-md min-w-[50px] text-center ${
-                              isOut 
-                                ? 'bg-rose-50 text-rose-700 border border-rose-100' 
-                                : isLow 
-                                  ? 'bg-amber-50 text-amber-700 border border-amber-100' 
-                                  : 'bg-emerald-50 text-emerald-700 border border-emerald-100'
-                            }`}>
-                              {prod.stock} {prod.unit}
-                            </span>
+                          {editingStockProductId === prod.id ? (
+                            <div className="flex items-center space-x-1 select-none">
+                              <input
+                                type="number"
+                                min="0"
+                                step="any"
+                                value={tempStockValue}
+                                onChange={(e) => setTempStockValue(e.target.value)}
+                                className="w-16 bg-slate-50 border border-indigo-300 rounded px-1.5 py-0.5 font-mono text-xs text-center font-bold text-indigo-900 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                                autoFocus
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter') {
+                                    handleDirectStockUpdate(prod.id, tempStockValue);
+                                  } else if (e.key === 'Escape') {
+                                    setEditingStockProductId(null);
+                                  }
+                                }}
+                              />
+                              <button
+                                onClick={() => handleDirectStockUpdate(prod.id, tempStockValue)}
+                                className="w-5 h-5 bg-emerald-500 hover:bg-emerald-600 text-white rounded flex items-center justify-center text-[10px] font-bold cursor-pointer transition-colors"
+                                title={language === 'ar' ? 'حفظ' : 'Enregistrer'}
+                              >
+                                ✓
+                              </button>
+                              <button
+                                onClick={() => setEditingStockProductId(null)}
+                                className="w-5 h-5 bg-slate-300 hover:bg-slate-400 text-slate-700 rounded flex items-center justify-center text-[10px] font-bold cursor-pointer transition-colors"
+                                title={language === 'ar' ? 'إلغاء' : 'Annuler'}
+                              >
+                                ✗
+                              </button>
+                            </div>
+                          ) : (
+                            <>
+                              <div className="flex items-center space-x-1.5">
+                                <button
+                                  onClick={() => handleQuickStockAdjust(prod.id, -1)}
+                                  className="w-5 h-5 bg-white border border-slate-200 hover:bg-slate-100 rounded flex items-center justify-center text-slate-500 font-bold shrink-0 transition-colors cursor-pointer"
+                                >
+                                  -
+                                </button>
+                                
+                                <span 
+                                  onClick={() => {
+                                    setEditingStockProductId(prod.id);
+                                    setTempStockValue(prod.stock.toString());
+                                  }}
+                                  className={`font-mono text-xs font-bold px-2.5 py-0.5 rounded-md min-w-[50px] text-center cursor-pointer hover:ring-1 hover:ring-indigo-300 ${
+                                    isOut 
+                                      ? 'bg-rose-50 text-rose-700 border border-rose-100' 
+                                      : isLow 
+                                        ? 'bg-amber-50 text-amber-700 border border-amber-100' 
+                                        : 'bg-emerald-50 text-emerald-700 border border-emerald-100'
+                                  }`}
+                                  title={language === 'ar' ? 'انقر لتعديل الكمية مباشرة' : 'Cliquer pour modifier directement'}
+                                >
+                                  {prod.stock} {prod.unit}
+                                </span>
 
-                            <button
-                              onClick={() => handleQuickStockAdjust(prod.id, 1)}
-                              className="w-5 h-5 bg-white border border-slate-200 hover:bg-slate-100 rounded flex items-center justify-center text-slate-500 font-bold shrink-0 transition-colors cursor-pointer"
-                            >
-                              +
-                            </button>
-                          </div>
+                                <button
+                                  onClick={() => handleQuickStockAdjust(prod.id, 1)}
+                                  className="w-5 h-5 bg-white border border-slate-200 hover:bg-slate-100 rounded flex items-center justify-center text-slate-500 font-bold shrink-0 transition-colors cursor-pointer"
+                                >
+                                  +
+                                </button>
+                              </div>
+
+                              <button
+                                onClick={() => {
+                                  setEditingStockProductId(prod.id);
+                                  setTempStockValue(prod.stock.toString());
+                                }}
+                                className="text-[10px] text-indigo-600 hover:text-indigo-800 font-bold hover:underline cursor-pointer flex items-center gap-0.5"
+                                title={language === 'ar' ? 'تعديل مباشر للكمية' : 'Modifier la quantité directement'}
+                              >
+                                ✏️ {language === 'ar' ? 'تعديل الكمية' : 'Modifier Qté'}
+                              </button>
+                            </>
+                          )}
 
                           <span className="text-[9px] text-slate-400 font-bold">Seuil Alerte: {prod.minAlertQty}</span>
                           {db.settings?.enableIndividualProductEmailAlerts && (

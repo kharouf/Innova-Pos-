@@ -1189,6 +1189,24 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
   const remainingDebt = Math.max(0, finalTotal - currentPay);
   const changeDue = Math.max(0, currentPay - finalTotal);
 
+  const creditLimitWarning = useMemo(() => {
+    if (!activePartner || activePartner.creditLimit === undefined || activePartner.creditLimit <= 0) {
+      return null;
+    }
+    const currentBalance = activePartner.currentBalance || 0;
+    const projectedBalance = currentBalance + remainingDebt;
+
+    if (projectedBalance > activePartner.creditLimit) {
+      return {
+        currentBalance,
+        projectedBalance,
+        creditLimit: activePartner.creditLimit,
+        exceededAmount: projectedBalance - activePartner.creditLimit,
+      };
+    }
+    return null;
+  }, [activePartner, remainingDebt]);
+
   // Quick Client Creation onSubmit
   const handleCreateQuickClient = (e: React.FormEvent) => {
     e.preventDefault();
@@ -2318,10 +2336,10 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
         {isCartOnlyMode ? (
           posLayoutTheme === 'classic-tactile' ? (
             /* BRAND NEW INDUSTRIAL TACTILE LAYOUT */
-            <div className="xl:col-span-12 max-w-[1550px] mx-auto w-full grid grid-cols-1 xl:grid-cols-12 gap-5 items-stretch select-none no-print font-sans">
+            <div className="lg:col-span-12 xl:col-span-12 max-w-[1550px] mx-auto w-full grid grid-cols-1 lg:grid-cols-12 xl:grid-cols-12 gap-5 items-stretch select-none no-print font-sans">
               
               {/* LEFT COLUMN (Keypad and Actions) - col-span-4 */}
-              <div className="xl:col-span-4 bg-slate-900 border border-slate-800 p-4.5 rounded-3xl flex flex-col justify-between gap-3 h-[800px] xl:h-[860px] shadow-2xl relative overflow-hidden text-white">
+              <div className="lg:col-span-4 xl:col-span-4 bg-slate-900 border border-slate-800 p-4.5 rounded-3xl flex flex-col justify-between gap-3 h-[800px] xl:h-[860px] shadow-2xl relative overflow-hidden text-white">
                 {/* Keypad Header Search bar */}
                 <div className="space-y-2 shrink-0">
                   <div className="text-[10px] uppercase font-black tracking-wider text-cyan-400">
@@ -2494,8 +2512,8 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
 
 
               {/* MIDDLE ROW (Vertical colorful icons) - col-span-1 */}
-              <div className="xl:col-span-1 bg-slate-950 border border-slate-850 p-2 text-center rounded-3xl flex flex-row xl:flex-col justify-between items-center gap-1.5 shadow-2xl relative overflow-hidden select-none no-print">
-                <div className="flex flex-row xl:flex-col gap-2.5 w-full justify-around xl:justify-start items-center">
+              <div className="lg:col-span-1 xl:col-span-1 bg-slate-950 border border-slate-850 p-2 text-center rounded-3xl flex flex-row lg:flex-col xl:flex-col justify-between items-center gap-1.5 shadow-2xl relative overflow-hidden select-none no-print">
+                <div className="flex flex-row lg:flex-col xl:flex-col gap-2.5 w-full justify-around lg:justify-start xl:justify-start items-center">
                   {/* QTY + (Green) */}
                   <button
                     type="button"
@@ -2587,7 +2605,7 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
                   </button>
                 </div>
                 
-                <div className="flex flex-row xl:flex-col gap-2.5">
+                <div className="flex flex-row lg:flex-col xl:flex-col gap-2.5">
                   {/* CLIENT SELECTION (Green) */}
                   <button
                     type="button"
@@ -2629,7 +2647,7 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
 
 
               {/* RIGHT COLUMN (Cart and display tables / or product grids slider) - col-span-7 */}
-              <div className="xl:col-span-7 bg-white border border-slate-200 p-4.5 rounded-3xl flex flex-col justify-between gap-4 h-[800px] xl:h-[860px] shadow-lg">
+              <div className="lg:col-span-7 xl:col-span-7 bg-white border border-slate-200 p-4.5 rounded-3xl flex flex-col justify-between gap-4 h-[800px] xl:h-[860px] shadow-lg">
                 {/* Header LCD Total Screen */}
                 <div className="bg-gradient-to-r from-blue-900 to-indigo-950 border-2 border-indigo-900 p-4 rounded-2xl flex flex-col justify-between relative overflow-hidden font-sans shadow-2xl shrink-0 text-left text-white">
                   <div className="absolute top-1 right-2 opacity-25 text-[8px] font-mono tracking-widest text-cyan-300">📟 TICTAAC DIGITAL CONSOLE</div>
@@ -2886,10 +2904,10 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
             </div>
           ) : (
             /* EXISTING IS_CART_ONLY_MODE LAYOUT */
-            <div className="xl:col-span-12 max-w-[1550px] mx-auto w-full grid grid-cols-1 xl:grid-cols-12 gap-6 items-stretch select-none no-print">
+            <div className="lg:col-span-12 xl:col-span-12 max-w-[1550px] mx-auto w-full grid grid-cols-1 lg:grid-cols-12 xl:grid-cols-12 gap-6 items-stretch select-none no-print">
             
             {/* LEFT COLUMN: Cart listing + LCD Total + Numpad & Quick Payment Tabs */}
-            <div className="xl:col-span-5 bg-slate-900 border border-slate-800 p-4.5 rounded-3xl flex flex-col justify-between gap-4 h-[800px] xl:h-[860px] shadow-2xl relative overflow-hidden text-white">
+            <div className="lg:col-span-5 xl:col-span-5 bg-slate-900 border border-slate-800 p-4.5 rounded-3xl flex flex-col justify-between gap-4 h-[800px] xl:h-[860px] shadow-2xl relative overflow-hidden text-white">
               
               {/* Header LCD Panel display */}
               <div className="bg-slate-950 border border-slate-850 p-4 rounded-2xl flex flex-col justify-between relative overflow-hidden font-sans shadow-inner shrink-0 text-left">
@@ -3186,7 +3204,7 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
             </div>
 
             {/* RIGHT COLUMN: Search + Filters + Product Touch Matrix + Action Grid Buttons */}
-            <div className="xl:col-span-7 bg-white border border-slate-200 p-4.5 rounded-3xl flex flex-col justify-between gap-4 h-[800px] xl:h-[860px] shadow-lg">
+            <div className="lg:col-span-7 xl:col-span-7 bg-white border border-slate-200 p-4.5 rounded-3xl flex flex-col justify-between gap-4 h-[800px] xl:h-[860px] shadow-lg">
               
               {/* Search, Rapid scanner and quick add user input */}
               <div className="bg-slate-50 p-3 rounded-2xl flex flex-col sm:flex-row items-center gap-3 shrink-0 border border-slate-200 text-left">
@@ -3610,6 +3628,22 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
                     ? `خصم تلقائي نشط: ${activePartner.discountRate}% على كامل المعاملة` 
                     : `Remise automatique active : ${activePartner.discountRate}% sur le panier`}
                 </span>
+              </div>
+            )}
+
+            {creditLimitWarning && (
+              <div className="bg-rose-50 border border-rose-200 text-rose-800 p-3 rounded-lg text-[10.5px] space-y-1 select-none animate-pulse">
+                <div className="flex items-center gap-1.5 font-bold">
+                  <span className="text-sm">⚠️</span>
+                  <span>
+                    {language === 'ar' ? 'تجاوز سقف الائتمان المسموح به!' : 'Limite de Crédit Dépassée !'}
+                  </span>
+                </div>
+                <p className="leading-relaxed text-[10px] font-medium">
+                  {language === 'ar' 
+                    ? `رصيد العميل الحالي (${formatCurrency(creditLimitWarning.currentBalance)}) مع دين المعاملة الجديدة (${formatCurrency(remainingDebt)}) يصل إلى ${formatCurrency(creditLimitWarning.projectedBalance)}، وهو ما يتجاوز السقف المسموح به (${formatCurrency(creditLimitWarning.creditLimit)}) بمقدار ${formatCurrency(creditLimitWarning.exceededAmount)}.`
+                    : `Le solde du client (${formatCurrency(creditLimitWarning.currentBalance)}) cumulé au nouveau crédit (${formatCurrency(remainingDebt)}) s'élève à ${formatCurrency(creditLimitWarning.projectedBalance)}, ce qui dépasse la limite autorisée (${formatCurrency(creditLimitWarning.creditLimit)}) de ${formatCurrency(creditLimitWarning.exceededAmount)}.`}
+                </p>
               </div>
             )}
 
@@ -4122,9 +4156,26 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
                 {/* Return balance /debt status indicator widget */}
                 {remainingDebt > 0 ? (
                   selectedPartnerId ? (
-                    <div className="text-xs bg-rose-50 border border-rose-150 text-rose-800 p-2.5 rounded-lg font-bold flex items-center justify-between animate-fade-in select-none">
-                      <span>{language === 'ar' ? 'المتبقي يسجل كدين على الحساب :' : 'Le reste sera reporter à CRÉDIT :'}</span>
-                      <strong className="font-mono text-rose-955 text-sm">{formatCurrency(remainingDebt)}</strong>
+                    <div className="space-y-2">
+                      <div className="text-xs bg-rose-50 border border-rose-150 text-rose-800 p-2.5 rounded-lg font-bold flex items-center justify-between animate-fade-in select-none">
+                        <span>{language === 'ar' ? 'المتبقي يسجل كدين على الحساب :' : 'Le reste sera reporter à CRÉDIT :'}</span>
+                        <strong className="font-mono text-rose-955 text-sm">{formatCurrency(remainingDebt)}</strong>
+                      </div>
+                      {creditLimitWarning && (
+                        <div className="bg-rose-50 border border-rose-250 text-rose-700 p-3 rounded-lg text-xs space-y-1 select-none animate-pulse">
+                          <div className="flex items-center gap-1.5 font-black">
+                            <span>⚠️</span>
+                            <span>
+                              {language === 'ar' ? 'تنبيه: تجاوز حد الائتمان!' : 'Alerte : Limite de Crédit Dépassée !'}
+                            </span>
+                          </div>
+                          <p className="leading-relaxed text-[10px] font-semibold text-rose-800">
+                            {language === 'ar' 
+                              ? `الدين الحالي (${formatCurrency(creditLimitWarning.currentBalance)}) + دين هذه المعاملة (${formatCurrency(remainingDebt)}) = ${formatCurrency(creditLimitWarning.projectedBalance)}، يتجاوز سقف الائتمان (${formatCurrency(creditLimitWarning.creditLimit)}) بمقدار ${formatCurrency(creditLimitWarning.exceededAmount)}.`
+                              : `Dette actuelle (${formatCurrency(creditLimitWarning.currentBalance)}) + nouveau crédit (${formatCurrency(remainingDebt)}) = ${formatCurrency(creditLimitWarning.projectedBalance)}, dépasse la limite (${formatCurrency(creditLimitWarning.creditLimit)}) de ${formatCurrency(creditLimitWarning.exceededAmount)}.`}
+                          </p>
+                        </div>
+                      )}
                     </div>
                   ) : (
                     <div className="text-[10.5px] text-amber-850 bg-amber-50 p-2.5 rounded-lg border border-amber-205 font-bold leading-relaxed animate-fade-in select-none">
