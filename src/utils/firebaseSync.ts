@@ -505,9 +505,21 @@ export async function loadAllTenantLicenses(): Promise<UserLicenseData[]> {
       const data = doc.data();
       const storeSettings = data.storeSettings || {};
       
+      const email = data.email || storeSettings.email || null;
+      if (email) {
+        const lowerEmail = email.toLowerCase().trim();
+        if (
+          lowerEmail === 'kharoufwala24@gmail.com' ||
+          lowerEmail === 'walakharouf665@gmail.com' ||
+          lowerEmail === 'walakharouf6665@gmail.com'
+        ) {
+          return; // Skip super-administrators/owners so they don't display as clients
+        }
+      }
+
       licenses.push({
         uid: doc.id,
-        email: data.email || storeSettings.email || null,
+        email: email,
         registeredAt: data.registeredAt || '24/05/2026',
         activationDate: data.activationDate || '',
         licenseExpiry: data.licenseExpiry || new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],

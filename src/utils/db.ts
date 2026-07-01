@@ -812,21 +812,54 @@ export function getSuperetteDatabase(userId: string, superetteId: string): Datab
     data = safeLocalStorage.getItem('commercial_management_db');
   }
   if (!data) {
+    if (userId && userId !== 'default') {
+      // For first-time registered users, initialize all product stocks and partner balances to zero
+      return {
+        products: INITIAL_DATABASE.products.map(p => ({ ...p, stock: 0 })),
+        partners: INITIAL_DATABASE.partners.map(p => ({ ...p, currentBalance: 0 })),
+        invoices: [],
+        payments: [],
+        traites: [],
+        expenses: [],
+        settings: { ...DEFAULT_SETTINGS, storeName: superetteId === 'default' ? DEFAULT_SETTINGS.storeName : `Superette ${superetteId.toUpperCase()}` }
+      };
+    }
     return { ...INITIAL_DATABASE, settings: { ...DEFAULT_SETTINGS, storeName: superetteId === 'default' ? DEFAULT_SETTINGS.storeName : `Superette ${superetteId.toUpperCase()}` } };
   }
   try {
     const parsed = JSON.parse(data);
     const settings = { ...DEFAULT_SETTINGS, ...(parsed.settings || {}) };
+    
+    // Safely fallback to empty lists or zeroed data for registered users if properties are absent
+    const fallbackProducts = userId && userId !== 'default' 
+      ? INITIAL_DATABASE.products.map(p => ({ ...p, stock: 0 })) 
+      : INITIAL_DATABASE.products;
+    
+    const fallbackPartners = userId && userId !== 'default' 
+      ? INITIAL_DATABASE.partners.map(p => ({ ...p, currentBalance: 0 })) 
+      : INITIAL_DATABASE.partners;
+
     return {
-      products: parsed.products || INITIAL_DATABASE.products,
-      partners: parsed.partners || INITIAL_DATABASE.partners,
-      invoices: parsed.invoices || INITIAL_DATABASE.invoices,
-      payments: parsed.payments || INITIAL_DATABASE.payments,
-      traites: parsed.traites || INITIAL_DATABASE.traites,
-      expenses: parsed.expenses || INITIAL_DATABASE.expenses,
+      products: parsed.products || fallbackProducts,
+      partners: parsed.partners || fallbackPartners,
+      invoices: parsed.invoices || [],
+      payments: parsed.payments || [],
+      traites: parsed.traites || [],
+      expenses: parsed.expenses || [],
       settings
     };
   } catch (e) {
+    if (userId && userId !== 'default') {
+      return {
+        products: INITIAL_DATABASE.products.map(p => ({ ...p, stock: 0 })),
+        partners: INITIAL_DATABASE.partners.map(p => ({ ...p, currentBalance: 0 })),
+        invoices: [],
+        payments: [],
+        traites: [],
+        expenses: [],
+        settings: DEFAULT_SETTINGS
+      };
+    }
     return { ...INITIAL_DATABASE, settings: DEFAULT_SETTINGS };
   }
 }

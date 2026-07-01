@@ -1119,12 +1119,13 @@ function AppContent() {
           setLicense(onboardedLicense);
           safeLocalStorage.setItem(`innova_pos_onboarded_${user.uid}`, 'true');
           
-          // Seed their database with their custom details + sector sample templates
+          // Seed their database with their custom details + sector sample templates but with all stocks set to 0
           const sampleProd = SAMPLE_PRODUCTS[selectedSector] || [];
+          const zeroStockProducts = sampleProd.map(p => ({ ...p, stock: 0 }));
           const defaultAppPin = (onboardedLicense as any).ownerPin || '0000';
           
           const onboardedDb: DatabaseState = {
-            products: sampleProd,
+            products: zeroStockProducts,
             partners: [],
             invoices: [],
             payments: [],
@@ -1193,6 +1194,55 @@ function AppContent() {
     user.email === 'walakharouf665@gmail.com' ||
     user.email === 'walakharouf6665@gmail.com'
   );
+
+  // Helper to determine active dynamic announcement based on license status & language
+  const getDynamicAnnouncement = () => {
+    if (!license) return '';
+    const status = license.licenseStatus;
+    const custom = license.remoteAnnouncement;
+    
+    // If the admin has defined a completely custom announcement (not matching default strings or empty), use it
+    if (
+      custom &&
+      custom !== 'مرحباً بك في النسخة التجريبية لـ INNOVA POS. اتصل بنا للتنشيط النهائي.' &&
+      custom !== 'ملاحظة: فشل التحميل من السيرفر. تم تفعيل النظام محلياً.' &&
+      custom !== 'Remarque: Connexion lente. Validation locale activée.' &&
+      custom !== 'مرحباً بك في نظام INNOVA POS.' &&
+      custom !== 'Bienvenue sur INNOVA POS.'
+    ) {
+      return custom;
+    }
+
+    if (status === 'active') {
+      return language === 'ar'
+        ? '✅ اشتراككم مفعّل بالكامل في نظام INNOVA POS PRO. شكراً لكم على اختيار خدماتنا وثقتكم بنا!'
+        : '✅ Votre abonnement INNOVA POS PRO est entièrement actif. Merci pour votre fidélité et votre confiance !';
+    } else {
+      // trial/default
+      return language === 'ar'
+        ? 'مرحباً بك في النسخة التجريبية لـ INNOVA POS. اتصل بنا للتنشيط النهائي.'
+        : 'Bienvenue dans la version d\'essai de INNOVA POS. Contactez-nous pour l\'activation finale.';
+    }
+  };
+
+  const getAnnouncementBadge = () => {
+    if (!license) return '';
+    const custom = license.remoteAnnouncement;
+    if (
+      custom &&
+      custom !== 'مرحباً بك في النسخة التجريبية لـ INNOVA POS. اتصل بنا للتنشيط النهائي.' &&
+      custom !== 'ملاحظة: فشل التحميل من السيرفر. تم تفعيل النظام محلياً.' &&
+      custom !== 'Remarque: Connexion lente. Validation locale activée.' &&
+      custom !== 'مرحباً بك في نظام INNOVA POS.' &&
+      custom !== 'Bienvenue sur INNOVA POS.'
+    ) {
+      return language === 'ar' ? 'إعلان عاجل من الموزع الفني' : 'Message urgent du distributeur';
+    }
+    
+    return license.licenseStatus === 'active'
+      ? (language === 'ar' ? 'اشتراك مفعل ✅' : 'Abonnement Actif ✅')
+      : (language === 'ar' ? 'نسخة تجريبية ⏳' : 'Version d\'essai ⏳');
+  };
 
   // Count items below safety stocks alert threshold
   const criticalProductsCount = db?.products ? db.products.filter(p => p.stock <= p.minAlertQty).length : 0;
@@ -1295,46 +1345,7 @@ function AppContent() {
           </button>
         </div>
 
-        {/* Workspace selector - only visible if logged in and not in restricted cashier worker mode */}
-        {user && !isWorkerMode && (
-          <div className="mx-4 mt-3 p-3 rounded-xl bg-slate-850/60 border border-slate-800/80 flex flex-col gap-2">
-            <div className="flex items-center justify-between text-[10px] text-slate-400 font-extrabold uppercase tracking-wider select-none">
-              <span className="flex items-center gap-1.5">
-                <Store className="w-3.5 h-3.5 text-blue-400 shrink-0" />
-                {language === 'ar' ? 'المتجر النشط' : 'Superette Active'}
-              </span>
-              <button 
-                onClick={() => {
-                  setNewSuperetteName('');
-                  setShowSuperetteModal(true);
-                }}
-                className="text-blue-400 hover:text-blue-300 transition-colors text-[9px] font-extrabold hover:underline cursor-pointer"
-                title={language === 'ar' ? 'إضافة نقطة بيع / محل جديد' : 'Créer une Superette'}
-              >
-                + {language === 'ar' ? 'جديد' : 'Créer'}
-              </button>
-            </div>
-            
-            <div className="relative">
-              <select
-                value={activeSuperetteId}
-                onChange={(e) => switchSuperette(e.target.value)}
-                className="w-full bg-slate-900 border border-slate-750 text-slate-200 py-1.5 px-2.5 rounded-lg text-xs font-semibold focus:outline-hidden focus:border-blue-500 cursor-pointer appearance-none pr-8 text-start"
-              >
-                {superettesList.map((sup) => (
-                  <option key={sup.id} value={sup.id}>
-                    🏪 {sup.name}
-                  </option>
-                ))}
-              </select>
-              <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-slate-400">
-                <svg className="fill-current h-4 w-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20">
-                  <path d="M9.293 12.95l.707.707L15.657 8l-1.414-1.414L10 10.828 5.757 6.586 4.343 8z"/>
-                </svg>
-              </div>
-            </div>
-          </div>
-        )}
+
 
         {/* Section title */}
         <div className="text-slate-500 text-[10px] uppercase font-bold tracking-widest px-4 pt-5 pb-1">
@@ -1369,33 +1380,7 @@ function AppContent() {
         {/* User Account state info inside desktop sidebar footer */}
         <div className="p-4 bg-slate-950/60 border-t border-slate-800 space-y-2.5">
           
-          {/* Active POS Software User display and switch button */}
-          <div className="flex items-center justify-between p-2 rounded bg-slate-900/90 border border-slate-800">
-            <div className="flex items-center gap-2 min-w-0">
-              <span className="text-sm shrink-0">{activeUser?.avatar || '👤'}</span>
-              <div className="min-w-0">
-                <span className="text-[10px] font-extrabold text-blue-400 block truncate leading-none mb-0.5">
-                  {activeUser?.name || 'Utilisateur'}
-                </span>
-                <span className="text-[8px] text-slate-500 font-bold uppercase block tracking-wider leading-none">
-                  {activeUser?.role === 'admin' ? (language === 'ar' ? '👑 مدير' : '👑 Admin') : 
-                   activeUser?.role === 'sales' ? (language === 'ar' ? '💼 مبيعات' : '💼 Ventes') : 
-                   (language === 'ar' ? '📦 مخزون' : '📦 Stock')}
-                </span>
-              </div>
-            </div>
-            <button
-              onClick={() => {
-                setSelectedSwitchUser(null);
-                setSwitchPinInput('');
-                setSwitchPinError(false);
-                setShowUserSwitchModal(true);
-              }}
-              className="px-2 py-1 bg-blue-600 hover:bg-blue-700 text-[8px] font-black uppercase text-white rounded transition-colors cursor-pointer shrink-0"
-            >
-              {language === 'ar' ? 'تغيير' : 'Sessions'}
-            </button>
-          </div>
+
 
           {/* Real-time Connection Indicator & Manual Offline Mode control */}
           <div className="p-2.5 bg-slate-900 border border-slate-800 rounded-lg space-y-2 text-start select-none">
@@ -1550,20 +1535,6 @@ function AppContent() {
         </div>
 
         <div className="flex items-center gap-2">
-          {/* Mobile active user switch trigger */}
-          <button
-            onClick={() => {
-              setSelectedSwitchUser(null);
-              setSwitchPinInput('');
-              setSwitchPinError(false);
-              setShowUserSwitchModal(true);
-            }}
-            className="flex items-center gap-1.5 px-2 py-1 bg-slate-850 hover:bg-slate-800 rounded text-[10px] font-bold border border-slate-750 transition-colors"
-          >
-            <span>{activeUser?.avatar || '👤'}</span>
-            <span className="max-w-[70px] truncate text-slate-300 font-extrabold text-[8px]">{activeUser?.name}</span>
-          </button>
-
           {!isSystemFullyUpdated && (
             <button
               onClick={() => {
@@ -1600,43 +1571,7 @@ function AppContent() {
             onClick={(e) => e.stopPropagation()}
           >
             <nav className="p-4 space-y-2">
-              {/* Mobile Workspace selector */}
-              {user && !isWorkerMode && (
-                <div className="mb-4 p-3 rounded-xl bg-slate-900 border border-slate-800 flex flex-col gap-2">
-                  <div className="flex items-center justify-between text-[10px] text-slate-400 font-extrabold uppercase tracking-wider select-none">
-                    <span className="flex items-center gap-1">
-                      <Store className="w-3 h-3 text-blue-400 shrink-0" />
-                      {language === 'ar' ? 'المتجر النشط' : 'Superette Active'}
-                    </span>
-                    <button 
-                      onClick={() => {
-                        setNewSuperetteName('');
-                        setShowSuperetteModal(true);
-                      }}
-                      className="text-blue-400 hover:text-blue-300 transition-colors text-[9px] font-extrabold hover:underline cursor-pointer"
-                    >
-                      + {language === 'ar' ? 'جديد' : 'Créer'}
-                    </button>
-                  </div>
-                  
-                  <div className="relative">
-                    <select
-                      value={activeSuperetteId}
-                      onChange={(e) => {
-                        switchSuperette(e.target.value);
-                        setMobileMenuOpen(false);
-                      }}
-                      className="w-full bg-slate-950 border border-slate-750 text-slate-200 py-1.5 px-2 rounded-lg text-xs font-semibold focus:outline-hidden cursor-pointer"
-                    >
-                      {superettesList.map((sup) => (
-                        <option key={sup.id} value={sup.id}>
-                          🏪 {sup.name}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-              )}
+
 
               <div className="text-slate-500 text-[10px] uppercase font-bold tracking-widest px-2 pb-1">
                 {t('nav_principal')}
@@ -1666,6 +1601,8 @@ function AppContent() {
             </nav>
             
             <div className="p-4 border-t border-slate-900 space-y-3.5">
+
+
               <div className="text-[10px] text-slate-400 font-bold flex items-center gap-2">
                 <User className="w-4 h-4 text-slate-300" />
                 <span className="truncate">{user ? user.email : 'Démo Hors-ligne'}</span>
@@ -1927,15 +1864,15 @@ function AppContent() {
               )}
 
               {/* Remote SaaS Developer Announcement Banner */}
-              {user && license?.remoteAnnouncement && (
+              {user && license && license.remoteAnnouncement !== undefined && getDynamicAnnouncement() && (
                 <div className="mb-5 bg-gradient-to-r from-blue-900 to-indigo-950 border border-blue-500/20 text-white rounded p-4 flex items-center justify-between shadow-md relative overflow-hidden animate-fade-in no-print" dir={language === 'ar' ? 'rtl' : 'ltr'}>
                   <div className="absolute top-0 right-0 h-full w-32 bg-blue-500/5 rounded-full blur-xl pointer-events-none" />
                   <div className="flex items-center gap-3 relative z-10 text-start">
                     <span className="p-1 px-2.5 bg-blue-500/20 text-blue-300 border border-blue-400/30 text-[9px] uppercase font-bold rounded-sm animate-pulse tracking-wide shrink-0">
-                      {language === 'ar' ? 'إعلان عاجل من الموزع الفني' : 'Message urgent du distributeur'}
+                      {getAnnouncementBadge()}
                     </span>
                     <p className="text-xs font-semibold leading-relaxed">
-                      {license.remoteAnnouncement}
+                      {getDynamicAnnouncement()}
                     </p>
                   </div>
                   <button 
