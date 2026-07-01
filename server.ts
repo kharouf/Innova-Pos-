@@ -1,6 +1,9 @@
 import express from "express";
 import path from "path";
 import nodemailer from "nodemailer";
+import dotenv from "dotenv";
+
+dotenv.config();
 
 async function startServer() {
   const app = express();
