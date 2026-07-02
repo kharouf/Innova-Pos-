@@ -544,6 +544,20 @@ export const SAMPLE_PRODUCTS: Record<'superette' | 'pharmacie' | 'materiaux' | '
   ]
 };
 
+/**
+ * Checks if a store logo is a custom user logo (emoji or uploaded image/custom SVG)
+ * rather than the default Innova POS logo, old text logos, or old fallbacks.
+ */
+export function isCustomLogo(logo?: string): boolean {
+  if (!logo) return false;
+  const cleaned = logo.trim();
+  if (cleaned === '🛒') return false; // treat default 🛒 symbol as upgradeable if it wasn't customized
+  if (cleaned.includes('innova_pos_logo') || cleaned.includes('app-icon')) return false;
+  if (cleaned.includes('fill="%233b82f6"') || cleaned.includes('text-anchor="middle">IP</text>')) return false;
+  if (cleaned.includes('linearGradient id="g-ring"') || cleaned.includes('linearGradient id="g-ip"')) return false;
+  return true;
+}
+
 export function getDatabase(): DatabaseState {
   if (typeof window === 'undefined') return INITIAL_DATABASE;
   const data = safeLocalStorage.getItem(STORAGE_KEY);
@@ -557,12 +571,7 @@ export function getDatabase(): DatabaseState {
     let settings = { ...DEFAULT_SETTINGS, ...(parsed.settings || {}) };
     
     // Auto-upgrade old preset text-based logo or missing logo to the fresh, majestic vector logo
-    if (settings && (
-      !settings.storeLogo || 
-      settings.storeLogo === '🛒' || 
-      settings.storeLogo.includes('fill="%233b82f6"') || 
-      settings.storeLogo.includes('text-anchor="middle">IP</text>')
-    )) {
+    if (settings && !isCustomLogo(settings.storeLogo)) {
       settings.storeLogo = DEFAULT_SETTINGS.storeLogo;
     }
     

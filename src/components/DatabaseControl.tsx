@@ -1,7 +1,7 @@
 import React, { useRef, useState, useEffect } from 'react';
 import { sendPasswordResetEmail } from 'firebase/auth';
 import { DatabaseState, StoreSettings, Product, AppUser, UserRole } from '../types';
-import { SAMPLE_PRODUCTS } from '../utils/db';
+import { SAMPLE_PRODUCTS, DEFAULT_SETTINGS } from '../utils/db';
 import { useLanguage } from '../utils/LanguageContext';
 import { showToast } from '../utils/toast';
 import { motion, AnimatePresence } from 'motion/react';
@@ -568,11 +568,149 @@ export default function DatabaseControl({ db, onUpdateDb, license, user }: Datab
   const [smtpSenderName, setSmtpSenderName] = useState<string>(initialSettings.smtpSenderName || 'InnovaPos Alerts');
   const [themeMode, setThemeMode] = useState<'light' | 'dark'>(initialSettings.themeMode || 'light');
 
+  // Synchronize state variables with db.settings when db.settings changes (e.g., loaded from cloud or switched superette)
   useEffect(() => {
-    if (initialSettings.themeMode) {
-      setThemeMode(initialSettings.themeMode);
+    if (db.settings) {
+      const s = db.settings;
+      setStoreName(s.storeName || 'INNOVA POS PRO');
+      setStorePhone(s.storePhone || '+216 24260711');
+      setStoreAddress(s.storeAddress || 'AVENU HABIB BORGIBA GHANNOUCHE GABES');
+      setActivitySector(s.activitySector || 'superette');
+      setMatriculeFiscal(s.matriculeFiscal || '1234567/A/M/000');
+      setStoreLogo(s.storeLogo || '🛒');
+      setOwnerPin(s.ownerPin || '0000');
+      setDatabaseSecurityPin(s.databaseSecurityPin || '0000');
+      setTvaAlimentaire(s.tvaAlimentaire || 7);
+      setEnableExpiryAlerts(s.enableExpiryAlerts ?? true);
+      setExpiryAlertDays(s.expiryAlertDays || 30);
+      setConventionCnam(s.conventionCnam || '');
+      setTauxRemboursementCnam(s.tauxRemboursementCnam || 80);
+      setRequiresPrescriptionByDefault(s.requiresPrescriptionByDefault ?? false);
+      setDefaultDeliveryCharge(s.defaultDeliveryCharge || 0);
+      setWholesaleThreshold(s.wholesaleThreshold || 500);
+      setChargeClientTVA(s.chargeClientTVA ?? true);
+      setDefaultWarrantyMonths(s.defaultWarrantyMonths || 12);
+      setEnableLoyaltyPoints(s.enableLoyaltyPoints ?? false);
+      setReceiptShowLogo(s.receiptShowLogo ?? true);
+      setReceiptShowStoreDetails(s.receiptShowStoreDetails ?? true);
+      setReceiptCustomThankYou(s.receiptCustomThankYou ?? 'Merci pour votre visite !');
+      setReceiptShowCommercialTerms(s.receiptShowCommercialTerms ?? true);
+      setReceiptCompactSize(s.receiptCompactSize ?? false);
+      setReceiptCustomLogo(s.receiptCustomLogo || '');
+      setInvoiceCustomLogo(s.invoiceCustomLogo || '');
+      setReceiptMarginTop(s.receiptMarginTop ?? 2);
+      setReceiptMarginBottom(s.receiptMarginBottom ?? 3);
+      setReceiptMarginLeft(s.receiptMarginLeft ?? 3);
+      setReceiptMarginRight(s.receiptMarginRight ?? 3);
+      setInvoiceMarginTop(s.invoiceMarginTop ?? 8);
+      setInvoiceMarginBottom(s.invoiceMarginBottom ?? 8);
+      setInvoiceMarginLeft(s.invoiceMarginLeft ?? 8);
+      setInvoiceMarginRight(s.invoiceMarginRight ?? 8);
+      setAdminEmail(s.adminEmail || 'innovapospro@gmail.com');
+      setEnableCriticalStockEmailAlerts(s.enableCriticalStockEmailAlerts ?? true);
+      setEnableIndividualProductEmailAlerts(s.enableIndividualProductEmailAlerts ?? true);
+      setEnableDailyLowStockEmail(s.enableDailyLowStockEmail ?? true);
+      setSmtpHost(s.smtpHost || 'smtp.gmail.com');
+      setSmtpPort(s.smtpPort || 465);
+      setSmtpUser(s.smtpUser || 'innovapospro@gmail.com');
+      setSmtpPass(s.smtpPass || 'jkoe fwep mqxi gkck');
+      setSmtpSecure(s.smtpSecure ?? true);
+      setSmtpSenderName(s.smtpSenderName || 'InnovaPos Alerts');
+      setThemeMode(s.themeMode || 'light');
+      setVpnEnabled(s.vpnEnabled ?? false);
+      setVpnProtocol(s.vpnProtocol || 'wireguard');
+      setVpnServerAddress(s.vpnServerAddress || '197.31.244.15');
+      setVpnPort(s.vpnPort || 51820);
+      setVpnPublicKey(s.vpnPublicKey || 'v+6hJ78zKeD/p7Gv4I38XbNW12Y93hG70R/q9K1Wf8A=');
+      setVpnPrivateKey(s.vpnPrivateKey || 'eM7fD82XbNWk8fH76uM2P37mO38xKl90R/q+A1Wg0S*=');
+      setVpnClientIp(s.vpnClientIp || '10.8.0.2');
+      setVpnIpRange(s.vpnIpRange || '10.8.0.0/24');
+      setAdminSessionTimeout(s.adminSessionTimeout ?? 30);
+      setSalesSessionTimeout(s.salesSessionTimeout ?? 15);
+      setInventorySessionTimeout(s.inventorySessionTimeout ?? 10);
+      if (s.users) {
+        setUsers(s.users);
+      }
     }
-  }, [initialSettings.themeMode]);
+  }, [db.settings]);
+
+  // Helper to update the store logo and immediately save to the settings object in the database
+  const updateStoreLogoAndSave = (newLogo: string) => {
+    setStoreLogo(newLogo);
+    
+    // Create updated settings with the new logo and current state values
+    const currentSettings = db.settings || {};
+    const updatedSettings: StoreSettings = {
+      ...currentSettings,
+      storeName,
+      storePhone,
+      storeAddress,
+      activitySector,
+      matriculeFiscal,
+      storeLogo: newLogo,
+      ownerPin,
+      databaseSecurityPin,
+      tvaAlimentaire,
+      enableExpiryAlerts,
+      expiryAlertDays,
+      conventionCnam,
+      tauxRemboursementCnam,
+      requiresPrescriptionByDefault,
+      defaultDeliveryCharge,
+      wholesaleThreshold,
+      chargeClientTVA,
+      defaultWarrantyMonths,
+      enableLoyaltyPoints,
+      receiptShowLogo,
+      receiptShowStoreDetails,
+      receiptCustomThankYou,
+      receiptShowCommercialTerms,
+      receiptCompactSize,
+      receiptCustomLogo,
+      invoiceCustomLogo,
+      receiptMarginTop,
+      receiptMarginBottom,
+      receiptMarginLeft,
+      receiptMarginRight,
+      invoiceMarginTop,
+      invoiceMarginBottom,
+      invoiceMarginLeft,
+      invoiceMarginRight,
+      adminEmail,
+      enableCriticalStockEmailAlerts,
+      enableIndividualProductEmailAlerts,
+      enableDailyLowStockEmail,
+      smtpHost,
+      smtpPort,
+      smtpUser,
+      smtpPass,
+      smtpSecure,
+      smtpSenderName,
+      themeMode,
+      vpnEnabled,
+      vpnProtocol,
+      vpnServerAddress,
+      vpnPort,
+      vpnPublicKey,
+      vpnPrivateKey,
+      vpnClientIp,
+      vpnIpRange,
+      adminSessionTimeout,
+      salesSessionTimeout,
+      inventorySessionTimeout,
+      users
+    };
+
+    onUpdateDb({
+      ...db,
+      settings: updatedSettings
+    });
+
+    showToast(
+      language === 'ar' ? 'تم تحديث الشعار وحفظ الإعدادات بنجاح' : 'Logo mis à jour et paramètres sauvegardés avec succès',
+      'success'
+    );
+  };
 
   // 🛡️ VPN Private Network Gateway parameters
   const [vpnEnabled, setVpnEnabled] = useState<boolean>(initialSettings.vpnEnabled ?? false);
@@ -790,7 +928,7 @@ encryption_mode: High-Security Advanced
         ctx?.drawImage(img, 0, 0, width, height);
 
         const compressedDataUrl = canvas.toDataURL('image/png', 0.85);
-        setStoreLogo(compressedDataUrl);
+        updateStoreLogoAndSave(compressedDataUrl);
       };
       img.src = event.target?.result as string;
     };
@@ -1796,7 +1934,7 @@ encryption_mode: High-Security Advanced
                         />
                         <button
                           type="button"
-                          onClick={() => setStoreLogo('🛒')}
+                          onClick={() => updateStoreLogoAndSave('🛒')}
                           className="absolute -top-1.5 -right-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-full p-1 shadow-md cursor-pointer transition-transform hover:scale-110"
                           title="Supprimer / Réinitialiser"
                         >
@@ -1839,7 +1977,7 @@ encryption_mode: High-Security Advanced
                           <button
                             key={emoji}
                             type="button"
-                            onClick={() => setStoreLogo(emoji)}
+                            onClick={() => updateStoreLogoAndSave(emoji)}
                             className={`p-2.5 rounded text-xl border transition-all cursor-pointer text-center ${
                               storeLogo === emoji 
                                 ? 'bg-blue-600 border-blue-600 text-white shadow-sm scale-105 font-bold' 

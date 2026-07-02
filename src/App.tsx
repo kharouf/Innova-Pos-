@@ -1,8 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 const defaultPosLogo = "/innova_pos_logo.jpg";
 import { DatabaseState, SystemUpdate, Product, StoreSettings, AppUser } from './types';
-import { getDatabase, saveDatabase, DEFAULT_SETTINGS, getSuperetteDatabase, saveSuperetteDatabase, SAMPLE_PRODUCTS } from './utils/db';
+import { getDatabase, saveDatabase, DEFAULT_SETTINGS, getSuperetteDatabase, saveSuperetteDatabase, SAMPLE_PRODUCTS, isCustomLogo } from './utils/db';
 import { LanguageProvider, useLanguage } from './utils/LanguageContext';
 import { safeLocalStorage } from './utils/storage';
 import { auth } from './utils/firebase';
@@ -209,11 +209,23 @@ function AppContent() {
       let loadedDb = cloudDb;
 
       if (cloudDb) {
+        const localSettings: Partial<StoreSettings> = getSuperetteDatabase(user.uid, targetId).settings || {};
+        const cloudSettings: Partial<StoreSettings> = cloudDb.settings || {};
         const mergedSettings = {
           ...DEFAULT_SETTINGS,
-          ...(getSuperetteDatabase(user.uid, targetId).settings || {}),
-          ...(cloudDb.settings || {})
+          ...localSettings,
+          ...cloudSettings
         };
+        
+        // Prioritize custom logo if either local or cloud settings contains one
+        if (isCustomLogo(localSettings.storeLogo) && !isCustomLogo(cloudSettings.storeLogo)) {
+          mergedSettings.storeLogo = localSettings.storeLogo;
+        } else if (isCustomLogo(cloudSettings.storeLogo)) {
+          mergedSettings.storeLogo = cloudSettings.storeLogo;
+        } else {
+          mergedSettings.storeLogo = DEFAULT_SETTINGS.storeLogo;
+        }
+
         const finalizedDb = {
           ...cloudDb,
           settings: mergedSettings
@@ -695,19 +707,23 @@ function AppContent() {
           const cloudDb = await withTimeout(loadUserDatabase(currentUser.uid, activeId), 4500, null);
           let dbInstance = cloudDb;
           if (cloudDb) {
+            const localSettings: Partial<StoreSettings> = getSuperetteDatabase(currentUser.uid, activeId).settings || {};
+            const cloudSettings: Partial<StoreSettings> = cloudDb.settings || {};
             const mergedSettings = {
               ...DEFAULT_SETTINGS,
-              ...(getSuperetteDatabase(currentUser.uid, activeId).settings || {}),
-              ...(cloudDb.settings || {})
+              ...localSettings,
+              ...cloudSettings
             };
-            if (
-              !mergedSettings.storeLogo ||
-              mergedSettings.storeLogo === '🛒' ||
-              mergedSettings.storeLogo.includes('fill="%233b82f6"') ||
-              mergedSettings.storeLogo.includes('text-anchor="middle">IP</text>')
-            ) {
+            
+            // Prioritize custom logo if either local or cloud settings contains one
+            if (isCustomLogo(localSettings.storeLogo) && !isCustomLogo(cloudSettings.storeLogo)) {
+              mergedSettings.storeLogo = localSettings.storeLogo;
+            } else if (isCustomLogo(cloudSettings.storeLogo)) {
+              mergedSettings.storeLogo = cloudSettings.storeLogo;
+            } else {
               mergedSettings.storeLogo = DEFAULT_SETTINGS.storeLogo;
             }
+
             const finalizedDb = {
               ...cloudDb,
               settings: mergedSettings
@@ -935,16 +951,21 @@ function AppContent() {
     setIsLicenseLocked(false);
   };
 
+  const activeSuperetteIdRef = useRef(activeSuperetteId);
+  useEffect(() => {
+    activeSuperetteIdRef.current = activeSuperetteId;
+  }, [activeSuperetteId]);
+
   // 1.8. Automatically trigger saveDatabase(db) whenever db changes and is not null
   useEffect(() => {
     if (db) {
       if (user) {
-        saveSuperetteDatabase(user.uid, activeSuperetteId, db);
+        saveSuperetteDatabase(user.uid, activeSuperetteIdRef.current, db);
       } else {
         saveDatabase(db);
       }
     }
-  }, [db, activeSuperetteId, user]);
+  }, [db, user]);
 
   // Apply visual theme mode dynamically on document element
   useEffect(() => {
