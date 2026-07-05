@@ -21,25 +21,19 @@ export function extractBrandName(storeName: string): string {
   if (!storeName || !storeName.trim()) return 'COMMERCE';
   
   const cleanName = storeName.trim();
-  const words = cleanName.split(/\s+/).filter(Boolean);
   
-  // If first word is "Superette" / "Supérette" (or similar), take the next word if available
-  if (words.length > 1) {
-    const firstLower = words[0].toLowerCase();
-    if (
-      firstLower.includes('superet') || 
-      firstLower.includes('supéret') || 
-      firstLower.includes('magasin') || 
-      firstLower.includes('epicerie') || 
-      firstLower.includes('épicerie') ||
-      firstLower.includes('mini') ||
-      firstLower.includes('alimentation')
-    ) {
-      return words[1].toUpperCase();
-    }
+  // Regex to match "Superette", "Supérette", "Supperette", "Supperet", "Alimentation", "Epicerie", "Épicerie" at the beginning, case-insensitive
+  // with optional trailing spaces, hyphen, apostrophe or symbols
+  const prefixRegex = /^(sup[eé]ret[t]?e?|supperet[t]?e?|alimentation|épicerie|epicerie|magasin|mini)\s*['-]?\s*/i;
+  
+  let brand = cleanName.replace(prefixRegex, '');
+  
+  // If the entire name was removed (e.g. user just typed "Supérette"), restore it
+  if (!brand.trim()) {
+    brand = cleanName;
   }
   
-  return words[0].toUpperCase();
+  return brand.trim().toUpperCase();
 }
 
 /**

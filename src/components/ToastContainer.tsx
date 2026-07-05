@@ -15,7 +15,7 @@ const ToastContainer: React.FC = () => {
     const handleAddToast = (event: Event) => {
       const customEvent = event as CustomEvent<{ message: string; type: 'success' | 'error' | 'info' }>;
       const { message, type } = customEvent.detail;
-      const id = Date.now();
+      const id = Date.now() + Math.floor(Math.random() * 1000000);
       setToasts((prev) => [...prev, { id, message, type }]);
       
       setTimeout(() => {
