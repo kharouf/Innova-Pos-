@@ -486,7 +486,13 @@ export async function ensureUserSaaSRecord(userId: string, email: string | null)
 export async function saveUserLicense(userId: string, data: Partial<UserLicenseData>): Promise<void> {
   const docRef = doc(db, 'users', userId);
   try {
-    await setDoc(docRef, cleanUndefined(data), { merge: true });
+    const cleanData = { ...data };
+    if (cleanData.databaseSecurityPin !== undefined) {
+      (cleanData as any).storeSettings = {
+        databaseSecurityPin: cleanData.databaseSecurityPin
+      };
+    }
+    await setDoc(docRef, cleanUndefined(cleanData), { merge: true });
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, `users/${userId}`);
   }
@@ -528,6 +534,7 @@ export async function loadAllTenantLicenses(): Promise<UserLicenseData[]> {
         remoteAnnouncement: data.remoteAnnouncement || '',
         businessName: data.businessName || storeSettings.storeName || 'Superette',
         location: data.location || storeSettings.storeAddress || '',
+        databaseSecurityPin: storeSettings.databaseSecurityPin || data.databaseSecurityPin || '0000',
         
         // Monetization parameters
         paymentStatus: data.paymentStatus || 'free_trial',

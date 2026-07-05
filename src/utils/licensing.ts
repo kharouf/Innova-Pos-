@@ -29,6 +29,7 @@ export interface UserLicenseData {
   remoteSmtpPass?: string;
   remoteSmtpSecure?: boolean;
   remoteSmtpSenderName?: string;
+  databaseSecurityPin?: string; // Master database access password/PIN
 }
 
 /**

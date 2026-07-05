@@ -4,6 +4,7 @@ import { DatabaseState, StoreSettings, Product, AppUser, UserRole } from '../typ
 import { SAMPLE_PRODUCTS, DEFAULT_SETTINGS } from '../utils/db';
 import { useLanguage } from '../utils/LanguageContext';
 import { showToast } from '../utils/toast';
+import { generateSuperetteLogo } from '../utils/logoGenerator';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   Database,
@@ -937,6 +938,32 @@ encryption_mode: High-Security Advanced
       img.src = event.target?.result as string;
     };
     reader.readAsDataURL(file);
+  };
+
+  // Generate a premium customized vector SVG logo based on the storeName
+  const handleGenerateVectorLogo = () => {
+    if (!storeName || !storeName.trim()) {
+      showToast(
+        language === 'ar' ? 'يرجى كتابة اسم المحل أولاً في الإعدادات العامة!' : 'Veuillez d\'abord saisir le nom de votre commerce !',
+        'error'
+      );
+      return;
+    }
+    
+    try {
+      const generatedSvgDataUrl = generateSuperetteLogo(storeName);
+      updateStoreLogoAndSave(generatedSvgDataUrl);
+      showToast(
+        language === 'ar' ? 'تم إنشاء وتطبيق الشعار المتجهي المخصص بنجاح! ✨' : 'Logo vectoriel personnalisé généré et appliqué avec succès ! ✨',
+        'success'
+      );
+    } catch (err) {
+      console.error(err);
+      showToast(
+        language === 'ar' ? 'فشل إنشاء الشعار.' : 'Échec de la génération du logo.',
+        'error'
+      );
+    }
   };
 
   const handleReceiptLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -2110,6 +2137,32 @@ encryption_mode: High-Security Advanced
                         >
                           <Camera className="w-3.5 h-3.5" />
                           <span>{language === 'ar' ? 'رفع ملف شعار المحل' : 'Importer mon Image'}</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Option 3: Intelligent dynamic logo generator */}
+                    <div className="border-t border-slate-205 pt-3 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                      <div>
+                        <span className="text-[10px] font-bold text-indigo-600 uppercase flex items-center gap-1">
+                          <Sparkles className="w-3.5 h-3.5" />
+                          <span>{language === 'ar' ? 'الخيار 3 : مصمم الشعار الذكي المتجهي (فوري) :' : 'Option 3 : Générateur de logo vectoriel intelligent (Instantané) :'}</span>
+                        </span>
+                        <p className="text-[9px] text-slate-400 mt-0.5 max-w-[420px]">
+                          {language === 'ar'
+                            ? 'أنشئ شعاراً متجهياً SVG فائق الدقة مخصصاً لـ [' + (storeName || 'محلك') + '] مستوحى من الهوية التجارية للشركة.'
+                            : `Génère instantanément un superbe logo vectoriel SVG de haute qualité personnalisé pour [${storeName || 'votre commerce'}] inspiré de la charte graphique de la superette.`}
+                        </p>
+                      </div>
+
+                      <div className="shrink-0">
+                        <button
+                          type="button"
+                          onClick={handleGenerateVectorLogo}
+                          className="px-3.5 py-2 bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-700 hover:to-violet-700 text-white rounded text-[11px] font-extrabold flex items-center gap-1.5 cursor-pointer shadow-md hover:shadow-lg transition-all transform hover:-translate-y-0.5 active:translate-y-0 uppercase tracking-wider"
+                        >
+                          <Sparkles className="w-3.5 h-3.5 text-yellow-300 animate-pulse" />
+                          <span>{language === 'ar' ? 'توليد وتطبيق الشعار فوراً' : 'Générer & Appliquer'}</span>
                         </button>
                       </div>
                     </div>

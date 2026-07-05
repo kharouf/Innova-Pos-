@@ -62,6 +62,7 @@ export default function SaaSDeveloperConsole() {
   const [editPaymentAmount, setEditPaymentAmount] = useState<number>(0);
   const [editAdminNotes, setEditAdminNotes] = useState('');
   const [editPhone, setEditPhone] = useState('');
+  const [editDatabaseSecurityPin, setEditDatabaseSecurityPin] = useState('');
 
   // Floating Toast State
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -72,6 +73,7 @@ export default function SaaSDeveloperConsole() {
   const [newStoreName, setNewStoreName] = useState('');
   const [newPhone, setNewPhone] = useState('');
   const [newLocation, setNewLocation] = useState('');
+  const [newDatabaseSecurityPin, setNewDatabaseSecurityPin] = useState('0000');
   const [newStatus, setNewStatus] = useState<'trial' | 'active' | 'suspended'>('trial');
   const [newExpiry, setNewExpiry] = useState(() => {
     const date = new Date();
@@ -124,6 +126,7 @@ export default function SaaSDeveloperConsole() {
     setEditPaymentAmount(t.paymentAmount || 0);
     setEditAdminNotes(t.adminNotes || '');
     setEditPhone(t.phone || '');
+    setEditDatabaseSecurityPin(t.databaseSecurityPin || '0000');
   };
 
   const handleSaveTenantLicense = async (uid: string) => {
@@ -148,6 +151,7 @@ export default function SaaSDeveloperConsole() {
         paymentAmount: Number(editPaymentAmount) || 0,
         adminNotes: editAdminNotes.trim() || undefined,
         phone: editPhone.trim() || undefined,
+        databaseSecurityPin: editDatabaseSecurityPin.trim() || undefined,
       };
 
       await saveUserLicense(uid, updatedFields);
@@ -203,7 +207,8 @@ export default function SaaSDeveloperConsole() {
       paymentStatus: newPaymentStatus,
       paymentAmount: Number(newPaymentAmount) || 0,
       adminNotes: newAdminNotes.trim(),
-      isOnboarded: false
+      isOnboarded: false,
+      databaseSecurityPin: newDatabaseSecurityPin.trim() || '0000'
     };
 
     setActionLoading('create');
@@ -217,6 +222,7 @@ export default function SaaSDeveloperConsole() {
       setNewStoreName('');
       setNewPhone('');
       setNewLocation('');
+      setNewDatabaseSecurityPin('0000');
       setNewStatus('trial');
       setNewPaymentStatus('free_trial');
       setNewPaymentAmount('0');
@@ -455,6 +461,7 @@ export default function SaaSDeveloperConsole() {
                       <th className="p-4">{language === 'ar' ? 'تاريخ التسجيل' : 'Enregistrement'}</th>
                       <th className="p-4">{language === 'ar' ? 'نوع الرخص والصلوحية' : 'Solvabilité / Expiration'}</th>
                       <th className="p-4 text-center">{language === 'ar' ? 'مفتاح توقيع السيرفر' : 'Licence Key'}</th>
+                      <th className="p-4 text-center">{language === 'ar' ? 'كلمة مرور قاعدة البيانات' : 'PIN Base de Données'}</th>
                       <th className="p-4">{language === 'ar' ? 'صلاحية اللوجيسيال' : 'Statut Accès'}</th>
                       <th className="p-4 text-center">{language === 'ar' ? 'التحكم الفوري وعقوبات المشترك' : 'Gestion d\'Accès'}</th>
                     </tr>
@@ -638,6 +645,24 @@ export default function SaaSDeveloperConsole() {
                                 </button>
                               )}
                             </div>
+                          </td>
+
+                          {/* Database Access Password/PIN */}
+                          <td className="p-4 text-center whitespace-nowrap">
+                            {isEditing ? (
+                              <input
+                                type="text"
+                                maxLength={12}
+                                value={editDatabaseSecurityPin}
+                                onChange={(e) => setEditDatabaseSecurityPin(e.target.value)}
+                                className="w-22 text-center text-xs font-mono font-bold border border-slate-250 p-1.5 rounded-lg bg-white text-slate-800 focus:outline-hidden focus:border-indigo-400 focus:ring-1 focus:ring-indigo-400"
+                                placeholder="0000"
+                              />
+                            ) : (
+                              <span className="font-mono bg-indigo-50 border border-indigo-150 text-indigo-700 font-extrabold px-2.5 py-1 rounded text-xs select-all inline-block">
+                                {t.databaseSecurityPin || '0000'}
+                              </span>
+                            )}
                           </td>
 
                           {/* Current software lock status */}
@@ -877,6 +902,21 @@ export default function SaaSDeveloperConsole() {
                       onChange={(e) => setNewLocation(e.target.value)}
                       className="w-full text-xs font-semibold border border-slate-250 p-2 rounded-lg bg-slate-50 focus:bg-white focus:outline-hidden focus:ring-2 focus:ring-rose-500/20 text-slate-800"
                       placeholder={language === 'ar' ? 'مثال: تونس العاصمة أو رابط خرائط' : 'Ex: Tunis or Google Maps Link'}
+                    />
+                  </div>
+
+                  {/* Database Security Pin */}
+                  <div className="space-y-1">
+                    <label className="text-[11px] font-black uppercase text-slate-500 block">
+                      {language === 'ar' ? 'رمز حماية قاعدة البيانات' : 'PIN Base de Données'}
+                    </label>
+                    <input
+                      type="text"
+                      maxLength={12}
+                      value={newDatabaseSecurityPin}
+                      onChange={(e) => setNewDatabaseSecurityPin(e.target.value)}
+                      className="w-full text-xs font-semibold font-mono border border-slate-250 p-2 rounded-lg bg-slate-50 focus:bg-white focus:outline-hidden focus:ring-2 focus:ring-rose-500/20 text-slate-800"
+                      placeholder="0000"
                     />
                   </div>
 
