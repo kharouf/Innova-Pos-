@@ -481,6 +481,7 @@ export const DEFAULT_SETTINGS = {
   smtpPass: 'jkoe fwep mqxi gkck',
   smtpSecure: true,
   smtpSenderName: 'InnovaPos Alerts',
+  customTvaRates: [0, 7, 13, 19],
   users: [
     { id: 'user-1', name: 'Administrateur', pin: '0000', role: 'admin' as const, isActive: true, avatar: '👑' },
     { id: 'user-2', name: 'Agent de Vente', pin: '1111', role: 'sales' as const, isActive: true, avatar: '💼' },
@@ -551,10 +552,24 @@ export const SAMPLE_PRODUCTS: Record<'superette' | 'pharmacie' | 'materiaux' | '
 export function isCustomLogo(logo?: string): boolean {
   if (!logo) return false;
   const cleaned = logo.trim();
-  if (cleaned === '🛒') return false; // treat default 🛒 symbol as upgradeable if it wasn't customized
-  if (cleaned.includes('innova_pos_logo') || cleaned.includes('app-icon')) return false;
-  if (cleaned.includes('fill="%233b82f6"') || cleaned.includes('text-anchor="middle">IP</text>')) return false;
-  if (cleaned.includes('linearGradient id="g-ring"') || cleaned.includes('linearGradient id="g-ip"')) return false;
+  if (cleaned === '') return false;
+  
+  // The current default vector SVG logo
+  if (cleaned.includes('linearGradient id="g-ring"') || cleaned.includes('linearGradient id="g-ip"')) {
+    return false;
+  }
+  
+  // Old default logos or specific fallback image URLs
+  if (cleaned.includes('innova_pos_logo') || cleaned.includes('app-icon')) {
+    // Keep base64 custom uploaded images starting with data:image even if they have coincidental keywords
+    if (!cleaned.startsWith('data:image')) {
+      return false;
+    }
+  }
+  if (cleaned === '/innova_pos_logo.jpg' || cleaned === 'innova_pos_logo.jpg') {
+    return false;
+  }
+  
   return true;
 }
 

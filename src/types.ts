@@ -210,6 +210,9 @@ export interface StoreSettings {
   adminSessionTimeout?: number;
   salesSessionTimeout?: number;
   inventorySessionTimeout?: number;
+
+  // 🏷️ Custom TVA Rates
+  customTvaRates?: number[];
 }
 
 export interface DatabaseState {

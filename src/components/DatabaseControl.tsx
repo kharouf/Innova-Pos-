@@ -43,7 +43,8 @@ import {
   Users,
   UserPlus,
   Edit3,
-  Key
+  Key,
+  Plus
 } from 'lucide-react';
 import { storage, auth, googleSignInForWorkspace, getCachedAccessToken, setCachedAccessToken } from '../utils/firebase';
 import { ref, uploadString, getDownloadURL } from 'firebase/storage';
@@ -499,6 +500,7 @@ export default function DatabaseControl({ db, onUpdateDb, license, user }: Datab
   
   // Sector-specific detailed state attributes hooks
   const [tvaAlimentaire, setTvaAlimentaire] = useState<number>(initialSettings.tvaAlimentaire || 7);
+  const [customTvaRates, setCustomTvaRates] = useState<number[]>(initialSettings.customTvaRates || [0, 7, 13, 19]);
   const [enableExpiryAlerts, setEnableExpiryAlerts] = useState<boolean>(initialSettings.enableExpiryAlerts ?? true);
   const [expiryAlertDays, setExpiryAlertDays] = useState<number>(initialSettings.expiryAlertDays || 30);
 
@@ -581,6 +583,7 @@ export default function DatabaseControl({ db, onUpdateDb, license, user }: Datab
       setOwnerPin(s.ownerPin || '0000');
       setDatabaseSecurityPin(s.databaseSecurityPin || '0000');
       setTvaAlimentaire(s.tvaAlimentaire || 7);
+      setCustomTvaRates(s.customTvaRates || [0, 7, 13, 19]);
       setEnableExpiryAlerts(s.enableExpiryAlerts ?? true);
       setExpiryAlertDays(s.expiryAlertDays || 30);
       setConventionCnam(s.conventionCnam || '');
@@ -651,6 +654,7 @@ export default function DatabaseControl({ db, onUpdateDb, license, user }: Datab
       ownerPin,
       databaseSecurityPin,
       tvaAlimentaire,
+      customTvaRates,
       enableExpiryAlerts,
       expiryAlertDays,
       conventionCnam,
@@ -1115,6 +1119,7 @@ encryption_mode: High-Security Advanced
       customCapitalValue,
       
       tvaAlimentaire,
+      customTvaRates,
       enableExpiryAlerts,
       expiryAlertDays,
       conventionCnam,
@@ -1831,6 +1836,95 @@ encryption_mode: High-Security Advanced
                   ? 'الرمز السري الرئيسي لفتح قاعدة البيانات والدخول لقسم الإعدادات.' 
                   : 'Code principal pour déverrouiller la base de données et l\'onglet d\'administration.'}
               </span>
+            </div>
+
+            {/* 🏷️ CUSTOM TVA RATES CONFIGURATION */}
+            <div className="md:col-span-2 bg-indigo-50/40 border border-indigo-100 rounded-xl p-4 mt-2 space-y-3">
+              <div>
+                <h4 className="text-xs font-black text-indigo-950 flex items-center gap-1.5 uppercase font-display">
+                  <span>🏷️</span>
+                  <span>
+                    {language === 'ar' 
+                      ? 'نسب ضريبة القيمة المضافة المخصصة (TVA)' 
+                      : 'Taux de TVA personnalisés'}
+                  </span>
+                </h4>
+                <p className="text-[10px] text-indigo-700/80 font-medium leading-relaxed mt-0.5">
+                  {language === 'ar'
+                    ? 'حدد نسب ضريبة القيمة المضافة (TVA) التي سيتم استخدامها وتطبيقها عند إضافة المنتجات أو فواتير المبيعات.'
+                    : 'Configurez la liste des taux de TVA (en %) disponibles pour la facturation et la création des fiches produits.'}
+                </p>
+              </div>
+
+              <div className="flex flex-wrap gap-2 items-center">
+                {customTvaRates.map((rate, index) => (
+                  <div key={index} className="bg-white border border-indigo-200 rounded-lg px-2.5 py-1 flex items-center gap-2 shadow-2xs">
+                    <span className="text-xs font-mono font-bold text-indigo-900">{rate}%</span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const newRates = customTvaRates.filter((_, i) => i !== index);
+                        setCustomTvaRates(newRates);
+                      }}
+                      className="text-slate-450 hover:text-rose-500 transition-colors p-0.5 cursor-pointer"
+                      title={language === 'ar' ? 'حذف' : 'Supprimer'}
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                ))}
+                
+                {/* Form to add a custom VAT rate */}
+                <div className="flex items-center gap-1 bg-white border border-indigo-200 rounded-lg p-0.5 focus-within:border-indigo-500 shadow-2xs ml-auto sm:ml-0">
+                  <input
+                    type="number"
+                    step="0.1"
+                    min="0"
+                    max="100"
+                    placeholder="Ex: 13"
+                    id="new-tva-rate-input"
+                    className="w-16 bg-transparent border-0 py-1 px-2 text-xs font-mono font-bold text-slate-800 focus:outline-none focus:ring-0"
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        const val = parseFloat((e.currentTarget as HTMLInputElement).value);
+                        if (!isNaN(val) && val >= 0 && val <= 100) {
+                          if (customTvaRates.includes(val)) {
+                            showToast(language === 'ar' ? 'هذا المعدل موجود بالفعل' : 'Ce taux existe déjà', 'info');
+                            return;
+                          }
+                          const newRates = [...customTvaRates, val].sort((a, b) => a - b);
+                          setCustomTvaRates(newRates);
+                          (e.currentTarget as HTMLInputElement).value = '';
+                        }
+                      }
+                    }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const input = document.getElementById('new-tva-rate-input') as HTMLInputElement;
+                      if (input) {
+                        const val = parseFloat(input.value);
+                        if (!isNaN(val) && val >= 0 && val <= 100) {
+                          if (customTvaRates.includes(val)) {
+                            showToast(language === 'ar' ? 'هذا المعدل موجود بالفعل' : 'Ce taux existe déjà', 'info');
+                            return;
+                          }
+                          const newRates = [...customTvaRates, val].sort((a, b) => a - b);
+                          setCustomTvaRates(newRates);
+                          input.value = '';
+                        } else {
+                          showToast(language === 'ar' ? 'يرجى إدخال معدل تصفية صالح' : 'Veuillez saisir un taux valide', 'error');
+                        }
+                      }
+                    }}
+                    className="bg-indigo-600 hover:bg-indigo-700 text-white rounded p-1 transition-colors cursor-pointer"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              </div>
             </div>
 
             {/* 🛡️ SECURITY COMPLIANCE SESSION TIMEOUT CONFIGURATION */}

@@ -552,7 +552,7 @@ export function downloadPurchaseOrderPDF({
   const storeAddress = settings?.storeAddress ?? "AVENU HABIB BORGIBA GHANNOUCHE GABES";
   const matriculeFiscal = settings?.matriculeFiscal ?? "1234567/A/M/000";
 
-  const format = formatCurrency || ((v: number) => `${v.toLocaleString()} DZD`);
+  const format = formatCurrency || ((v: number) => `${v.toLocaleString()} DT`);
 
   const doc = new jsPDF({
     orientation: 'portrait',

@@ -208,7 +208,7 @@ export default function Partners({ db, onUpdateDb }: PartnersProps) {
     if (!selectedPartner) return;
     const amount = Number(paymentAmount);
     if (isNaN(amount) || amount <= 0) {
-      showToast("⚠️ Veuillez saisir un montant valide supérieur à 0 DZD.", 'error');
+      showToast(language === 'ar' ? '⚠️ يرجى إدخال مبلغ صالح أكبر من 0 د.ت.' : '⚠️ Veuillez saisir un montant valide supérieur à 0 DT.', 'error');
       return;
     }
 
@@ -932,7 +932,7 @@ export default function Partners({ db, onUpdateDb }: PartnersProps) {
                   <label className="text-xs font-bold text-slate-700 block mb-1">Email</label>
                   <input
                     type="email"
-                    placeholder="Ex : contact@boite.dz"
+                    placeholder="Ex : contact@boite.tn"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     className="w-full bg-slate-50 border border-slate-200 rounded-xl py-2 px-3 focus:outline-hidden text-slate-800"
@@ -945,7 +945,7 @@ export default function Partners({ db, onUpdateDb }: PartnersProps) {
                   <label className="text-xs font-bold text-slate-700 block mb-1">Adresse Complète</label>
                   <input
                     type="text"
-                    placeholder="Ex : Route de Chéraga lot 45, Alger"
+                    placeholder="Ex : Avenue Habib Bourguiba, Tunis"
                     value={address}
                     onChange={(e) => setAddress(e.target.value)}
                     className="w-full bg-slate-50 border border-slate-200 rounded-xl py-2 px-3 focus:outline-hidden text-slate-800"
@@ -1024,7 +1024,7 @@ export default function Partners({ db, onUpdateDb }: PartnersProps) {
 
                   <div>
                     <label className="text-xs font-bold text-slate-700 block mb-1">
-                      🛑 {language === 'ar' ? 'سقف الائتمان الأقصى المسموح (DZD)' : '🛑 Limite de Crédit Autorisée (DZD)'}
+                      🛑 {language === 'ar' ? 'سقف الائتمان الأقصى المسموح (د.ت)' : '🛑 Limite de Crédit Autorisée (DT)'}
                     </label>
                     <input
                       type="number"
@@ -1137,8 +1137,8 @@ export default function Partners({ db, onUpdateDb }: PartnersProps) {
               <div>
                 <label className="text-xs font-bold text-slate-700 block mb-1">
                   {selectedTabIsClient 
-                    ? 'Solde Initial dû par ce Client (DZD)' 
-                    : 'Solde Initial dû à ce Fournisseur (DZD)'
+                    ? (language === 'ar' ? 'الرصيد الأولي المستحق على هذا الزبون (د.ت)' : 'Solde Initial dû par ce Client (DT)') 
+                    : (language === 'ar' ? 'الرصيد الأولي المستحق لهذا المورد (د.ت)' : 'Solde Initial dû à ce Fournisseur (DT)')
                   }
                 </label>
                 <input

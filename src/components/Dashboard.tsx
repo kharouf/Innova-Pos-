@@ -50,12 +50,14 @@ interface DashboardProps {
   db: DatabaseState;
   onNavigate: (tab: string) => void;
   onUpdateDb?: (updatedDb: DatabaseState) => void;
+  license?: any;
 }
 
-export default function Dashboard({ db, onNavigate, onUpdateDb }: DashboardProps) {
+export default function Dashboard({ db, onNavigate, onUpdateDb, license }: DashboardProps) {
   const { language, t, formatCurrency } = useLanguage();
   const [showNotificationDetails, setShowNotificationDetails] = useState(false);
   const [showExpirationDetails, setShowExpirationDetails] = useState(false);
+  const [showLicenseRenewInfo, setShowLicenseRenewInfo] = useState(false);
 
   // States for automatic supplier purchase order PDF generation
   const [showOrderModal, setShowOrderModal] = useState(false);
@@ -246,6 +248,26 @@ export default function Dashboard({ db, onNavigate, onUpdateDb }: DashboardProps
   const financial = getFinancialBalances(db.partners, db.settings);
   const coreStats = getTurnoverAndBenefits(db.invoices, db.expenses, db.settings);
   const lowStockNotification = checkLowStockAlerts(db.products);
+
+  // ============================================
+  // SAAS LICENSE EXPIRY REMINDER (7 Days Alert)
+  // ============================================
+  const licenseExpiryDays = React.useMemo(() => {
+    if (!license || !license.licenseExpiry) return null;
+    try {
+      const expiryDate = new Date(license.licenseExpiry);
+      const d1 = Date.UTC(expiryDate.getFullYear(), expiryDate.getMonth(), expiryDate.getDate());
+      const today = new Date();
+      const d2 = Date.UTC(today.getFullYear(), today.getMonth(), today.getDate());
+      const diffDays = Math.ceil((d1 - d2) / (1000 * 60 * 60 * 24));
+      return diffDays;
+    } catch (e) {
+      console.error("Error calculating license expiry days", e);
+      return null;
+    }
+  }, [license]);
+
+  const showLicenseAlert = licenseExpiryDays !== null && licenseExpiryDays <= 7;
 
   // ============================================
   // ACTIVE SHIFT LIVE MONITOR & COMPARATIVE RATIO
@@ -790,6 +812,105 @@ export default function Dashboard({ db, onNavigate, onUpdateDb }: DashboardProps
           </div>
         </div>
       </div>
+
+      {/* SaaS License Expiry Reminder Alert */}
+      {showLicenseAlert && (
+        <motion.div
+          initial={{ opacity: 0, y: -10 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="p-4 rounded-lg border border-amber-200/80 bg-gradient-to-r from-amber-50 to-orange-50 text-amber-950 shadow-xs"
+        >
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div className="flex items-start gap-3">
+              <div className="p-2 bg-amber-100 text-amber-700 rounded-lg shrink-0">
+                <Hourglass className="w-5 h-5 animate-spin-slow" />
+              </div>
+              <div>
+                <h3 className="text-xs font-black uppercase tracking-wider mb-0.5 text-amber-800 flex items-center gap-1.5 flex-wrap">
+                  <span>{language === 'ar' ? '⚠️ تنبيه انتهاء ترخيص SaaS' : "⚠️ Alerte d'expiration de Licence SaaS"}</span>
+                  <span className="text-[9px] bg-amber-600 text-white font-mono px-2 py-0.5 rounded-full font-bold">
+                    {licenseExpiryDays !== null && licenseExpiryDays < 0 
+                      ? (language === 'ar' ? 'منتهي' : 'Expiré') 
+                      : licenseExpiryDays === 0 
+                      ? (language === 'ar' ? 'اليوم' : "Aujourd'hui")
+                      : `${licenseExpiryDays} ${language === 'ar' ? 'أيام متبقية' : 'jours restants'}`
+                    }
+                  </span>
+                </h3>
+                <p className="text-xs font-medium leading-relaxed text-amber-900">
+                  {language === 'ar' ? (
+                    <>
+                      صلاحية ترخيص نظامك <span className="font-bold">({license?.licenseStatus === 'trial' ? 'فترة تجريبية' : 'اشتراك نشط'})</span> ستنتهي في <span className="font-bold font-mono underline">{license?.licenseExpiry}</span>. يرجى تجديد اشتراكك لضمان عدم توقف خدمات الفوترة السحابية والمزامنة التلقائية.
+                    </>
+                  ) : (
+                    <>
+                      Votre licence SaaS <span className="font-bold">({license?.licenseStatus === 'trial' ? "Période d'essai" : 'Abonnement Actif'})</span> arrive à terme le <span className="font-bold font-mono underline">{license?.licenseExpiry}</span>. Veuillez procéder au renouvellement pour éviter toute interruption de vos services de facturation cloud et de synchronisation.
+                    </>
+                  )}
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 self-end md:self-center shrink-0">
+              <button
+                type="button"
+                onClick={() => setShowLicenseRenewInfo(!showLicenseRenewInfo)}
+                className="px-2.5 py-1.5 hover:bg-amber-100 border border-amber-300 rounded text-xs font-bold transition-colors flex items-center gap-1 cursor-pointer text-amber-800"
+              >
+                {showLicenseRenewInfo ? (
+                  <>
+                    <span>{language === 'ar' ? 'إخفاء معلومات التجديد' : 'Masquer les infos'}</span>
+                    <ChevronUp className="w-3.5 h-3.5" />
+                  </>
+                ) : (
+                  <>
+                    <span>{language === 'ar' ? 'كيفية التجديد؟' : 'Comment renouveler ?'}</span>
+                    <ChevronDown className="w-3.5 h-3.5" />
+                  </>
+                )}
+              </button>
+              
+              <a
+                href="mailto:kharoufwala24@gmail.com?subject=Renouvellement%20Licence%20Innova%20POS%20Pro"
+                className="px-3 py-1.5 rounded text-xs font-bold transition-all flex items-center gap-1 cursor-pointer border bg-amber-600 hover:bg-amber-700 text-white border-amber-600"
+              >
+                <span>{language === 'ar' ? 'اتصل بالدعم الفني' : 'Contacter le Support'}</span>
+                <ArrowRight className={`w-3.5 h-3.5 ${language === 'ar' ? 'rotate-180' : ''}`} />
+              </a>
+            </div>
+          </div>
+
+          <AnimatePresence>
+            {showLicenseRenewInfo && (
+              <motion.div
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: "auto" }}
+                exit={{ opacity: 0, height: 0 }}
+                className="mt-3 pt-3 border-t border-amber-200/60 overflow-hidden"
+              >
+                <div className="bg-amber-500/10 p-3 rounded border border-amber-200/50 text-xs text-amber-950 space-y-2">
+                  <div className="font-bold text-amber-900">{language === 'ar' ? '📌 خطوات تجديد الترخيص المعتمدة :' : '📌 Étapes pour le renouvellement de votre licence :'}</div>
+                  <ol className="list-decimal list-inside space-y-1 text-slate-700">
+                    {language === 'ar' ? (
+                      <>
+                        <li>اتصل بالدعم الفني المعتمد عبر البريد الإلكتروني <span className="font-mono font-bold text-amber-900">kharoufwala24@gmail.com</span> أو الهاتف.</li>
+                        <li>قدم معرف مستخدم نظامك: <span className="font-mono font-bold bg-white px-1.5 py-0.5 rounded border text-amber-950 select-all">{license?.uid || 'N/A'}</span></li>
+                        <li>بعد تأكيد الدفع، سيقوم فريق التطوير بتمديد اشتراكك تلقائياً دون الحاجة لإعادة التثبيت أو فقدان أي من بيانات مبيعاتك المحلية.</li>
+                      </>
+                    ) : (
+                      <>
+                        <li>Contactez le support officiel par email à <span className="font-mono font-bold text-amber-900">kharoufwala24@gmail.com</span> ou par téléphone.</li>
+                        <li>Fournissez votre identifiant unique de compte : <span className="font-mono font-bold bg-white px-1.5 py-0.5 rounded border text-amber-950 select-all">{license?.uid || 'N/A'}</span></li>
+                        <li>Dès réception du règlement, le renouvellement sera appliqué instantanément à distance sans aucune perte de vos données locales.</li>
+                      </>
+                    )}
+                  </ol>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </motion.div>
+      )}
 
       {/* Persistent Contextual Notification Banner */}
       <div className={`p-4 rounded border transition-all shadow-xs duration-200 ${

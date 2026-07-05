@@ -1576,10 +1576,10 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
   };
 
   return (
-    <div className="space-y-6 relative">
+    <div className={`relative ${isFullscreen ? 'h-full w-full flex flex-col p-3 overflow-hidden space-y-2 bg-slate-50' : 'space-y-6'}`}>
 
       {/* POS Screen Header */}
-      <div className="bg-white border border-slate-200 p-4 rounded-xl flex flex-col lg:flex-row items-center justify-between gap-4 no-print shadow-3xs">
+      <div className={`bg-white border border-slate-200 rounded-xl flex flex-col lg:flex-row items-center justify-between gap-4 no-print shadow-3xs shrink-0 ${isFullscreen ? 'p-2.5' : 'p-4'}`}>
         <div className="flex items-center gap-3 w-full lg:w-auto">
           <motion.div 
             animate={triggerPulse ? {
@@ -2336,10 +2336,10 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
         {isCartOnlyMode ? (
           posLayoutTheme === 'classic-tactile' ? (
             /* BRAND NEW INDUSTRIAL TACTILE LAYOUT */
-            <div className="lg:col-span-12 xl:col-span-12 max-w-[1550px] mx-auto w-full grid grid-cols-1 lg:grid-cols-12 xl:grid-cols-12 gap-5 items-stretch select-none no-print font-sans">
+            <div className={`lg:col-span-12 xl:col-span-12 max-w-[1550px] mx-auto w-full grid grid-cols-1 lg:grid-cols-12 xl:grid-cols-12 gap-5 items-stretch select-none no-print font-sans ${isFullscreen ? 'flex-1 min-h-0' : ''}`}>
               
               {/* LEFT COLUMN (Keypad and Actions) - col-span-4 */}
-              <div className="lg:col-span-4 xl:col-span-4 bg-slate-900 border border-slate-800 p-4.5 rounded-3xl flex flex-col justify-between gap-3 h-[800px] xl:h-[860px] shadow-2xl relative overflow-hidden text-white">
+              <div className={`lg:col-span-4 xl:col-span-4 bg-slate-900 border border-slate-800 rounded-3xl flex flex-col justify-between gap-3 shadow-2xl relative overflow-hidden text-white ${isFullscreen ? 'h-full p-3' : 'h-[800px] xl:h-[860px] p-4.5'}`}>
                 {/* Keypad Header Search bar */}
                 <div className="space-y-2 shrink-0">
                   <div className="text-[10px] uppercase font-black tracking-wider text-cyan-400">
@@ -2647,7 +2647,7 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
 
 
               {/* RIGHT COLUMN (Cart and display tables / or product grids slider) - col-span-7 */}
-              <div className="lg:col-span-7 xl:col-span-7 bg-white border border-slate-200 p-4.5 rounded-3xl flex flex-col justify-between gap-4 h-[800px] xl:h-[860px] shadow-lg">
+              <div className={`lg:col-span-7 xl:col-span-7 bg-white border border-slate-200 rounded-3xl flex flex-col justify-between gap-4 shadow-lg ${isFullscreen ? 'h-full p-3' : 'h-[800px] xl:h-[860px] p-4.5'}`}>
                 {/* Header LCD Total Screen */}
                 <div className="bg-gradient-to-r from-blue-900 to-indigo-950 border-2 border-indigo-900 p-4 rounded-2xl flex flex-col justify-between relative overflow-hidden font-sans shadow-2xl shrink-0 text-left text-white">
                   <div className="absolute top-1 right-2 opacity-25 text-[8px] font-mono tracking-widest text-cyan-300">📟 TICTAAC DIGITAL CONSOLE</div>
@@ -2904,10 +2904,10 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
             </div>
           ) : (
             /* EXISTING IS_CART_ONLY_MODE LAYOUT */
-            <div className="lg:col-span-12 xl:col-span-12 max-w-[1550px] mx-auto w-full grid grid-cols-1 lg:grid-cols-12 xl:grid-cols-12 gap-6 items-stretch select-none no-print">
+            <div className={`lg:col-span-12 xl:col-span-12 max-w-[1550px] mx-auto w-full grid grid-cols-1 lg:grid-cols-12 xl:grid-cols-12 gap-6 items-stretch select-none no-print ${isFullscreen ? 'flex-1 min-h-0' : ''}`}>
             
             {/* LEFT COLUMN: Cart listing + LCD Total + Numpad & Quick Payment Tabs */}
-            <div className="lg:col-span-5 xl:col-span-5 bg-slate-900 border border-slate-800 p-4.5 rounded-3xl flex flex-col justify-between gap-4 h-[800px] xl:h-[860px] shadow-2xl relative overflow-hidden text-white">
+            <div className={`lg:col-span-5 xl:col-span-5 bg-slate-900 border border-slate-800 rounded-3xl flex flex-col justify-between gap-4 shadow-2xl relative overflow-hidden text-white ${isFullscreen ? 'h-full p-3' : 'h-[800px] xl:h-[860px] p-4.5'}`}>
               
               {/* Header LCD Panel display */}
               <div className="bg-slate-950 border border-slate-850 p-4 rounded-2xl flex flex-col justify-between relative overflow-hidden font-sans shadow-inner shrink-0 text-left">
@@ -3204,7 +3204,7 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
             </div>
 
             {/* RIGHT COLUMN: Search + Filters + Product Touch Matrix + Action Grid Buttons */}
-            <div className="lg:col-span-7 xl:col-span-7 bg-white border border-slate-200 p-4.5 rounded-3xl flex flex-col justify-between gap-4 h-[800px] xl:h-[860px] shadow-lg">
+            <div className={`lg:col-span-7 xl:col-span-7 bg-white border border-slate-200 rounded-3xl flex flex-col justify-between gap-4 shadow-lg ${isFullscreen ? 'h-full p-3' : 'h-[800px] xl:h-[860px] p-4.5'}`}>
               
               {/* Search, Rapid scanner and quick add user input */}
               <div className="bg-slate-50 p-3 rounded-2xl flex flex-col sm:flex-row items-center gap-3 shrink-0 border border-slate-200 text-left">
@@ -3967,10 +3967,11 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
                     className="w-full bg-slate-50 border border-slate-200 rounded-lg py-1.5 px-3 text-xs text-slate-800 font-mono font-bold focus:bg-white focus:outline-none cursor-pointer transition-colors"
                   >
                     <option value={-1}>{language === 'ar' ? "حسب السلعة" : "TVA par article"}</option>
-                    <option value={0}>0% (Nulle)</option>
-                    <option value={7}>7% (Taux Réduit)</option>
-                    <option value={9}>9% (Réduit)</option>
-                    <option value={19}>19% (Standard)</option>
+                    {(db.settings?.customTvaRates || [0, 7, 13, 19]).map((rate) => (
+                      <option key={rate} value={rate}>
+                        {rate}% {rate === 0 ? (language === 'ar' ? "(معفى)" : "(Nulle)") : ""}
+                      </option>
+                    ))}
                   </select>
                 </div>
               </div>

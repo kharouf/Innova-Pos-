@@ -120,7 +120,7 @@ export default function Finance({ db, onUpdateDb }: FinanceProps) {
     setTraDateDue('');
     setTraBankName('');
     setTraRib('');
-    setTraCity('Alger');
+    setTraCity('Tunis');
     setTraNotes('');
     showToast(language === 'ar' ? 'تم إنشاء الكمبيالة (الرسالة التجارية) بنجاح' : "Traite commerciale (Lettre de change) émise avec succès !", 'success');
   };
@@ -742,7 +742,7 @@ export default function Finance({ db, onUpdateDb }: FinanceProps) {
 
                 <div className="pt-4 space-y-2">
                   <p className="font-bold text-slate-900">
-                    Montant de la traite écrit textuellement : <span className="font-black underline italic">Cents Quatre-Vingts Cinq Mille Dinars Algériens (Valeur après-vente certifiée)</span>
+                    Montant de la traite écrit textuellement : <span className="font-black underline italic">Cents Quatre-Vingts Cinq Mille Dinars Tunisiens (Valeur après-vente certifiée)</span>
                   </p>
                   <p className="text-[10px] text-slate-500">
                     Clause particulière : Sauf stipulation contraire, cette lettre de change constitue une reconnaissance légitime de créance déposable en cas de contentieux.
@@ -755,7 +755,7 @@ export default function Finance({ db, onUpdateDb }: FinanceProps) {
                 <div>
                   <h4 className="font-bold text-slate-700 pb-1 uppercase text-[10px]">🖊️ Signature & Cachet du Tireur (Émetteur) :</h4>
                   <div className="h-20 border border-slate-300 bg-white rounded-lg flex items-end p-2 text-[9px] text-slate-400 font-bold italic">
-                    MEGA GLOBAL LOGISTIQUE - Alger
+                    MEGA GLOBAL LOGISTIQUE - Tunis
                   </div>
                 </div>
                 <div>

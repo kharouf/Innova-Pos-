@@ -358,7 +358,8 @@ export default function Products({ db, onUpdateDb }: ProductsProps) {
     setExpiryDate('');
     setWeightVolume('');
     setIsFoodProduct(false);
-    setTvaRate(19);
+    const customRates = db.settings?.customTvaRates || [0, 7, 13, 19];
+    setTvaRate(customRates.includes(19) ? 19 : (customRates[0] !== undefined ? customRates[0] : 19));
     setIsNewCategory(false);
     setEmailAlertsEnabled(true);
     setShowFormModal(true);
@@ -389,6 +390,32 @@ export default function Products({ db, onUpdateDb }: ProductsProps) {
   const handleFormSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim()) return;
+
+    const numSelling = Number(sellingPrice);
+    const numPurchase = Number(purchasePrice);
+    const numStock = Number(stock);
+
+    if (isNaN(numSelling) || numSelling <= 0) {
+      showToast(
+        language === 'ar' ? 'الرجاء إدخال سعر بيع أكبر من الصفر' : 'Le prix de vente doit être supérieur à 0',
+        'error'
+      );
+      return;
+    }
+    if (isNaN(numPurchase) || numPurchase < 0) {
+      showToast(
+        language === 'ar' ? 'سعر الشراء غير صالح' : "Le prix d'achat doit être supérieur ou égal à 0",
+        'error'
+      );
+      return;
+    }
+    if (isNaN(numStock) || numStock < 0) {
+      showToast(
+        language === 'ar' ? 'الكمية الابتدائية غير صالحة' : 'La quantité de stock doit être supérieure ou égale à 0',
+        'error'
+      );
+      return;
+    }
 
     let updatedProducts = [...db.products];
 
@@ -1480,8 +1507,20 @@ export default function Products({ db, onUpdateDb }: ProductsProps) {
                     min="0"
                     value={minAlertQty}
                     onChange={(e) => setMinAlertQty(Math.max(0, Number(e.target.value)))}
-                    className="w-full bg-slate-50 border border-slate-200 rounded py-2 px-3 focus:outline-hidden font-mono text-slate-800"
+                    className={`w-full bg-white border rounded py-2 px-3 focus:outline-hidden font-mono text-slate-800 transition-colors ${
+                      minAlertQty !== undefined && minAlertQty !== null && !isNaN(minAlertQty) && minAlertQty >= 0
+                        ? 'border-emerald-500 focus:border-emerald-600 focus:ring-1 focus:ring-emerald-500/30'
+                        : 'border-rose-500 focus:border-rose-600 focus:ring-1 focus:ring-rose-500/30'
+                    }`}
                   />
+                  <div className="mt-1">
+                    <span className={`text-[9px] font-bold ${minAlertQty !== undefined && minAlertQty !== null && !isNaN(minAlertQty) && minAlertQty >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
+                      {minAlertQty !== undefined && minAlertQty !== null && !isNaN(minAlertQty) && minAlertQty >= 0
+                        ? (language === 'ar' ? '✓ الحد الأدنى صالح' : '✓ Seuil d\'alerte valide')
+                        : (language === 'ar' ? '✗ الحد الأدنى غير صالح' : '✗ Seuil d\'alerte invalide')
+                      }
+                    </span>
+                  </div>
                 </div>
               </div>
 
@@ -1727,8 +1766,20 @@ export default function Products({ db, onUpdateDb }: ProductsProps) {
                     placeholder="0.000"
                     value={purchasePrice || ''}
                     onChange={(e) => setPurchasePrice(Math.max(0, Number(e.target.value)))}
-                    className="w-full bg-white border border-blue-200 rounded py-2 px-3 focus:outline-hidden font-bold font-mono text-slate-800"
+                    className={`w-full bg-white border rounded py-2 px-3 focus:outline-hidden font-bold font-mono transition-colors ${
+                      purchasePrice !== undefined && purchasePrice !== null && !isNaN(purchasePrice) && purchasePrice >= 0
+                        ? 'border-emerald-500 focus:border-emerald-600 focus:ring-1 focus:ring-emerald-500/30 text-emerald-700'
+                        : 'border-rose-500 focus:border-rose-600 focus:ring-1 focus:ring-rose-500/30 text-rose-700'
+                    }`}
                   />
+                  <div className="mt-1">
+                    <span className={`text-[9px] font-bold ${purchasePrice !== undefined && purchasePrice !== null && !isNaN(purchasePrice) && purchasePrice >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
+                      {purchasePrice !== undefined && purchasePrice !== null && !isNaN(purchasePrice) && purchasePrice >= 0
+                        ? (purchasePrice === 0 ? (language === 'ar' ? '✓ مجاني (0 د.ت)' : '✓ Gratuit / Cadeau') : (language === 'ar' ? '✓ السعر صالح' : '✓ Prix d\'achat valide'))
+                        : (language === 'ar' ? '✗ سعر الشراء غير صالح' : '✗ Prix d\'achat invalide')
+                      }
+                    </span>
+                  </div>
                 </div>
                 <div>
                   <label className="text-xs font-bold text-blue-950 block mb-1">
@@ -1742,8 +1793,20 @@ export default function Products({ db, onUpdateDb }: ProductsProps) {
                     placeholder="0.000"
                     value={sellingPrice || ''}
                     onChange={(e) => setSellingPrice(Math.max(0, Number(e.target.value)))}
-                    className="w-full bg-white border border-blue-200 rounded py-2 px-3 focus:outline-hidden font-bold font-mono text-blue-700"
+                    className={`w-full bg-white border rounded py-2 px-3 focus:outline-hidden font-bold font-mono transition-colors ${
+                      sellingPrice !== undefined && sellingPrice !== null && !isNaN(sellingPrice) && sellingPrice > 0
+                        ? 'border-emerald-500 focus:border-emerald-600 focus:ring-1 focus:ring-emerald-500/30 text-blue-700'
+                        : 'border-rose-500 focus:border-rose-600 focus:ring-1 focus:ring-rose-500/30 text-rose-700'
+                    }`}
                   />
+                  <div className="mt-1">
+                    <span className={`text-[9px] font-bold ${sellingPrice !== undefined && sellingPrice !== null && !isNaN(sellingPrice) && sellingPrice > 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
+                      {sellingPrice !== undefined && sellingPrice !== null && !isNaN(sellingPrice) && sellingPrice > 0
+                        ? (language === 'ar' ? '✓ سعر البيع صالح' : '✓ Prix de vente valide')
+                        : (language === 'ar' ? '✗ مطلوب سعر بيع أكبر من 0' : '✗ Requis (> 0 DT)')
+                      }
+                    </span>
+                  </div>
                 </div>
                 <div>
                   <label className="text-xs font-bold text-blue-950 block mb-1">
@@ -1754,9 +1817,9 @@ export default function Products({ db, onUpdateDb }: ProductsProps) {
                     onChange={(e) => setTvaRate(Number(e.target.value))}
                     className="w-full bg-white border border-blue-200 rounded py-2 px-3 focus:outline-hidden font-bold font-sans text-slate-800"
                   >
-                    <option value={0}>0%</option>
-                    <option value={7}>7%</option>
-                    <option value={19}>19%</option>
+                    {(db.settings?.customTvaRates || [0, 7, 13, 19]).map((rate) => (
+                      <option key={rate} value={rate}>{rate}%</option>
+                    ))}
                   </select>
                 </div>
                 <div>
@@ -1767,8 +1830,20 @@ export default function Products({ db, onUpdateDb }: ProductsProps) {
                     placeholder="0"
                     value={stock}
                     onChange={(e) => setStock(Math.max(0, Number(e.target.value)))}
-                    className="w-full bg-white border border-blue-200 rounded py-2 px-3 focus:outline-hidden font-mono text-slate-800"
+                    className={`w-full bg-white border rounded py-2 px-3 focus:outline-hidden font-mono transition-colors ${
+                      stock !== undefined && stock !== null && !isNaN(stock) && stock >= 0
+                        ? 'border-emerald-500 focus:border-emerald-600 focus:ring-1 focus:ring-emerald-500/30 text-slate-800'
+                        : 'border-rose-500 focus:border-rose-600 focus:ring-1 focus:ring-rose-500/30 text-rose-700'
+                    }`}
                   />
+                  <div className="mt-1">
+                    <span className={`text-[9px] font-bold ${stock !== undefined && stock !== null && !isNaN(stock) && stock >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
+                      {stock !== undefined && stock !== null && !isNaN(stock) && stock >= 0
+                        ? (language === 'ar' ? `✓ الكمية صالحة (${stock} ${unit})` : `✓ Stock valide (${stock} ${unit})`)
+                        : (language === 'ar' ? '✗ كمية المخزون غير صالحة' : '✗ Stock initial invalide')
+                      }
+                    </span>
+                  </div>
                 </div>
               </div>
 

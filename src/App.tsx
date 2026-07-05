@@ -176,6 +176,56 @@ function AppContent() {
     };
   }, []);
 
+  const [isMobileLandscape, setIsMobileLandscape] = useState(false);
+
+  useEffect(() => {
+    const checkOrientation = () => {
+      if (typeof window !== 'undefined') {
+        const isMobile = window.matchMedia("(max-width: 767px)").matches;
+        const isLandscape = window.matchMedia("(orientation: landscape)").matches;
+        // Disable landscape-mode lock per user request (Désactiver Rotation automatique mobile restriction)
+        setIsMobileLandscape(false);
+      }
+    };
+
+    checkOrientation();
+    window.addEventListener('resize', checkOrientation);
+    window.addEventListener('orientationchange', checkOrientation);
+    return () => {
+      window.removeEventListener('resize', checkOrientation);
+      window.removeEventListener('orientationchange', checkOrientation);
+    };
+  }, []);
+
+  useEffect(() => {
+    const lockOrientation = async () => {
+      try {
+        if (
+          typeof window !== 'undefined' &&
+          window.screen &&
+          window.screen.orientation &&
+          typeof (window.screen.orientation as any).lock === 'function'
+        ) {
+          await (window.screen.orientation as any).lock('portrait');
+        }
+      } catch (error) {
+        console.debug("Orientation lock failed or not supported in this environment:", error);
+      }
+    };
+
+    lockOrientation();
+
+    const handleFullscreen = () => {
+      if (document.fullscreenElement) {
+        lockOrientation();
+      }
+    };
+    document.addEventListener('fullscreenchange', handleFullscreen);
+    return () => {
+      document.removeEventListener('fullscreenchange', handleFullscreen);
+    };
+  }, []);
+
   const [showPinModal, setShowPinModal] = useState(false);
   const [pinInput, setPinInput] = useState('');
   const [pinError, setPinError] = useState(false);
@@ -1364,6 +1414,59 @@ function AppContent() {
   return (
     <div className="min-h-screen bg-slate-100 flex flex-col lg:flex-row text-slate-800 font-sans" dir={language === 'ar' ? 'rtl' : 'ltr'}>
       
+      {/* Fallback overlay when a mobile phone is held horizontally */}
+      <AnimatePresence>
+        {isMobileLandscape && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-slate-950 z-[9999] flex flex-col items-center justify-center p-6 text-center select-none"
+          >
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              transition={{ type: "spring", stiffness: 220, damping: 22 }}
+              className="max-w-xs space-y-6"
+            >
+              <div className="relative mx-auto w-24 h-24 flex items-center justify-center bg-slate-900 border border-slate-800 rounded-3xl shadow-2xl">
+                <motion.div
+                  animate={{ rotate: [0, 90, 90, 0, 0] }}
+                  transition={{ repeat: Infinity, duration: 4, ease: "easeInOut", repeatDelay: 1 }}
+                  className="text-amber-500"
+                >
+                  <Smartphone className="w-12 h-12" />
+                </motion.div>
+                <div className="absolute -top-1 -right-1 flex h-4 w-4">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-4 w-4 bg-amber-500"></span>
+                </div>
+              </div>
+              
+              <div className="space-y-2">
+                <h1 className="text-base font-black text-white uppercase tracking-wider">
+                  {language === 'ar' ? '🔄 تم قفل اتجاه الشاشة' : '🔄 Mode Portrait Requis'}
+                </h1>
+                <p className="text-xs text-slate-400 font-medium leading-relaxed">
+                  {language === 'ar' ? (
+                    'تم إيقاف الدوران التلقائي لضمان تجربة مستخدم مثالية. يرجى تدوير هاتفك إلى الوضع العمودي لمتابعة استخدام النظام.'
+                  ) : (
+                    'La rotation automatique est désactivée pour garantir une expérience optimale. Veuillez retourner votre téléphone en mode portrait pour continuer.'
+                  )}
+                </p>
+              </div>
+
+              <div className="pt-2">
+                <span className="text-[9px] font-bold font-mono text-amber-500 uppercase bg-slate-900/80 border border-amber-900/30 px-3 py-1.5 rounded-full">
+                  {language === 'ar' ? 'الوضع العمودي 📱' : 'Format Portrait Uniquement 📱'}
+                </span>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+      
       {/* SIDEBAR NAVIGATION - DESKTOP SCREEN (Persistent) */}
       <aside className={`${isAppFullscreen && activeTab === 'pos' ? 'hidden' : 'hidden lg:flex'} flex-col w-64 h-screen sticky top-0 bg-slate-900 text-white shrink-0 border-r border-slate-800 shadow-xl no-print overflow-y-auto custom-scrollbar`}>
         {/* Brand identity */}
@@ -1670,154 +1773,169 @@ function AppContent() {
       </div>
 
       {/* MOBILE DRAWERS OVERLAY SIDEBAR */}
-      {mobileMenuOpen && !(isAppFullscreen && activeTab === 'pos') && (
-        <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs z-30 lg:hidden no-print" onClick={() => setMobileMenuOpen(false)}>
-          <aside 
-            className="w-72 bg-slate-950 h-full flex flex-col justify-between pt-20 overflow-y-auto custom-scrollbar"
-            onClick={(e) => e.stopPropagation()}
+      <AnimatePresence>
+        {mobileMenuOpen && !(isAppFullscreen && activeTab === 'pos') && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.22 }}
+            className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs z-30 lg:hidden no-print" 
+            onClick={() => setMobileMenuOpen(false)}
           >
-            <nav className="p-4 space-y-2">
+            <motion.aside 
+              initial={{ x: language === 'ar' ? "100%" : "-100%" }}
+              animate={{ x: 0 }}
+              exit={{ x: language === 'ar' ? "100%" : "-100%" }}
+              transition={{ type: "spring", damping: 26, stiffness: 230 }}
+              className={`w-72 bg-slate-950 h-full flex flex-col justify-between pt-20 overflow-y-auto custom-scrollbar border-slate-900 ${
+                language === 'ar' ? 'mr-0 ml-auto border-l' : 'ml-0 mr-auto border-r'
+              }`}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <nav className="p-4 space-y-2">
 
 
-              <div className="text-slate-500 text-[10px] uppercase font-bold tracking-widest px-2 pb-1">
-                {t('nav_principal')}
-              </div>
-              {NAV_ITEMS.map(item => {
-                const Icon = item.icon;
-                const isActive = activeTab === item.id;
-                return (
+                <div className="text-slate-500 text-[10px] uppercase font-bold tracking-widest px-2 pb-1">
+                  {t('nav_principal')}
+                </div>
+                {NAV_ITEMS.map(item => {
+                  const Icon = item.icon;
+                  const isActive = activeTab === item.id;
+                  return (
+                    <button
+                      key={item.id}
+                      onClick={() => {
+                        setActiveTab(item.id);
+                        setMobileMenuOpen(false);
+                      }}
+                      className={`w-full text-start rounded-md px-3 py-2 flex items-center gap-3 transition-all ${
+                        isActive ? 'bg-blue-600 text-white font-bold' : 'text-slate-400 hover:bg-slate-900 hover:text-white'
+                      }`}
+                    >
+                      <Icon className="w-4 h-4 shrink-0" />
+                      <div>
+                        <span className="text-xs block font-bold">{item.label}</span>
+                        <span className="text-[9px] text-slate-500 block font-mono">{item.subLabel}</span>
+                      </div>
+                    </button>
+                  );
+                })}
+              </nav>
+              
+              <div className="p-4 border-t border-slate-900 space-y-3.5">
+
+
+                <div className="text-[10px] text-slate-400 font-bold flex items-center gap-2">
+                  <User className="w-4 h-4 text-slate-300" />
+                  <span className="truncate">{user ? user.email : 'Démo Hors-ligne'}</span>
+                </div>
+
+                {/* Mobile Connection Toggler */}
+                <div className="p-2.5 bg-slate-900 border border-slate-800 rounded-lg space-y-2 text-start select-none">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[9px] font-black text-slate-400 uppercase tracking-wider font-mono">
+                      {language === 'ar' ? '🔌 الاتصال والشبكة' : '🔌 Statut Réseau'}
+                    </span>
+                    <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[8px] font-extrabold uppercase ${
+                      isEffectiveOffline 
+                        ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20' 
+                        : 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
+                    }`}>
+                      <span className={`w-1 h-1 rounded-full ${isEffectiveOffline ? 'bg-amber-400 animate-pulse' : 'bg-emerald-400'}`} />
+                      <span>{isEffectiveOffline ? (language === 'ar' ? 'أوفلاين' : 'OFFLINE') : (language === 'ar' ? 'متصل' : 'ONLINE')}</span>
+                    </span>
+                  </div>
+                  
                   <button
-                    key={item.id}
-                    onClick={() => {
-                      setActiveTab(item.id);
-                      setMobileMenuOpen(false);
-                    }}
-                    className={`w-full text-start rounded-md px-3 py-2 flex items-center gap-3 transition-all ${
-                      isActive ? 'bg-blue-600 text-white font-bold' : 'text-slate-400 hover:bg-slate-900 hover:text-white'
+                    onClick={handleToggleOfflineForced}
+                    type="button"
+                    className={`w-full flex items-center justify-center gap-1.5 py-1.5 px-2 rounded text-[10px] font-bold uppercase transition-all border cursor-pointer ${
+                      isOfflineForced 
+                        ? 'bg-amber-500/20 text-amber-300 border-amber-500/30 hover:bg-amber-500/30' 
+                        : 'bg-slate-950 text-slate-400 border-slate-800 hover:text-white hover:bg-slate-850'
                     }`}
                   >
-                    <Icon className="w-4 h-4 shrink-0" />
-                    <div>
-                      <span className="text-xs block font-bold">{item.label}</span>
-                      <span className="text-[9px] text-slate-500 block font-mono">{item.subLabel}</span>
-                    </div>
+                    {isOfflineForced ? (
+                      <>
+                        <Wifi className="w-3.5 h-3.5 text-cyan-400" />
+                        <span>{language === 'ar' ? 'توصيل بالإنترنت' : 'Activer Mode Cloud'}</span>
+                      </>
+                    ) : (
+                      <>
+                        <WifiOff className="w-3.5 h-3.5 text-amber-500" />
+                        <span>{language === 'ar' ? 'قطع الاتصال (أوفلاين)' : 'Mode Sans Internet'}</span>
+                      </>
+                    )}
                   </button>
-                );
-              })}
-            </nav>
-            
-            <div className="p-4 border-t border-slate-900 space-y-3.5">
-
-
-              <div className="text-[10px] text-slate-400 font-bold flex items-center gap-2">
-                <User className="w-4 h-4 text-slate-300" />
-                <span className="truncate">{user ? user.email : 'Démo Hors-ligne'}</span>
-              </div>
-
-              {/* Mobile Connection Toggler */}
-              <div className="p-2.5 bg-slate-900 border border-slate-800 rounded-lg space-y-2 text-start select-none">
-                <div className="flex items-center justify-between">
-                  <span className="text-[9px] font-black text-slate-400 uppercase tracking-wider font-mono">
-                    {language === 'ar' ? '🔌 الاتصال والشبكة' : '🔌 Statut Réseau'}
-                  </span>
-                  <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[8px] font-extrabold uppercase ${
-                    isEffectiveOffline 
-                      ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20' 
-                      : 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
-                  }`}>
-                    <span className={`w-1 h-1 rounded-full ${isEffectiveOffline ? 'bg-amber-400 animate-pulse' : 'bg-emerald-400'}`} />
-                    <span>{isEffectiveOffline ? (language === 'ar' ? 'أوفلاين' : 'OFFLINE') : (language === 'ar' ? 'متصل' : 'ONLINE')}</span>
-                  </span>
                 </div>
-                
+
+                {/* Mobile Worker Lock Toggle */}
                 <button
-                  onClick={handleToggleOfflineForced}
-                  type="button"
-                  className={`w-full flex items-center justify-center gap-1.5 py-1.5 px-2 rounded text-[10px] font-bold uppercase transition-all border cursor-pointer ${
-                    isOfflineForced 
-                      ? 'bg-amber-500/20 text-amber-300 border-amber-500/30 hover:bg-amber-500/30' 
-                      : 'bg-slate-950 text-slate-400 border-slate-800 hover:text-white hover:bg-slate-850'
+                  onClick={() => {
+                    setMobileMenuOpen(false);
+                    handleToggleWorkerMode();
+                  }}
+                  className={`w-full flex items-center justify-center gap-2 py-2 px-3 rounded text-[11px] font-bold transition-all border cursor-pointer select-none ${
+                    isWorkerMode 
+                      ? 'bg-amber-600/20 text-amber-400 border-amber-500/30 hover:bg-amber-600/30' 
+                      : 'bg-slate-905 text-slate-300 border-slate-800 hover:bg-slate-800/60'
                   }`}
                 >
-                  {isOfflineForced ? (
+                  {isWorkerMode ? (
                     <>
-                      <Wifi className="w-3.5 h-3.5 text-cyan-400" />
-                      <span>{language === 'ar' ? 'توصيل بالإنترنت' : 'Activer Mode Cloud'}</span>
+                      <Lock className="w-3.5 h-3.5 text-amber-400 animate-pulse" />
+                      <span>{language === 'ar' ? '🔐 إلغاء قفل العمال' : '🔐 Déverrouiller Caissier'}</span>
                     </>
                   ) : (
                     <>
-                      <WifiOff className="w-3.5 h-3.5 text-amber-500" />
-                      <span>{language === 'ar' ? 'قطع الاتصال (أوفلاين)' : 'Mode Sans Internet'}</span>
+                      <Unlock className="w-3.5 h-3.5 text-slate-500" />
+                      <span>{language === 'ar' ? '🔒 تفعيل قفل العمال' : '🔒 Activer Mode Caissier'}</span>
                     </>
                   )}
                 </button>
+
+                {/* Mobile Global Theme Toggle */}
+                <button
+                  onClick={() => {
+                    setMobileMenuOpen(false);
+                    handleToggleGlobalTheme();
+                  }}
+                  id="theme-mode-toggle-mobile"
+                  className="w-full flex items-center justify-center gap-2 py-2 px-3 rounded text-[11px] font-bold bg-slate-900 border border-slate-800 text-slate-300 hover:text-white hover:bg-slate-800/60 transition-all cursor-pointer select-none"
+                >
+                  {(db?.settings?.themeMode || 'light') === 'dark' ? (
+                    <>
+                      <Sun className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+                      <span>{language === 'ar' ? '☀️ مظهر فاتح' : '☀️ Mode Clair'}</span>
+                    </>
+                  ) : (
+                    <>
+                      <Moon className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
+                      <span>{language === 'ar' ? '🌙 مظهر داكن' : '🌙 Mode Sombre'}</span>
+                    </>
+                  )}
+                </button>
+
+                {/* Mobile Logout Button representing the settings gear / 'écrou' */}
+                <button
+                  onClick={() => {
+                    setMobileMenuOpen(false);
+                    setIsConfirmingLogout(false);
+                    setShowLogoutCenterModal(true);
+                  }}
+                  className="w-full flex items-center justify-center gap-2 py-2 px-3 rounded text-[11px] font-bold bg-rose-950/25 hover:bg-rose-900/35 border border-rose-900/20 text-rose-400 hover:text-rose-350 transition-all cursor-pointer select-none group"
+                >
+                  <Settings className="w-3.5 h-3.5 animate-spin-slow group-hover:rotate-45 transition-transform" />
+                  <span>{language === 'ar' ? '⚙️ إعدادات الخروج والربط' : '⚙️ Déconnexion & Synchro'}</span>
+                </button>
+
+
               </div>
-
-              {/* Mobile Worker Lock Toggle */}
-              <button
-                onClick={() => {
-                  setMobileMenuOpen(false);
-                  handleToggleWorkerMode();
-                }}
-                className={`w-full flex items-center justify-center gap-2 py-2 px-3 rounded text-[11px] font-bold transition-all border cursor-pointer select-none ${
-                  isWorkerMode 
-                    ? 'bg-amber-600/20 text-amber-400 border-amber-500/30 hover:bg-amber-600/30' 
-                    : 'bg-slate-905 text-slate-300 border-slate-800 hover:bg-slate-800/60'
-                }`}
-              >
-                {isWorkerMode ? (
-                  <>
-                    <Lock className="w-3.5 h-3.5 text-amber-400 animate-pulse" />
-                    <span>{language === 'ar' ? '🔐 إلغاء قفل العمال' : '🔐 Déverrouiller Caissier'}</span>
-                  </>
-                ) : (
-                  <>
-                    <Unlock className="w-3.5 h-3.5 text-slate-500" />
-                    <span>{language === 'ar' ? '🔒 تفعيل قفل العمال' : '🔒 Activer Mode Caissier'}</span>
-                  </>
-                )}
-              </button>
-
-              {/* Mobile Global Theme Toggle */}
-              <button
-                onClick={() => {
-                  setMobileMenuOpen(false);
-                  handleToggleGlobalTheme();
-                }}
-                id="theme-mode-toggle-mobile"
-                className="w-full flex items-center justify-center gap-2 py-2 px-3 rounded text-[11px] font-bold bg-slate-900 border border-slate-800 text-slate-300 hover:text-white hover:bg-slate-800/60 transition-all cursor-pointer select-none"
-              >
-                {(db?.settings?.themeMode || 'light') === 'dark' ? (
-                  <>
-                    <Sun className="w-3.5 h-3.5 text-amber-500 shrink-0" />
-                    <span>{language === 'ar' ? '☀️ مظهر فاتح' : '☀️ Mode Clair'}</span>
-                  </>
-                ) : (
-                  <>
-                    <Moon className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
-                    <span>{language === 'ar' ? '🌙 مظهر داكن' : '🌙 Mode Sombre'}</span>
-                  </>
-                )}
-              </button>
-
-              {/* Mobile Logout Button representing the settings gear / 'écrou' */}
-              <button
-                onClick={() => {
-                  setMobileMenuOpen(false);
-                  setIsConfirmingLogout(false);
-                  setShowLogoutCenterModal(true);
-                }}
-                className="w-full flex items-center justify-center gap-2 py-2 px-3 rounded text-[11px] font-bold bg-rose-950/25 hover:bg-rose-900/35 border border-rose-900/20 text-rose-400 hover:text-rose-350 transition-all cursor-pointer select-none group"
-              >
-                <Settings className="w-3.5 h-3.5 animate-spin-slow group-hover:rotate-45 transition-transform" />
-                <span>{language === 'ar' ? '⚙️ إعدادات الخروج والربط' : '⚙️ Déconnexion & Synchro'}</span>
-              </button>
-
-
-            </div>
-          </aside>
-        </div>
-      )}
+            </motion.aside>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* MAIN LAYOUT WRAPPER */}
       <div className="flex-1 flex flex-col min-h-screen overflow-hidden">
@@ -1961,9 +2079,9 @@ function AppContent() {
         </header>
 
         {/* CONTAINER FOR CONTENT */}
-        <div className={`flex-1 overflow-y-auto custom-scrollbar flex flex-col justify-between ${isAppFullscreen && activeTab === 'pos' ? 'pt-0' : 'pt-16 lg:pt-0'}`}>
-          <main className={`flex-1 ${isAppFullscreen && activeTab === 'pos' ? 'p-0' : 'p-4 md:p-8'}`}>
-            <div className={`${isAppFullscreen && activeTab === 'pos' ? 'w-full pb-0' : 'max-w-7xl mx-auto pb-12'} print-card`}>
+        <div className={`flex-1 ${isAppFullscreen && activeTab === 'pos' ? 'h-screen overflow-hidden pt-0' : 'overflow-y-auto custom-scrollbar pt-16 lg:pt-0'} flex flex-col justify-between`}>
+          <main className={`flex-1 ${isAppFullscreen && activeTab === 'pos' ? 'h-screen overflow-hidden p-0' : 'p-4 md:p-8'}`}>
+            <div className={`${isAppFullscreen && activeTab === 'pos' ? 'w-full h-full pb-0 overflow-hidden' : 'max-w-7xl mx-auto pb-12'} print-card`}>
               
               {/* Responsive Offline Alert Strip */}
               {isEffectiveOffline && (
@@ -2072,7 +2190,7 @@ function AppContent() {
                     exit={{ opacity: 0, y: -12 }}
                     transition={{ duration: 0.22, ease: "easeInOut" }}
                   >
-                    <Dashboard db={db} onNavigate={(tab) => { setActiveTab(tab); }} onUpdateDb={handleUpdateDb} />
+                    <Dashboard db={db} onNavigate={(tab) => { setActiveTab(tab); }} onUpdateDb={handleUpdateDb} license={license} />
                   </motion.div>
                 )}
                 {activeTab === 'pos' && (
@@ -2082,6 +2200,7 @@ function AppContent() {
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0, y: -12 }}
                     transition={{ duration: 0.22, ease: "easeInOut" }}
+                    className={isAppFullscreen ? "h-full w-full flex flex-col" : ""}
                   >
                     <POS db={db} onUpdateDb={handleUpdateDb} onNavigate={(tab) => { setActiveTab(tab); }} />
                   </motion.div>
