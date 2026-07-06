@@ -454,7 +454,29 @@ export default function DatabaseControl({ db, onUpdateDb, license, user }: Datab
     );
   };
 
-  const [isUnlocked, setIsUnlocked] = useState<boolean>(false);
+  const [isUnlocked, setIsUnlocked] = useState<boolean>(() => {
+    if (user && user.email) {
+      const emailLower = user.email.toLowerCase();
+      return emailLower === 'walakharouf665@gmail.com' ||
+             emailLower === 'walakharouf6665@gmail.com' ||
+             emailLower === 'kharoufwala24@gmail.com';
+    }
+    return false;
+  });
+
+  useEffect(() => {
+    if (user && user.email) {
+      const emailLower = user.email.toLowerCase();
+      if (
+        emailLower === 'walakharouf665@gmail.com' ||
+        emailLower === 'walakharouf6665@gmail.com' ||
+        emailLower === 'kharoufwala24@gmail.com'
+      ) {
+        setIsUnlocked(true);
+      }
+    }
+  }, [user]);
+
   const [pinEntry, setPinEntry] = useState('');
   const [pinGateError, setPinGateError] = useState(false);
   const [showGatePin, setShowGatePin] = useState(false);
