@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { DatabaseState, Product } from '../types';
+import { DatabaseState, Product, ProductBatch } from '../types';
 import { getProductVisual, isProductInPromo, getActiveProductPrice } from '../utils/db';
 import ProductPromotionsModal from './ProductPromotionsModal';
 import { useLanguage } from '../utils/LanguageContext';
@@ -87,6 +87,10 @@ export default function Products({ db, onUpdateDb }: ProductsProps) {
   const [isFoodProduct, setIsFoodProduct] = useState(false);
   const [tvaRate, setTvaRate] = useState<number>(19); // 0%, 7%, 19%
   const [isNewCategory, setIsNewCategory] = useState(false);
+  const [batches, setBatches] = useState<ProductBatch[]>([]);
+  const [newBatchExpiry, setNewBatchExpiry] = useState('');
+  const [newBatchQty, setNewBatchQty] = useState('');
+  const [newBatchPurchase, setNewBatchPurchase] = useState('');
 
   // Rapid price update states
   const [editPriceProductId, setEditPriceProductId] = useState<string | null>(null);
@@ -242,7 +246,52 @@ export default function Products({ db, onUpdateDb }: ProductsProps) {
   const handleQuickStockAdjust = (productId: string, delta: number) => {
     const updatedProducts = db.products.map(p => {
       if (p.id === productId) {
-        return { ...p, stock: Math.max(0, p.stock + delta) };
+        const newStock = Math.max(0, p.stock + delta);
+        let updatedBatches = p.batches;
+        if (p.batches && p.batches.length > 0) {
+          const cloned = p.batches.map(b => ({ ...b }));
+          if (delta > 0) {
+            // Add to the first batch
+            cloned[0].stock = parseFloat((cloned[0].stock + delta).toFixed(3));
+          } else if (delta < 0) {
+            // Deduct using FEFO/FIFO
+            let qtyToDeduct = Math.abs(delta);
+            cloned.sort((a, b) => {
+              if (!a.expiryDate) return 1;
+              if (!b.expiryDate) return -1;
+              return a.expiryDate.localeCompare(b.expiryDate);
+            });
+            for (let i = 0; i < cloned.length; i++) {
+              if (qtyToDeduct <= 0) break;
+              if (cloned[i].stock >= qtyToDeduct) {
+                cloned[i].stock = parseFloat((cloned[i].stock - qtyToDeduct).toFixed(3));
+                qtyToDeduct = 0;
+              } else {
+                qtyToDeduct = parseFloat((qtyToDeduct - cloned[i].stock).toFixed(3));
+                cloned[i].stock = 0;
+              }
+            }
+          }
+          updatedBatches = cloned;
+        }
+
+        // Recalculate earliest expiry
+        let newExpiry = p.expiryDate;
+        if (updatedBatches && updatedBatches.length > 0) {
+          const activeBatches = updatedBatches.filter(b => b.stock > 0);
+          if (activeBatches.length > 0) {
+            activeBatches.sort((a, b) => a.expiryDate.localeCompare(b.expiryDate));
+            newExpiry = activeBatches[0].expiryDate;
+          }
+        }
+
+        return { 
+          ...p, 
+          stock: newStock,
+          batches: updatedBatches,
+          expiryDate: newExpiry,
+          dateExpiration: newExpiry
+        };
       }
       return p;
     });
@@ -262,7 +311,34 @@ export default function Products({ db, onUpdateDb }: ProductsProps) {
 
     const updatedProducts = db.products.map(p => {
       if (p.id === productId) {
-        return { ...p, stock: num };
+        let updatedBatches = p.batches;
+        if (p.batches && p.batches.length > 0) {
+          const cloned = p.batches.map(b => ({ ...b }));
+          // Set the first batch stock to the new total (or adjust if multiple)
+          cloned[0].stock = num;
+          // Zero out others if they want a direct override, or just keep first
+          for (let i = 1; i < cloned.length; i++) {
+            cloned[i].stock = 0;
+          }
+          updatedBatches = cloned;
+        }
+
+        let newExpiry = p.expiryDate;
+        if (updatedBatches && updatedBatches.length > 0) {
+          const activeBatches = updatedBatches.filter(b => b.stock > 0);
+          if (activeBatches.length > 0) {
+            activeBatches.sort((a, b) => a.expiryDate.localeCompare(b.expiryDate));
+            newExpiry = activeBatches[0].expiryDate;
+          }
+        }
+
+        return { 
+          ...p, 
+          stock: num,
+          batches: updatedBatches,
+          expiryDate: newExpiry,
+          dateExpiration: newExpiry
+        };
       }
       return p;
     });
@@ -362,6 +438,10 @@ export default function Products({ db, onUpdateDb }: ProductsProps) {
     setTvaRate(customRates.includes(19) ? 19 : (customRates[0] !== undefined ? customRates[0] : 19));
     setIsNewCategory(false);
     setEmailAlertsEnabled(true);
+    setBatches([]);
+    setNewBatchExpiry('');
+    setNewBatchQty('');
+    setNewBatchPurchase('');
     setShowFormModal(true);
   };
 
@@ -383,7 +463,69 @@ export default function Products({ db, onUpdateDb }: ProductsProps) {
     setTvaRate(prod.tvaRate !== undefined ? prod.tvaRate : 19);
     setIsNewCategory(false);
     setEmailAlertsEnabled(prod.emailAlertsEnabled !== false);
+    setBatches(prod.batches || []);
+    setNewBatchExpiry('');
+    setNewBatchQty('');
+    setNewBatchPurchase('');
     setShowFormModal(true);
+  };
+
+  // Add a new product batch with its own expiry date and quantity
+  const handleAddBatch = (batchExpiry: string, qtyStr: string, purchaseStr: string) => {
+    if (!batchExpiry) {
+      showToast(language === 'ar' ? 'الرجاء تحديد تاريخ انتهاء الصلاحية للدفعة' : "Veuillez saisir la date d'expiration du lot", 'error');
+      return;
+    }
+    const numQty = Number(qtyStr);
+    if (isNaN(numQty) || numQty <= 0) {
+      showToast(language === 'ar' ? 'الرجاء إدخال كمية صالحة للدفعة' : 'Veuillez saisir une quantité valide pour le lot', 'error');
+      return;
+    }
+    const numPurchase = purchaseStr.trim() ? Number(purchaseStr) : undefined;
+
+    const newBatch: ProductBatch = {
+      id: `batch-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+      expiryDate: batchExpiry,
+      stock: numQty,
+      purchasePrice: numPurchase
+    };
+
+    const updated = [...batches, newBatch];
+    setBatches(updated);
+
+    // Recalculate total stock and earliest expiry
+    const totalStock = updated.reduce((sum, b) => sum + b.stock, 0);
+    setStock(totalStock);
+
+    // Sort to find the earliest active expiry date
+    const sorted = [...updated].sort((a, b) => a.expiryDate.localeCompare(b.expiryDate));
+    if (sorted[0]) {
+      setExpiryDate(sorted[0].expiryDate);
+    }
+
+    // Reset input fields
+    setNewBatchExpiry('');
+    setNewBatchQty('');
+    setNewBatchPurchase('');
+
+    showToast(language === 'ar' ? 'تمت إضافة الدفعة بنجاح' : 'Lot ajouté avec succès', 'success');
+  };
+
+  // Remove a product batch from the list
+  const handleRemoveBatch = (batchId: string) => {
+    const updated = batches.filter(b => b.id !== batchId);
+    setBatches(updated);
+
+    // Recalculate total stock and earliest expiry
+    const totalStock = updated.reduce((sum, b) => sum + b.stock, 0);
+    setStock(totalStock);
+
+    if (updated.length > 0) {
+      const sorted = [...updated].sort((a, b) => a.expiryDate.localeCompare(b.expiryDate));
+      setExpiryDate(sorted[0].expiryDate);
+    }
+
+    showToast(language === 'ar' ? 'تمت إزالة الدفعة' : 'Lot supprimé', 'info');
   };
 
   // Form Submit Action handles both Add & Edit
@@ -418,6 +560,9 @@ export default function Products({ db, onUpdateDb }: ProductsProps) {
     }
 
     let updatedProducts = [...db.products];
+    const finalStock = batches.length > 0 ? batches.reduce((sum, b) => sum + b.stock, 0) : Number(stock);
+    const sortedBatches = [...batches].sort((a, b) => a.expiryDate.localeCompare(b.expiryDate));
+    const finalExpiry = sortedBatches.length > 0 ? sortedBatches[0].expiryDate : expiryDate;
 
     if (editingProduct) {
       // Edit mode
@@ -450,17 +595,18 @@ export default function Products({ db, onUpdateDb }: ProductsProps) {
             category: category.trim() || 'Divers',
             purchasePrice: newPurchase,
             sellingPrice: newSelling,
-            stock: Number(stock),
+            stock: finalStock,
             minAlertQty: Number(minAlertQty),
             unit,
             image: image.trim() || undefined,
-            expiryDate: expiryDate ? expiryDate : undefined,
-            dateExpiration: expiryDate ? expiryDate : undefined,
+            expiryDate: finalExpiry ? finalExpiry : undefined,
+            dateExpiration: finalExpiry ? finalExpiry : undefined,
             weightVolume: isFoodProduct ? weightVolume : undefined,
             isFoodProduct: isFoodProduct,
             emailAlertsEnabled: emailAlertsEnabled,
             tvaRate: Number(tvaRate),
-            priceHistory: currentHistory
+            priceHistory: currentHistory,
+            batches: batches.length > 0 ? batches : undefined
           };
         }
         return p;
@@ -474,12 +620,12 @@ export default function Products({ db, onUpdateDb }: ProductsProps) {
         category: category.trim() || 'Divers',
         purchasePrice: Number(purchasePrice),
         sellingPrice: Number(sellingPrice),
-        stock: Number(stock),
+        stock: finalStock,
         minAlertQty: Number(minAlertQty),
         unit,
         image: image.trim() || undefined,
-        expiryDate: expiryDate ? expiryDate : undefined,
-        dateExpiration: expiryDate ? expiryDate : undefined,
+        expiryDate: finalExpiry ? finalExpiry : undefined,
+        dateExpiration: finalExpiry ? finalExpiry : undefined,
         weightVolume: isFoodProduct ? weightVolume : undefined,
         isFoodProduct: isFoodProduct,
         emailAlertsEnabled: emailAlertsEnabled,
@@ -491,7 +637,8 @@ export default function Products({ db, onUpdateDb }: ProductsProps) {
           newSellingPrice: Number(sellingPrice),
           oldPurchasePrice: 0,
           newPurchasePrice: Number(purchasePrice)
-        }]
+        }],
+        batches: batches.length > 0 ? batches : undefined
       };
       updatedProducts.unshift(newProd);
     }
@@ -1067,7 +1214,21 @@ export default function Products({ db, onUpdateDb }: ProductsProps) {
                                   📅 EXP: {prod.dateExpiration || prod.expiryDate}
                                 </span>
                               )}
+                              {prod.batches && prod.batches.length > 0 && (
+                                <span className="bg-indigo-100 text-indigo-800 border border-indigo-200 text-[8.5px] font-black uppercase px-1 rounded flex items-center gap-0.5 shrink-0" title={`${prod.batches.length} lots`}>
+                                  📦 {prod.batches.length} {language === 'ar' ? 'دفعات' : 'Lots'}
+                                </span>
+                              )}
                             </div>
+                            {prod.batches && prod.batches.length > 0 && (
+                              <div className="mt-1 text-[9px] text-slate-500 font-mono flex flex-wrap gap-1">
+                                {prod.batches.map((b, idx) => (
+                                  <span key={b.id || idx} className="bg-slate-100 border border-slate-205 px-1 py-0.5 rounded" title={`Lot ${idx + 1}`}>
+                                    EXP: {b.expiryDate} ({b.stock} {prod.unit})
+                                  </span>
+                                ))}
+                              </div>
+                            )}
                           </div>
                         </div>
                       </td>
@@ -1578,32 +1739,144 @@ export default function Products({ db, onUpdateDb }: ProductsProps) {
                 </div>
               )}
 
-              {/* Date d'expiration - General Field */}
-              <div className="bg-rose-50/20 p-3.5 rounded-xl border border-rose-100/70 space-y-2 no-print">
-                <div className="flex items-start gap-2">
-                  <span className="text-sm">📅</span>
-                  <div>
-                    <span className="text-xs font-bold text-slate-800 block">
-                      {language === 'ar' ? 'تاريخ انتهاء الصلاحية' : "Date d'expiration / Péremption"}
-                    </span>
-                    <span className="text-[10px] text-slate-550 block">
-                      {language === 'ar' ? 'قم بتحديد تاريخ لتلقي تنبيهات تلقائية بانتهاء الصلاحية على لوحة التحكم.' : 'Indiquez une date pour déclencher automatiquement des alertes visuelles sur le tableau de bord.'}
-                    </span>
+              {/* Date d'expiration et Gestion des Lots / Batches */}
+              <div className="bg-rose-50/25 p-4 rounded-xl border border-rose-100/80 space-y-3.5 no-print">
+                <div className="flex items-start justify-between">
+                  <div className="flex items-start gap-2">
+                    <span className="text-base">📅</span>
+                    <div>
+                      <span className="text-xs font-bold text-slate-800 block">
+                        {language === 'ar' ? 'تاريخ انتهاء الصلاحية وإدارة الدفعات' : "Dates d'expiration & Gestion des Lots"}
+                      </span>
+                      <span className="text-[10px] text-slate-550 block">
+                        {language === 'ar' 
+                          ? 'تنبيهات تلقائية وإدخال دفعات متعددة بتواريخ صلاحية مختلفة لنفس المنتج.' 
+                          : 'Alertes automatiques et gestion de plusieurs lots avec des dates de péremption distinctes.'}
+                      </span>
+                    </div>
                   </div>
                 </div>
-                <div className="pt-1.5 border-t border-rose-100/60 flex flex-col sm:flex-row items-center gap-3">
-                  <div className="w-full">
-                    <label htmlFor="dateExpirationInput" className="text-[9.5px] font-bold text-rose-900 block mb-1 uppercase tracking-wider">
-                      {language === 'ar' ? 'تحديد التاريخ (الملء اختياري)' : "Date limite de conservation / péremption (Facultatif)"}
-                    </label>
-                    <input
-                      type="date"
-                      id="dateExpirationInput"
-                      value={expiryDate}
-                      onChange={(e) => setExpiryDate(e.target.value)}
-                      className="w-full max-w-xs bg-white border border-rose-200/80 rounded py-1.5 px-3 focus:outline-hidden text-slate-800 font-bold font-mono transition-shadow focus:ring-1 focus:ring-rose-450"
-                    />
+
+                {/* Single Date vs Multi-Batch Selector / display */}
+                <div className="pt-2.5 border-t border-rose-100/60 space-y-3">
+                  {/* Add a batch subform */}
+                  <div className="bg-white/80 p-3 rounded-lg border border-rose-100/50 space-y-2.5">
+                    <span className="text-[10px] font-extrabold text-rose-955 uppercase tracking-wide block">
+                      {language === 'ar' ? '➕ إضافة دفعة جديدة بتأريخ مخصص :' : '➕ Ajouter un lot / lot de péremption :'}
+                    </span>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                      <div>
+                        <label className="text-[9px] font-bold text-slate-600 block mb-1">
+                          {language === 'ar' ? 'تاريخ الانتهاء *' : "Date d'Expiration *"}
+                        </label>
+                        <input
+                          type="date"
+                          value={newBatchExpiry}
+                          onChange={(e) => setNewBatchExpiry(e.target.value)}
+                          className="w-full bg-slate-50 border border-slate-200 rounded p-1 px-2 text-xs font-mono font-bold"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[9px] font-bold text-slate-600 block mb-1">
+                          {language === 'ar' ? 'كمية الدفعة *' : 'Quantité du Lot *'}
+                        </label>
+                        <input
+                          type="number"
+                          min="1"
+                          step="any"
+                          placeholder="Ex: 50"
+                          value={newBatchQty}
+                          onChange={(e) => setNewBatchQty(e.target.value)}
+                          className="w-full bg-slate-50 border border-slate-200 rounded p-1 px-2 text-xs font-mono font-bold"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[9px] font-bold text-slate-600 block mb-1">
+                          {language === 'ar' ? 'سعر الشراء (اختياري)' : "Prix d'Achat (Optionnel)"}
+                        </label>
+                        <input
+                          type="number"
+                          step="any"
+                          placeholder="Ex: 1.200"
+                          value={newBatchPurchase}
+                          onChange={(e) => setNewBatchPurchase(e.target.value)}
+                          className="w-full bg-slate-50 border border-slate-200 rounded p-1 px-2 text-xs font-mono font-bold"
+                        />
+                      </div>
+                    </div>
+                    <div className="flex justify-end">
+                      <button
+                        type="button"
+                        onClick={() => handleAddBatch(newBatchExpiry, newBatchQty, newBatchPurchase)}
+                        className="py-1 px-3 bg-rose-600 hover:bg-rose-700 text-white rounded text-[10px] font-extrabold cursor-pointer transition-all shadow-3xs flex items-center gap-1"
+                      >
+                        <span>{language === 'ar' ? 'إضافة الدفعة للجدول' : 'Ajouter le lot'}</span>
+                      </button>
+                    </div>
                   </div>
+
+                  {/* List of active batches */}
+                  {batches.length > 0 ? (
+                    <div className="space-y-1.5">
+                      <span className="text-[9.5px] font-bold text-rose-900 uppercase tracking-wider block">
+                        {language === 'ar' ? '📋 الدفعات المسجلة حالياً لهذا المنتج :' : '📋 Lots enregistrés pour cet article :'}
+                      </span>
+                      <div className="max-h-[150px] overflow-y-auto border border-rose-100/60 rounded-lg bg-white/50 divide-y divide-rose-50 font-mono text-xs">
+                        {batches.map((b, idx) => {
+                          const isExpired = new Date(b.expiryDate) < new Date();
+                          return (
+                            <div key={b.id || idx} className="p-2 flex items-center justify-between hover:bg-rose-50/30 transition-colors">
+                              <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                                <span className="font-bold text-slate-500">#{idx + 1}</span>
+                                <span className={`font-bold ${isExpired ? 'text-rose-600 font-black' : 'text-slate-800'}`}>
+                                  📅 {b.expiryDate} {isExpired && (language === 'ar' ? '(منتهي!)' : '(Expiré!)')}
+                                </span>
+                                <span className="px-1.5 py-0.5 bg-emerald-50 text-emerald-800 rounded font-bold text-[10.5px]">
+                                  📦 {b.stock} {unit}
+                                </span>
+                                {b.purchasePrice !== undefined && (
+                                  <span className="text-[10px] text-slate-500">
+                                    💰 {formatCurrency(b.purchasePrice)}
+                                  </span>
+                                )}
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => handleRemoveBatch(b.id)}
+                                className="text-rose-500 hover:text-rose-700 font-bold p-1 px-1.5 hover:bg-rose-100 rounded transition-all"
+                                title={language === 'ar' ? 'حذف الدفعة' : 'Supprimer le lot'}
+                              >
+                                🗑️
+                              </button>
+                            </div>
+                          );
+                        })}
+                      </div>
+                      <div className="p-2 bg-rose-50/40 rounded border border-rose-100/40 text-[10.5px] text-rose-955 leading-relaxed font-sans">
+                        💡 {language === 'ar' 
+                          ? `إجمالي المخزون محسوب تلقائياً من مجموع الدفعات: ${batches.reduce((sum, b) => sum + b.stock, 0)} ${unit} (أقرب تاريخ صلاحية: ${[...batches].sort((a,b)=>a.expiryDate.localeCompare(b.expiryDate))[0]?.expiryDate || ''})`
+                          : `Stock total calculé automatiquement : ${batches.reduce((sum, b) => sum + b.stock, 0)} ${unit} (Péremption la plus proche : ${[...batches].sort((a,b)=>a.expiryDate.localeCompare(b.expiryDate))[0]?.expiryDate || ''})`}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      <label htmlFor="dateExpirationInput" className="text-[9.5px] font-bold text-rose-900 block mb-1 uppercase tracking-wider">
+                        {language === 'ar' ? 'تاريخ انتهاء عام للمنتج (في حالة عدم استخدام الدفعات)' : "Date limite de conservation générale (sans lots)"}
+                      </label>
+                      <input
+                        type="date"
+                        id="dateExpirationInput"
+                        value={expiryDate}
+                        onChange={(e) => setExpiryDate(e.target.value)}
+                        className="w-full max-w-xs bg-white border border-rose-200/80 rounded py-1.5 px-3 focus:outline-hidden text-slate-800 font-bold font-mono transition-shadow focus:ring-1 focus:ring-rose-450 text-xs"
+                      />
+                      <span className="text-[10px] text-slate-450 block font-sans">
+                        💡 {language === 'ar' 
+                          ? 'تلميح: يمكنك إدخال دفعات متعددة في الأعلى لتتبع تواريخ انتهاء صلاحية مختلفة لنفس المنتج بالتفصيل.' 
+                          : 'Astuce : Vous pouvez utiliser la section ci-dessus pour ajouter plusieurs lots à dates d\'expiration différentes.'}
+                      </span>
+                    </div>
+                  )}
                 </div>
               </div>
 

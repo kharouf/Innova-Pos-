@@ -525,7 +525,7 @@ export default function DatabaseControl({ db, onUpdateDb, license, user }: Datab
   const [tvaAlimentaire, setTvaAlimentaire] = useState<number>(initialSettings.tvaAlimentaire || 7);
   const [customTvaRates, setCustomTvaRates] = useState<number[]>(initialSettings.customTvaRates || [0, 7, 13, 19]);
   const [enableExpiryAlerts, setEnableExpiryAlerts] = useState<boolean>(initialSettings.enableExpiryAlerts ?? true);
-  const [expiryAlertDays, setExpiryAlertDays] = useState<number>(initialSettings.expiryAlertDays || 30);
+  const [expiryAlertDays, setExpiryAlertDays] = useState<number>(initialSettings.expiryAlertDays || 7);
 
   const [conventionCnam, setConventionCnam] = useState<string>(initialSettings.conventionCnam || '');
   const [tauxRemboursementCnam, setTauxRemboursementCnam] = useState<number>(initialSettings.tauxRemboursementCnam || 80);
@@ -540,6 +540,7 @@ export default function DatabaseControl({ db, onUpdateDb, license, user }: Datab
 
   // 🎫 Thermal Ticket Print Layout state hooks
   const [receiptShowLogo, setReceiptShowLogo] = useState<boolean>(initialSettings.receiptShowLogo ?? true);
+  const [receiptAutoPrintSale, setReceiptAutoPrintSale] = useState<boolean>(initialSettings.receiptAutoPrintSale ?? false);
   const [receiptShowStoreDetails, setReceiptShowStoreDetails] = useState<boolean>(initialSettings.receiptShowStoreDetails ?? true);
   const [receiptCustomThankYou, setReceiptCustomThankYou] = useState<string>(initialSettings.receiptCustomThankYou ?? 'Merci pour votre visite !');
   const [receiptShowCommercialTerms, setReceiptShowCommercialTerms] = useState<boolean>(initialSettings.receiptShowCommercialTerms ?? true);
@@ -608,7 +609,7 @@ export default function DatabaseControl({ db, onUpdateDb, license, user }: Datab
       setTvaAlimentaire(s.tvaAlimentaire || 7);
       setCustomTvaRates(s.customTvaRates || [0, 7, 13, 19]);
       setEnableExpiryAlerts(s.enableExpiryAlerts ?? true);
-      setExpiryAlertDays(s.expiryAlertDays || 30);
+      setExpiryAlertDays(s.expiryAlertDays || 7);
       setConventionCnam(s.conventionCnam || '');
       setTauxRemboursementCnam(s.tauxRemboursementCnam || 80);
       setRequiresPrescriptionByDefault(s.requiresPrescriptionByDefault ?? false);
@@ -618,6 +619,7 @@ export default function DatabaseControl({ db, onUpdateDb, license, user }: Datab
       setDefaultWarrantyMonths(s.defaultWarrantyMonths || 12);
       setEnableLoyaltyPoints(s.enableLoyaltyPoints ?? false);
       setReceiptShowLogo(s.receiptShowLogo ?? true);
+      setReceiptAutoPrintSale(s.receiptAutoPrintSale ?? false);
       setReceiptShowStoreDetails(s.receiptShowStoreDetails ?? true);
       setReceiptCustomThankYou(s.receiptCustomThankYou ?? 'Merci pour votre visite !');
       setReceiptShowCommercialTerms(s.receiptShowCommercialTerms ?? true);
@@ -689,6 +691,7 @@ export default function DatabaseControl({ db, onUpdateDb, license, user }: Datab
       defaultWarrantyMonths,
       enableLoyaltyPoints,
       receiptShowLogo,
+      receiptAutoPrintSale,
       receiptShowStoreDetails,
       receiptCustomThankYou,
       receiptShowCommercialTerms,
@@ -1180,6 +1183,7 @@ encryption_mode: High-Security Advanced
       defaultWarrantyMonths,
       enableLoyaltyPoints,
       receiptShowLogo,
+      receiptAutoPrintSale,
       receiptShowStoreDetails,
       receiptCustomThankYou,
       receiptShowCommercialTerms,
@@ -2209,6 +2213,20 @@ encryption_mode: High-Security Advanced
                 </p>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+                  {/* Toggle Auto Print */}
+                  <div className="flex items-center gap-2 bg-amber-50/50 border border-amber-200 p-3 rounded-lg shadow-2xs hover:bg-amber-50 transition-colors">
+                    <input
+                      type="checkbox"
+                      id="receiptAutoPrintSale"
+                      checked={receiptAutoPrintSale}
+                      onChange={(e) => setReceiptAutoPrintSale(e.target.checked)}
+                      className="w-4 h-4 text-amber-600 rounded border-amber-300 focus:ring-amber-500 cursor-pointer"
+                    />
+                    <label htmlFor="receiptAutoPrintSale" className="text-xs font-bold text-slate-800 cursor-pointer select-none">
+                      {language === 'ar' ? 'طباعة تلقائية للتذاكر بعد كل بيع' : 'Impression automatique après vente'}
+                    </label>
+                  </div>
+
                   {/* Toggle Logo */}
                   <div className="flex items-center gap-2 bg-white border border-slate-200 p-3 rounded-lg shadow-2xs hover:bg-slate-50 transition-colors">
                     <input

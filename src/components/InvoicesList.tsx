@@ -13,8 +13,11 @@ import {
   Receipt,
   CheckCircle,
   X,
-  Download
+  Download,
+  Trash2,
+  AlertTriangle
 } from 'lucide-react';
+import { motion, AnimatePresence } from 'motion/react';
 import { downloadInvoicePDF } from '../utils/pdfGenerator';
 import { checkIsIframe } from '../utils/storage';
 
@@ -39,6 +42,7 @@ export default function InvoicesList({ db, onUpdateDb }: InvoicesListProps) {
   const [printFormat, setPrintFormat] = useState<'a4' | 'ticket'>(
     db.settings?.activitySector === 'superette' ? 'ticket' : 'a4'
   );
+  const [deleteInvoiceId, setDeleteInvoiceId] = useState<string | null>(null);
 
   const filteredInvoices = useMemo(() => {
     return (db.invoices || []).filter(inv => {
@@ -125,6 +129,26 @@ export default function InvoicesList({ db, onUpdateDb }: InvoicesListProps) {
     setSelectedInvoice(null);
     setPaymentInput('');
     showToast("✅ Le paiement partiel a été appliqué avec succès !", 'success');
+  };
+
+  const handleDeleteInvoiceConfirm = () => {
+    if (deleteInvoiceId) {
+      const updatedInvoices = (db.invoices || []).filter(inv => inv.id !== deleteInvoiceId);
+      const updatedPayments = (db.payments || []).filter(pay => pay.invoiceId !== deleteInvoiceId);
+
+      onUpdateDb({
+        ...db,
+        invoices: updatedInvoices,
+        payments: updatedPayments
+      });
+      setDeleteInvoiceId(null);
+      showToast(
+        language === 'ar' 
+          ? '✅ تم حذف وثيقة الفاتورة والمدفوعات المرتبطة بها بنجاح!' 
+          : '✅ La facture et ses paiements associés ont été supprimés avec succès !', 
+        'success'
+      );
+    }
   };
 
   const handlePrint = () => {
@@ -337,6 +361,13 @@ export default function InvoicesList({ db, onUpdateDb }: InvoicesListProps) {
                           className="p-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg cursor-pointer"
                         >
                           <Eye className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          onClick={() => setDeleteInvoiceId(inv.id)}
+                          title={language === 'ar' ? 'حذف الفاتورة' : 'Supprimer la facture'}
+                          className="p-1.5 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-lg cursor-pointer transition-colors"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
                         </button>
                       </td>
                     </tr>
@@ -755,6 +786,98 @@ export default function InvoicesList({ db, onUpdateDb }: InvoicesListProps) {
       </div>
     );
   })()}
+
+      {/* 🧾 DETAILED INVOICE DELETE CONFIRMATION MODAL */}
+      <AnimatePresence>
+        {deleteInvoiceId && (() => {
+          const invoice = db.invoices.find(inv => inv.id === deleteInvoiceId);
+          if (!invoice) return null;
+          
+          return (
+            <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-3 md:p-4 z-55 overflow-y-auto no-print" style={{ zIndex: 99999 }}>
+              <motion.div
+                initial={{ opacity: 0, scale: 0.95, y: 15 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.95, y: 15 }}
+                transition={{ duration: 0.15 }}
+                className="bg-white rounded-2xl max-w-md w-full p-5 md:p-6 shadow-2xl space-y-4 border border-rose-100 text-start my-auto relative font-sans"
+                dir={language === 'ar' ? 'rtl' : 'ltr'}
+              >
+                {/* Visual warning background pattern */}
+                <div className="absolute top-0 right-0 w-32 h-32 bg-rose-50/40 rounded-full blur-3xl pointer-events-none"></div>
+                
+                <div className="flex items-start gap-3 relative">
+                  <div className="p-2.5 bg-rose-50 rounded-full text-rose-600 shrink-0">
+                    <AlertTriangle className="w-5 h-5 animate-pulse" />
+                  </div>
+                  <div className="space-y-1">
+                    <h3 className="text-base font-black text-rose-900 font-display">
+                      {language === 'ar' ? '⚠️ تنبيه: تأكيد حذف الوثيقة' : '⚠️ ALERTE : Supprimer le document'}
+                    </h3>
+                    <p className="text-xs text-rose-700 font-bold font-sans">
+                      {language === 'ar' 
+                        ? 'تنبيه هام جداً: هذا الإجراء سيقوم بإزالة هذه الفاتورة/الوثيقة بشكل نهائي من سجلات المبيعات والتقارير المالية.' 
+                        : "Attention critique : la suppression définitive de cette pièce l'effacera des registres comptables."}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="p-4 bg-slate-50 border border-slate-150 rounded-xl text-xs space-y-2.5 font-sans relative">
+                  <div className="flex justify-between items-center gap-2">
+                    <span className="text-slate-550 font-bold">{language === 'ar' ? 'رقم الوثيقة:' : 'Numéro Pièce :'}</span>
+                    <span className="font-extrabold text-slate-900 bg-slate-200/50 px-2 py-0.5 rounded font-mono">{invoice.number}</span>
+                  </div>
+                  <div className="flex justify-between items-center gap-2">
+                    <span className="text-slate-550 font-bold">{language === 'ar' ? 'نوع الوثيقة:' : 'Type de document :'}</span>
+                    <span className="font-bold text-blue-800 bg-blue-50 px-2 py-0.5 rounded uppercase">{invoice.type}</span>
+                  </div>
+                  <div className="flex justify-between items-center gap-2">
+                    <span className="text-slate-550 font-bold">{language === 'ar' ? 'العميل/الشريك:' : 'Client :'}</span>
+                    <span className="font-extrabold text-slate-900 truncate max-w-[200px]">{invoice.partnerName}</span>
+                  </div>
+                  <div className="flex justify-between items-center gap-2">
+                    <span className="text-slate-550 font-bold">{language === 'ar' ? 'التاريخ:' : 'Date :'}</span>
+                    <span className="font-bold text-slate-700 font-mono">{invoice.date.includes('T') ? invoice.date.split('T')[0] : invoice.date}</span>
+                  </div>
+                  <div className="flex justify-between items-center gap-2 border-t border-slate-200 pt-2">
+                    <span className="text-slate-550 font-bold">{language === 'ar' ? 'المبلغ الإجمالي:' : 'Montant Total :'}</span>
+                    <span className="font-extrabold text-slate-950 font-mono text-sm">{formatCurrency(invoice.total)}</span>
+                  </div>
+                </div>
+
+                <div className="bg-rose-50 border border-rose-150 rounded-lg p-3 text-[10.5px] text-rose-955 leading-relaxed space-y-1 font-sans">
+                  <strong className="block font-black uppercase text-[10px] tracking-wide text-rose-900">
+                    📢 {language === 'ar' ? 'تنبيه الأمان والامتثال :' : 'COMPTABILITÉ ET SÉCURITÉ :'}
+                  </strong>
+                  <p dir={language === 'ar' ? 'rtl' : 'ltr'}>
+                    {language === 'ar'
+                      ? 'سيتم حذف الفاتورة وأي مدفوعات مرتبطة بها من لوحة التحكم والتقارير المالية للمتجر. هذا الإجراء لا يمكن التراجع عنه.'
+                      : 'Cette action supprimera également les paiements rattachés à cette pièce de vos journaux de caisse. Ce processus est irréversible.'}
+                  </p>
+                </div>
+
+                <div className="flex justify-end gap-3 pt-3 border-t border-slate-100 font-sans">
+                  <button
+                    type="button"
+                    onClick={() => setDeleteInvoiceId(null)}
+                    className="px-4 py-2 bg-slate-100 hover:bg-slate-200 border border-slate-250 text-slate-700 rounded-lg text-xs font-bold cursor-pointer transition-colors"
+                  >
+                    {language === 'ar' ? 'إلغاء' : 'Annuler'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleDeleteInvoiceConfirm}
+                    className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-xs font-black cursor-pointer shadow-sm hover:shadow-md transition-all flex items-center gap-1.5"
+                  >
+                    <Trash2 className="w-3.5 h-3.5 shrink-0" />
+                    <span>{language === 'ar' ? 'نعم، احذف الوثيقة نهائياً' : 'Oui, Supprimer Définitivement'}</span>
+                  </button>
+                </div>
+              </motion.div>
+            </div>
+          );
+        })()}
+      </AnimatePresence>
 
     </div>
   );

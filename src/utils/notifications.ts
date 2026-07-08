@@ -592,3 +592,131 @@ export async function sendDailyLowStockSummaryEmail(
     ? { success: true } 
     : { success: false, error: response.error };
 }
+
+/**
+ * Triggers a beautiful HTML Expiry / Péremption notification email.
+ */
+export async function sendExpiringProductsSummaryEmail(
+  adminEmail: string,
+  storeName: string,
+  items: {
+    name: string;
+    code: string;
+    expiryDate: string;
+    daysRemaining: number;
+    stock: number;
+    unit: string;
+    batchInfo?: string;
+  }[],
+  language: 'fr' | 'ar',
+  smtpSettings?: any
+): Promise<{ success: boolean; error?: string }> {
+  const isArabic = language === 'ar';
+  const subject = isArabic
+    ? `⚠️ تنبيه: منتجات تقترب من انتهاء الصلاحية - ${storeName}`
+    : `⚠️ Alerte : Produits proches de la péremption - ${storeName}`;
+
+  const formattedDate = new Date().toLocaleDateString(language === 'ar' ? 'ar-TN' : 'fr-FR', {
+    weekday: 'long', year: 'numeric', month: 'long', day: 'numeric'
+  });
+
+  let tableRows = '';
+  if (items.length === 0) {
+    tableRows = `
+      <tr>
+        <td colspan="5" style="padding: 20px; text-align: center; color: #10b981; font-weight: bold; background-color: #f0fdf4;">
+          ${isArabic ? '✅ ممتاز! لا توجد منتجات تقترب من انتهاء صلاحيتها (أقل من 7 أيام).' : '✅ Excellent ! Aucun produit proche de l\'expiration (moins de 7 jours).'}
+        </td>
+      </tr>
+    `;
+  } else {
+    tableRows = items.map(item => {
+      const daysColor = item.daysRemaining <= 3 ? '#ef4444' : item.daysRemaining <= 5 ? '#f59e0b' : '#3b82f6';
+      const daysText = item.daysRemaining < 0 
+        ? (isArabic ? 'منتهي الصلاحية!' : 'Expiré !')
+        : (isArabic ? `${item.daysRemaining} يوم` : `${item.daysRemaining} jours`);
+
+      return `
+        <tr style="border-bottom: 1px solid #e5e7eb;">
+          <td style="padding: 12px 10px; color: #111827; font-weight: bold; text-align: ${isArabic ? 'right' : 'left'};">
+            ${item.name}
+            ${item.batchInfo ? `<br/><span style="font-size: 10px; color: #6b7280; font-weight: normal;">${item.batchInfo}</span>` : ''}
+          </td>
+          <td style="padding: 12px 10px; color: #4b5563; font-family: monospace; text-align: ${isArabic ? 'right' : 'left'};">${item.code}</td>
+          <td style="padding: 12px 10px; color: #111827; font-family: monospace; text-align: center;">${item.expiryDate}</td>
+          <td style="padding: 12px 10px; color: ${daysColor}; font-weight: bold; text-align: center;">${daysText}</td>
+          <td style="padding: 12px 10px; color: #111827; font-weight: bold; font-family: monospace; text-align: center;">
+            ${item.stock} <span style="font-size: 11px; font-weight: normal; color: #6b7280;">${item.unit}</span>
+          </td>
+        </tr>
+      `;
+    }).join('');
+  }
+
+  const html = isArabic
+    ? `
+    <div style="direction: rtl; font-family: system-ui, -apple-system, sans-serif; padding: 25px; border: 1px solid #f59e0b; border-radius: 16px; max-width: 650px; background-color: #fcfcfc; margin: 0 auto; box-shadow: 0 4px 12px rgba(0,0,0,0.05);">
+      <div style="text-align: center; margin-bottom: 20px;">
+        <span style="background-color: #f59e0b; color: white; padding: 6px 14px; border-radius: 20px; font-size: 11px; font-weight: bold; text-transform: uppercase; letter-spacing: 1px;">تقرير تواريخ انتهاء الصلاحية</span>
+      </div>
+      <h2 style="color: #b45309; margin-top: 10px; font-size: 20px; text-align: center; border-bottom: 2px solid #fef3c7; padding-bottom: 12px; margin-bottom: 15px;">⚠️ تنبيه السلع القريبة من انتهاء الصلاحية (&lt; 7 أيام)</h2>
+      <p style="font-size: 14px; color: #374151; line-height: 1.6; text-align: right; margin-top: 15px;">مرحباً،</p>
+      <p style="font-size: 14px; color: #374151; line-height: 1.6; text-align: right;">فيما يلي قائمة بالمنتجات والدفعات التي ستنتهي صلاحيتها خلال الـ 7 أيام القادمة أو انتهت بالفعل (تاريخ التقرير: <strong>${formattedDate}</strong>) :</p>
+      
+      <div style="background-color: white; border: 1px solid #e5e7eb; border-radius: 12px; padding: 8px; margin: 20px 0; overflow-x: auto; box-shadow: 0 1px 3px rgba(0,0,0,0.02);">
+        <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
+          <thead>
+            <tr style="background-color: #f9fafb; border-bottom: 2px solid #e5e7eb; text-align: right;">
+              <th style="padding: 10px; color: #374151; font-weight: bold; text-align: right;">المنتج</th>
+              <th style="padding: 10px; color: #374151; font-weight: bold; text-align: right;">الباركود</th>
+              <th style="padding: 10px; color: #374151; font-weight: bold; text-align: center;">تاريخ الانتهاء</th>
+              <th style="padding: 10px; color: #374151; font-weight: bold; text-align: center;">الأيام المتبقية</th>
+              <th style="padding: 10px; color: #374151; font-weight: bold; text-align: center;">الكمية</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${tableRows}
+          </tbody>
+        </table>
+      </div>
+      
+      <p style="font-size: 12px; color: #4b5563; line-height: 1.5; text-align: right; margin-top: 15px;">💡 يرجى مراجعة هذه السلع في الرفوف أو اتخاذ إجراءات مثل تقديم عروض ترويجية (Promotions) أو التنسيق مع الموردين للاسترجاع.</p>
+      <p style="font-size: 11px; color: #9ca3af; text-align: center; margin-top: 25px; border-top: 1px solid #f3f4f6; pt-15;">صدر هذا التنبيه التلقائي بشكل مؤمن من نظام INNOVA POS PRO.</p>
+    </div>
+    `
+    : `
+    <div style="font-family: system-ui, -apple-system, sans-serif; padding: 25px; border: 1px solid #f59e0b; border-radius: 16px; max-width: 650px; background-color: #fcfcfc; margin: 0 auto; box-shadow: 0 4px 12px rgba(0,0,0,0.05);">
+      <div style="text-align: center; margin-bottom: 20px;">
+        <span style="background-color: #f59e0b; color: white; padding: 6px 14px; border-radius: 20px; font-size: 11px; font-weight: bold; text-transform: uppercase; letter-spacing: 1px;">ALERTE DATES D'EXPIRATION</span>
+      </div>
+      <h2 style="color: #b45309; margin-top: 10px; font-size: 20px; text-align: center; border-bottom: 2px solid #fef3c7; padding-bottom: 12px; margin-bottom: 15px;">⚠️ Produits Proches de l'Expiration (&lt; 7 jours)</h2>
+      <p style="font-size: 14px; color: #374151; line-height: 1.6; text-align: left; margin-top: 15px;">Bonjour,</p>
+      <p style="font-size: 14px; color: #374151; line-height: 1.6; text-align: left;">Voici la synthèse des produits et lots de marchandises arrivant à expiration dans les 7 prochains jours ou déjà expirés pour le <strong>${formattedDate}</strong> :</p>
+      
+      <div style="background-color: white; border: 1px solid #e5e7eb; border-radius: 12px; padding: 8px; margin: 20px 0; overflow-x: auto; box-shadow: 0 1px 3px rgba(0,0,0,0.02);">
+        <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
+          <thead>
+            <tr style="background-color: #f9fafb; border-bottom: 2px solid #e5e7eb;">
+              <th style="padding: 10px; color: #374151; font-weight: bold; text-align: left;">Produit / Lot</th>
+              <th style="padding: 10px; color: #374151; font-weight: bold; text-align: left;">Code barre</th>
+              <th style="padding: 10px; color: #374151; font-weight: bold; text-align: center;">Péremption</th>
+              <th style="padding: 10px; color: #374151; font-weight: bold; text-align: center;">Jours restants</th>
+              <th style="padding: 10px; color: #374151; font-weight: bold; text-align: center;">Quantité</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${tableRows}
+          </tbody>
+        </table>
+      </div>
+      
+      <p style="font-size: 12px; color: #4b5563; line-height: 1.5; text-align: left; margin-top: 15px;">💡 Pensez à vérifier ces produits en rayon pour planifier des promotions spéciales ou négocier des retours avec vos fournisseurs.</p>
+      <p style="font-size: 11px; color: #9ca3af; text-align: center; margin-top: 25px; border-top: 1px solid #f3f4f6; pt-15;">Ce rapport de sécurité automatique a été généré en toute sécurité par INNOVA POS PRO.</p>
+    </div>
+    `;
+
+  const response = await sendCustomEmail(adminEmail, subject, html, smtpSettings);
+  return response.success 
+    ? { success: true } 
+    : { success: false, error: response.error };
+}

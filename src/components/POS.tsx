@@ -377,9 +377,17 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
   });
   const [autoPrint, setAutoPrint] = useState<boolean>(() => {
     const saved = safeLocalStorage.getItem('pos_auto_print');
-    // Default of autoPrint set to false to prevent blocking / freezing OS print dialogues during checkout validation
-    return saved === null ? false : saved === 'true';
+    if (saved !== null) return saved === 'true';
+    // Default of autoPrint set to false or loaded from database settings
+    return db.settings?.receiptAutoPrintSale ?? false;
   });
+
+  useEffect(() => {
+    const saved = safeLocalStorage.getItem('pos_auto_print');
+    if (saved === null && db.settings?.receiptAutoPrintSale !== undefined) {
+      setAutoPrint(db.settings.receiptAutoPrintSale);
+    }
+  }, [db.settings?.receiptAutoPrintSale]);
 
   const isMounted = useRef(true);
   const closeTimeoutRef = useRef<any>(null);
@@ -1301,9 +1309,56 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
     const updatedProducts = (db.products || []).map(p => {
       const cartItem = cart.find(item => item.product.id === p.id);
       if (cartItem) {
+        let updatedBatches = p.batches;
+        if (p.batches && p.batches.length > 0) {
+          const clonedBatches = p.batches.map(b => ({ ...b }));
+          // FEFO sorting: earliest expiry date first
+          clonedBatches.sort((a, b) => {
+            if (!a.expiryDate) return 1;
+            if (!b.expiryDate) return -1;
+            return a.expiryDate.localeCompare(b.expiryDate);
+          });
+
+          let qtyToDeduct = cartItem.qty;
+          if (qtyToDeduct > 0) {
+            for (let i = 0; i < clonedBatches.length; i++) {
+              if (qtyToDeduct <= 0) break;
+              if (clonedBatches[i].stock >= qtyToDeduct) {
+                clonedBatches[i].stock = parseFloat((clonedBatches[i].stock - qtyToDeduct).toFixed(3));
+                qtyToDeduct = 0;
+              } else {
+                qtyToDeduct = parseFloat((qtyToDeduct - clonedBatches[i].stock).toFixed(3));
+                clonedBatches[i].stock = 0;
+              }
+            }
+            if (qtyToDeduct > 0 && clonedBatches.length > 0) {
+              // Excess goes to last batch (first expired) or simply remains
+              clonedBatches[clonedBatches.length - 1].stock = parseFloat((clonedBatches[clonedBatches.length - 1].stock - qtyToDeduct).toFixed(3));
+            }
+          } else if (qtyToDeduct < 0) {
+            // Return mode: add back to first batch
+            const addedQty = Math.abs(qtyToDeduct);
+            clonedBatches[0].stock = parseFloat((clonedBatches[0].stock + addedQty).toFixed(3));
+          }
+          updatedBatches = clonedBatches;
+        }
+
+        // Auto recalculate earliest expiry date among batches with stock > 0
+        let newExpiry = p.expiryDate;
+        if (updatedBatches && updatedBatches.length > 0) {
+          const activeWithStock = updatedBatches.filter(b => b.stock > 0);
+          if (activeWithStock.length > 0) {
+            activeWithStock.sort((a, b) => a.expiryDate.localeCompare(b.expiryDate));
+            newExpiry = activeWithStock[0].expiryDate;
+          }
+        }
+
         return {
           ...p,
-          stock: Math.max(0, p.stock - cartItem.qty)
+          stock: Math.max(0, p.stock - cartItem.qty),
+          batches: updatedBatches,
+          expiryDate: newExpiry,
+          dateExpiration: newExpiry
         };
       }
       return p;

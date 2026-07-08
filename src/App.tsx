@@ -19,7 +19,7 @@ import {
   SuperetteMeta 
 } from './utils/firebaseSync';
 import { UserLicenseData, verifyLicenseKey } from './utils/licensing';
-import { sendCriticalStockEmail, sendShiftOpeningEmail, sendShiftClosingEmail, sendDailyLowStockSummaryEmail, EmailLog } from './utils/notifications';
+import { sendCriticalStockEmail, sendShiftOpeningEmail, sendShiftClosingEmail, sendDailyLowStockSummaryEmail, sendExpiringProductsSummaryEmail, EmailLog } from './utils/notifications';
 import { downloadPurchaseOrderPDF, downloadShiftReportPDF } from './utils/pdfGenerator';
 import Auth from './components/Auth';
 import SaaSOnboardingScreen from './components/SaaSOnboardingScreen';
@@ -66,7 +66,8 @@ import {
   Sun,
   Moon,
   Printer,
-  Store
+  Store,
+  Calendar
 } from 'lucide-react';
 
 function AppContent() {
@@ -353,6 +354,17 @@ function AppContent() {
   // States for low stock levels prompt & banner
   const [showStockAlertBanner, setShowStockAlertBanner] = useState<boolean>(false);
   const [showMobileNotifySim, setShowMobileNotifySim] = useState<boolean>(false);
+  const [showExpiryAlertModal, setShowExpiryAlertModal] = useState<boolean>(false);
+  const [expiringProductsOnStartup, setExpiringProductsOnStartup] = useState<{
+    id: string;
+    name: string;
+    code: string;
+    expiryDate: string;
+    daysRemaining: number;
+    stock: number;
+    unit: string;
+    batchInfo?: string;
+  }[]>([]);
   const isInitialLoginRef = React.useRef(true);
 
   // States for critical stock administrative email notification logs and toasts and simulations
@@ -864,6 +876,114 @@ function AppContent() {
   useEffect(() => {
     if (db && db.products && isInitialLoginRef.current) {
       isInitialLoginRef.current = false;
+
+      // 🧪 Automatic verification for expiring products (< 7 days) on startup
+      try {
+        const todayVal = new Date();
+        todayVal.setHours(0, 0, 0, 0);
+
+        const expiringList: {
+          id: string;
+          name: string;
+          code: string;
+          expiryDate: string;
+          daysRemaining: number;
+          stock: number;
+          unit: string;
+          batchInfo?: string;
+        }[] = [];
+
+        db.products.forEach(p => {
+          const hasBatches = p.batches && p.batches.length > 0;
+          if (hasBatches) {
+            p.batches!.forEach((b, bIdx) => {
+              if (b.stock > 0 && b.expiryDate) {
+                const expDate = new Date(b.expiryDate);
+                expDate.setHours(0, 0, 0, 0);
+                const diffTime = expDate.getTime() - todayVal.getTime();
+                const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+                if (diffDays <= 7) {
+                  expiringList.push({
+                    id: b.id || `batch-${p.id}-${bIdx}`,
+                    name: p.name,
+                    code: p.code,
+                    expiryDate: b.expiryDate,
+                    daysRemaining: diffDays,
+                    stock: b.stock,
+                    unit: p.unit || 'pcs',
+                    batchInfo: language === 'ar' ? `الدفعة #${bIdx + 1}` : `Lot #${bIdx + 1}`
+                  });
+                }
+              }
+            });
+          } else {
+            const directExpiry = p.expiryDate || p.dateExpiration;
+            if (directExpiry && p.stock > 0) {
+              const expDate = new Date(directExpiry);
+              expDate.setHours(0, 0, 0, 0);
+              const diffTime = expDate.getTime() - todayVal.getTime();
+              const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+              if (diffDays <= 7) {
+                expiringList.push({
+                  id: p.id,
+                  name: p.name,
+                  code: p.code,
+                  expiryDate: directExpiry,
+                  daysRemaining: diffDays,
+                  stock: p.stock,
+                  unit: p.unit || 'pcs'
+                });
+              }
+            }
+          }
+        });
+
+        if (expiringList.length > 0) {
+          expiringList.sort((a, b) => a.daysRemaining - b.daysRemaining);
+          setExpiringProductsOnStartup(expiringList);
+          setShowExpiryAlertModal(true);
+
+          // 📬 Send email for expiring products if enabled and has admin email
+          if (db.settings?.adminEmail && db.settings?.adminEmail.includes('@')) {
+            const todayStr = new Date().toISOString().split('T')[0];
+            const lastSentExpiryDate = safeLocalStorage.getItem('lastExpiryAlertEmailDate');
+            
+            if (lastSentExpiryDate !== todayStr) {
+              const smtpConfig = {
+                smtpHost: license?.remoteSmtpHost !== undefined ? license.remoteSmtpHost : db.settings?.smtpHost,
+                smtpPort: license?.remoteSmtpPort !== undefined ? license.remoteSmtpPort : db.settings?.smtpPort,
+                smtpUser: license?.remoteSmtpUser !== undefined ? license.remoteSmtpUser : db.settings?.smtpUser,
+                smtpPass: license?.remoteSmtpPass !== undefined ? license.remoteSmtpPass : db.settings?.smtpPass,
+                smtpSecure: license?.remoteSmtpSecure !== undefined ? license.remoteSmtpSecure : db.settings?.smtpSecure,
+                smtpSenderName: license?.remoteSmtpSenderName !== undefined ? license.remoteSmtpSenderName : db.settings?.smtpSenderName,
+                useGmailApi: db.settings?.useGmailApi
+              };
+
+              const storeName = db.settings?.storeName || 'INNOVA POS';
+
+              sendExpiringProductsSummaryEmail(
+                db.settings.adminEmail,
+                storeName,
+                expiringList,
+                language,
+                smtpConfig.smtpHost ? smtpConfig : undefined
+              ).then(res => {
+                if (res.success) {
+                  console.log('[AUTO-EXPIRY EMAIL] Successfully dispatched expiring products report to:', db.settings?.adminEmail);
+                  safeLocalStorage.setItem('lastExpiryAlertEmailDate', todayStr);
+                } else {
+                  console.warn('[AUTO-EXPIRY EMAIL] Failed during background schedule dispatch:', res.error);
+                }
+              }).catch(err => {
+                console.log('[AUTO-EXPIRY EMAIL] Gracefully skipped/handled exception during automatic delivery:', err);
+              });
+            }
+          }
+        }
+      } catch (err) {
+        console.error("Failed running automatic startup expiry checks:", err);
+      }
+
       const criticalCount = db.products.filter(p => p.stock <= p.minAlertQty).length;
       if (criticalCount > 0) {
         setShowStockAlertBanner(true);
@@ -2791,6 +2911,140 @@ function AppContent() {
                 className="w-full bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold py-2 rounded-lg cursor-pointer transition-colors disabled:opacity-25"
               >
                 {language === 'ar' ? 'إغلاق النافذة' : 'Fermer'}
+              </button>
+            </div>
+
+          </div>
+        </div>
+      )}
+
+      {/* 📅 AUTOMATIC STARTUP EXPIRY ALERTS MODAL (< 7 DAYS) */}
+      {showExpiryAlertModal && expiringProductsOnStartup.length > 0 && (
+        <div 
+          onClick={(e) => {
+            if (e.target === e.currentTarget) {
+              setShowExpiryAlertModal(false);
+            }
+          }}
+          className="fixed inset-0 bg-slate-950/80 backdrop-blur-md flex items-center justify-center z-50 p-3 md:p-4 font-sans overflow-y-auto" 
+          dir={language === 'ar' ? 'rtl' : 'ltr'}
+        >
+          <div className="bg-white rounded-2xl shadow-2xl border border-rose-100 max-w-2xl w-full flex flex-col max-h-[90vh] overflow-hidden animate-fadeIn my-auto">
+            
+            {/* Header Area */}
+            <div className="p-5 border-b border-rose-100 flex items-center justify-between bg-rose-600 text-white shrink-0">
+              <div className="flex items-center gap-2.5">
+                <div className="p-1.5 bg-white/10 text-white border border-white/20 rounded">
+                  <Calendar className="w-5 h-5 animate-pulse text-white" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-extrabold tracking-tight">
+                    {language === 'ar' ? '⚠️ تنبيه تواريخ انتهاء الصلاحية القريبة (< 7 أيام)' : '⚠️ Alertes d\'Expiration Proches (< 7 jours)'}
+                  </h3>
+                  <p className="text-[10px] text-rose-100 font-bold uppercase tracking-wider mt-0.5">
+                    {language === 'ar' 
+                      ? `تم العثور على ${expiringProductsOnStartup.length} منتجات/دفعات تقترب من انتهاء صلاحيتها` 
+                      : `${expiringProductsOnStartup.length} produits ou lots arrivent bientôt à péremption`}
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowExpiryAlertModal(false)}
+                className="text-rose-100 hover:text-white transition-colors cursor-pointer text-lg font-bold p-1"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* List Header/Intro */}
+            <div className="bg-rose-50/70 p-4 border-b border-rose-100 text-xs text-rose-950 font-medium leading-relaxed shrink-0">
+              💡 {language === 'ar' 
+                ? 'تنبيه تلقائي عند التشغيل: يرجى مراجعة المنتجات أدناه لتجنب بيع منتجات منتهية الصلاحية أو تلف البضائع في المستودع.' 
+                : 'Vérification automatique au démarrage : Veuillez contrôler ces articles en rayon pour éviter la vente de produits périmés.'}
+            </div>
+
+            {/* Expiring items List */}
+            <div className="flex-1 overflow-y-auto p-5 space-y-3 bg-slate-50">
+              {expiringProductsOnStartup.map((item, idx) => {
+                const isExpired = item.daysRemaining < 0;
+                const isUrgent = item.daysRemaining <= 7;
+                
+                let urgencyColor = "bg-rose-50 border-rose-200 text-rose-800";
+                let daysColorLabel = "bg-rose-600 text-white";
+                if (isExpired) {
+                  urgencyColor = "bg-red-50 border-red-200 text-red-900";
+                  daysColorLabel = "bg-red-700 text-white font-black animate-pulse";
+                } else if (!isUrgent) {
+                  urgencyColor = "bg-amber-50 border-amber-200 text-amber-800";
+                  daysColorLabel = "bg-amber-500 text-white";
+                }
+
+                return (
+                  <div key={item.id || idx} className={`p-3.5 border rounded-xl shadow-3xs flex flex-col sm:flex-row sm:items-center justify-between gap-3 transition-all hover:shadow-2xs ${urgencyColor}`}>
+                    <div className="flex items-start gap-3">
+                      <div className="text-xl pt-0.5">📦</div>
+                      <div className="text-start">
+                        <span className="font-extrabold text-xs text-slate-900 block leading-tight">{item.name}</span>
+                        <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 mt-1 text-[10.5px] font-mono text-slate-500">
+                          <span>Code: <strong className="text-slate-800">{item.code}</strong></span>
+                          {item.batchInfo && (
+                            <span className="px-1.5 py-0.2 bg-slate-200 text-slate-800 rounded-sm text-[9.5px] font-bold">
+                              {item.batchInfo}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-2 sm:justify-end">
+                      <div className="text-start sm:text-end">
+                        <span className="text-[10px] text-slate-400 font-bold block uppercase tracking-wider">
+                          {language === 'ar' ? 'تاريخ انتهاء الصلاحية' : "Péremption"}
+                        </span>
+                        <span className="text-xs font-bold font-mono text-slate-800 block">
+                          📅 {item.expiryDate}
+                        </span>
+                      </div>
+
+                      <div className="text-start sm:text-end min-w-[70px]">
+                        <span className="text-[10px] text-slate-400 font-bold block uppercase tracking-wider">
+                          {language === 'ar' ? 'الكمية' : "Stock"}
+                        </span>
+                        <span className="text-xs font-extrabold text-slate-950 block">
+                          {item.stock} {item.unit}
+                        </span>
+                      </div>
+
+                      <div className={`px-2 py-1 rounded text-[10px] font-black uppercase tracking-wider ${daysColorLabel}`}>
+                        {isExpired 
+                          ? (language === 'ar' ? 'منتهي الصلاحية ⛔' : 'Expiré ⛔')
+                          : (language === 'ar' ? `متبقي ${item.daysRemaining} يوم` : `${item.daysRemaining} jours restants`)}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Footer Area */}
+            <div className="p-4 border-t border-slate-100 bg-slate-50 flex flex-col sm:flex-row items-center gap-2 shrink-0">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowExpiryAlertModal(false);
+                  setActiveTab('products');
+                }}
+                className="w-full sm:flex-1 py-2.5 px-4 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-extrabold cursor-pointer transition-colors shadow-3xs text-center flex items-center justify-center gap-1.5 animate-pulse"
+              >
+                <span>🔍</span>
+                <span>{language === 'ar' ? 'الانتقال لقسم المنتجات لفحص الكميات' : 'Inspecter et gérer les stocks'}</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowExpiryAlertModal(false)}
+                className="w-full sm:w-auto py-2.5 px-6 bg-slate-200 hover:bg-slate-300 text-slate-800 rounded-xl text-xs font-bold cursor-pointer transition-colors"
+              >
+                {language === 'ar' ? 'موافق، فهمت' : 'D\'accord, j\'ai compris'}
               </button>
             </div>
 

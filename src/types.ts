@@ -1,5 +1,13 @@
 export type PartnerType = 'client' | 'fournisseur';
 
+export interface ProductBatch {
+  id: string;
+  expiryDate: string; // format YYYY-MM-DD
+  stock: number;
+  purchasePrice?: number;
+  sellingPrice?: number;
+}
+
 export interface Product {
   id: string;
   code: string; // Barcode or internal SKU
@@ -28,6 +36,7 @@ export interface Product {
     oldPurchasePrice: number;
     newPurchasePrice: number;
   }[];
+  batches?: ProductBatch[];
 }
 
 export interface Partner {
@@ -167,6 +176,7 @@ export interface StoreSettings {
 
   // 🎫 Receipt Thermal Customizer parameters
   receiptShowLogo?: boolean;
+  receiptAutoPrintSale?: boolean;
   receiptShowStoreDetails?: boolean;
   receiptCustomThankYou?: string;
   receiptShowCommercialTerms?: boolean;
