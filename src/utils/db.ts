@@ -728,69 +728,412 @@ export function getProductVisual(prod: { name: string; category?: string; image?
   const name = prod.name.toLowerCase();
   const cat = (prod.category || '').toLowerCase();
 
-  // Keyword lookup
-  if (name.includes('couscous') || name.includes('pâte') || name.includes('spaghetti') || name.includes('makrouna') || name.includes('riz')) {
+  // 1. Tabac & Cigarettes
+  if (
+    name.includes('tabac') || 
+    name.includes('cig') || 
+    name.includes('paquet') || 
+    name.includes('légère') || 
+    name.includes('mars') || 
+    name.includes('cristal') || 
+    name.includes('royale') || 
+    name.includes('oris') || 
+    name.includes('winston') || 
+    name.includes('marlboro') || 
+    name.includes('merit') || 
+    cat.includes('tabac') || 
+    name.includes('دخان') || 
+    name.includes('سيڨار') || 
+    name.includes('علبة')
+  ) {
+    return { type: 'emoji', value: '🚬' };
+  }
+
+  // 2. Carburants & Oils
+  if (
+    name.includes('carburant') || 
+    name.includes('essence') || 
+    name.includes('benzine') || 
+    name.includes('gasoil') || 
+    name.includes('diesel') || 
+    name.includes('fuel') || 
+    name.includes('rouge') || 
+    name.includes('vert') || 
+    name.includes('sans plomb') || 
+    cat.includes('carburant') || 
+    name.includes('بنزين') || 
+    name.includes('وقود') || 
+    name.includes('مازوت')
+  ) {
+    return { type: 'emoji', value: '⛽' };
+  }
+
+  // 3. Télécom & Recharges
+  if (
+    name.includes('recharge') || 
+    name.includes('telecom') || 
+    name.includes('ooredoo') || 
+    name.includes('orange') || 
+    name.includes('tunisie') || 
+    name.includes('sim') || 
+    name.includes('carte') || 
+    name.includes('phone') || 
+    name.includes('téléphone') || 
+    cat.includes('recharge') || 
+    cat.includes('télécom') || 
+    name.includes('تليكوم') || 
+    name.includes('أوريدو') || 
+    name.includes('أورنج') || 
+    name.includes('شحن') || 
+    name.includes('بطاقة')
+  ) {
+    return { type: 'emoji', value: '📱' };
+  }
+
+  // 4. Couscous & Pâtes (Tunisian staples)
+  if (
+    name.includes('couscous') || 
+    name.includes('pâte') || 
+    name.includes('spaghetti') || 
+    name.includes('makrouna') || 
+    name.includes('riz') || 
+    name.includes('pasta') || 
+    name.includes('semoule') || 
+    name.includes('smida') || 
+    name.includes('روز') || 
+    name.includes('كسكسي') || 
+    name.includes('مقرونة') || 
+    name.includes('سميد')
+  ) {
     return { type: 'emoji', value: '🍝' };
   }
-  if (name.includes('lait') || name.includes('hlib') || name.includes('dairy') || cat.includes('laitier')) {
+
+  // 5. Lait / Produits Laitiers
+  if (
+    name.includes('lait') || 
+    name.includes('hlib') || 
+    name.includes('dairy') || 
+    cat.includes('laitier') || 
+    name.includes('حليب') || 
+    name.includes('لبن')
+  ) {
     return { type: 'emoji', value: '🥛' };
   }
-  if (name.includes('fromage') || name.includes('jbn') || name.includes('mozzarella') || name.includes('ricotta')) {
+
+  // 6. Fromage & Cheese
+  if (
+    name.includes('fromage') || 
+    name.includes('jbn') || 
+    name.includes('mozzarella') || 
+    name.includes('ricotta') || 
+    name.includes('président') || 
+    name.includes('giga') || 
+    name.includes('جبن')
+  ) {
     return { type: 'emoji', value: '🧀' };
   }
-  if (name.includes('thon') || name.includes('sardine') || name.includes('fish') || name.includes('poisson')) {
+
+  // 7. Yaourt / Crèmes
+  if (
+    name.includes('yaourt') || 
+    name.includes('délice') || 
+    name.includes('brassé') || 
+    name.includes('nature') || 
+    name.includes('ياغورت') || 
+    name.includes('زبادي')
+  ) {
+    return { type: 'emoji', value: '🍮' };
+  }
+
+  // 8. Thon & Sardines (Canned fish)
+  if (
+    name.includes('thon') || 
+    name.includes('sardine') || 
+    name.includes('fish') || 
+    name.includes('poisson') || 
+    name.includes('el manar') || 
+    name.includes('sidi daoud') || 
+    name.includes('تن') || 
+    name.includes('سردينة') || 
+    name.includes('حوت')
+  ) {
     return { type: 'emoji', value: '🐟' };
   }
-  if (name.includes('harissa') || name.includes('sauce') || name.includes('tomate') || name.includes('sicam') || cat.includes('conserve') || name.includes('boite')) {
+
+  // 9. Harissa & Tomate (Canned products)
+  if (
+    name.includes('harissa') || 
+    name.includes('sauce') || 
+    name.includes('tomate') || 
+    name.includes('sicam') || 
+    name.includes('double concentré') || 
+    cat.includes('conserve') || 
+    name.includes('boite') || 
+    name.includes('طماطم') || 
+    name.includes('هريسة') || 
+    name.includes('صلصة')
+  ) {
     return { type: 'emoji', value: '🥫' };
   }
-  if (name.includes('eau') || name.includes('safia') || name.includes('sabrine') || name.includes('fourat') || name.includes('mineral')) {
+
+  // 10. Eau Minérale
+  if (
+    name.includes('eau') || 
+    name.includes('safia') || 
+    name.includes('sabrine') || 
+    name.includes('fourat') || 
+    name.includes('mineral') || 
+    name.includes('ماء')
+  ) {
     return { type: 'emoji', value: '💧' };
   }
-  if (name.includes('coca') || name.includes('fanta') || name.includes('boga') || name.includes('soda') || name.includes('jus') || name.includes('drink') || name.includes('boisson')) {
+
+  // 11. Sodas, Boissons & Jus
+  if (
+    name.includes('coca') || 
+    name.includes('fanta') || 
+    name.includes('boga') || 
+    name.includes('soda') || 
+    name.includes('jus') || 
+    name.includes('drink') || 
+    name.includes('boisson') || 
+    name.includes('apla') || 
+    name.includes('schweppes') || 
+    cat.includes('boiss') || 
+    name.includes('عصير') || 
+    name.includes('بوغا') || 
+    name.includes('مشروب') || 
+    name.includes('كوكا')
+  ) {
     return { type: 'emoji', value: '🥤' };
   }
-  if (name.includes('huile') || name.includes('zit') || name.includes('olive')) {
+
+  // 12. Huile d'Olive / Végétale
+  if (
+    name.includes('huile') || 
+    name.includes('zit') || 
+    name.includes('olive') || 
+    name.includes('tournesol') || 
+    name.includes('زيت')
+  ) {
     return { type: 'emoji', value: '🫒' };
   }
-  if (name.includes('pain') || name.includes('khobz') || name.includes('boulangerie') || name.includes('cake') || name.includes('croissant') || name.includes('toast')) {
+
+  // 13. Pain, Boulangerie & Croissant
+  if (
+    name.includes('pain') || 
+    name.includes('khobz') || 
+    name.includes('boulangerie') || 
+    name.includes('cake') || 
+    name.includes('croissant') || 
+    name.includes('toast') || 
+    name.includes('خبز') || 
+    name.includes('باقات') || 
+    name.includes('كرواسون')
+  ) {
     return { type: 'emoji', value: '🍞' };
   }
-  if (name.includes('chocolat') || name.includes('biscuit') || name.includes('chips') || name.includes('gofre') || name.includes('oreo') || name.includes('bonbon') || name.includes('candy') || name.includes('sweet') || name.includes('kakou')) {
+
+  // 14. Chocolat, Biscuits & Chips (Sweets & Snacks)
+  if (
+    name.includes('chocolat') || 
+    name.includes('biscuit') || 
+    name.includes('chips') || 
+    name.includes('gofre') || 
+    name.includes('oreo') || 
+    name.includes('bonbon') || 
+    name.includes('candy') || 
+    name.includes('sweet') || 
+    name.includes('kakou') || 
+    name.includes('chamia') || 
+    name.includes('halwa') || 
+    name.includes('شوكولا') || 
+    name.includes('بسكويت') || 
+    name.includes('شيبس') || 
+    name.includes('حلوى') || 
+    name.includes('شامية')
+  ) {
     return { type: 'emoji', value: '🍫' };
   }
-  if (name.includes('café') || name.includes('coffee') || name.includes('nescafe') || name.includes('the') || name.includes('shay') || name.includes('lipton')) {
+
+  // 15. Café & Thé
+  if (
+    name.includes('café') || 
+    name.includes('coffee') || 
+    name.includes('nescafe') || 
+    name.includes('the') || 
+    name.includes('thé') || 
+    name.includes('shay') || 
+    name.includes('lipton') || 
+    name.includes('ben yedder') || 
+    name.includes('قهوة') || 
+    name.includes('شاي')
+  ) {
     return { type: 'emoji', value: '☕' };
   }
-  if (name.includes('savon') || name.includes('shampooing') || name.includes('colgate') || name.includes('dentifrice') || name.includes('brosse') || cat.includes('hygiène') || cat.includes('hygiene') || cat.includes('entretien')) {
+
+  // 16. Hygiène & Savons
+  if (
+    name.includes('savon') || 
+    name.includes('shampooing') || 
+    name.includes('colgate') || 
+    name.includes('dentifrice') || 
+    name.includes('brosse') || 
+    cat.includes('hygiène') || 
+    cat.includes('hygiene') || 
+    cat.includes('entretien') || 
+    name.includes('صابون') || 
+    name.includes('شامبو') || 
+    name.includes('معجون')
+  ) {
     return { type: 'emoji', value: '🧼' };
   }
-  if (name.includes('javel') || name.includes('lessive') || name.includes('detergent') || name.includes('liquide') || name.includes('propre') || name.includes('jort')) {
+
+  // 17. Détergents & Javel
+  if (
+    name.includes('javel') || 
+    name.includes('lessive') || 
+    name.includes('detergent') || 
+    name.includes('liquide') || 
+    name.includes('propre') || 
+    name.includes('jort') || 
+    name.includes('أومو') || 
+    name.includes('جافيل') || 
+    name.includes('منظف')
+  ) {
     return { type: 'emoji', value: '🧴' };
   }
-  if (name.includes('sucre') || name.includes('sel') || name.includes('epice') || name.includes('farine') || name.includes('smida')) {
+
+  // 18. Sucre, Sel & Épices
+  if (
+    name.includes('sucre') || 
+    name.includes('sel') || 
+    name.includes('epice') || 
+    name.includes('épice') || 
+    name.includes('farine') || 
+    name.includes('sugar') || 
+    name.includes('salt') || 
+    name.includes('سكر') || 
+    name.includes('ملح') || 
+    name.includes('بهارات') || 
+    name.includes('فرينة')
+  ) {
     return { type: 'emoji', value: '🧂' };
   }
-  if (name.includes('œuf') || name.includes('oeuf') || name.includes('dama') || name.includes('egg')) {
+
+  // 19. Oeufs / Eggs
+  if (
+    name.includes('œuf') || 
+    name.includes('oeuf') || 
+    name.includes('egg') || 
+    name.includes('dama') || 
+    name.includes('بيض') || 
+    name.includes('حارة') || 
+    name.includes('plateau')
+  ) {
     return { type: 'emoji', value: '🥚' };
   }
-  if (name.includes('fruit') || name.includes('pomme') || name.includes('banane') || name.includes('orange') || name.includes('fraise')) {
+
+  // 20. Boucherie & Viandes
+  if (
+    name.includes('viande') || 
+    name.includes('poulet') || 
+    name.includes('dinde') || 
+    name.includes('boeuf') || 
+    name.includes('escalope') || 
+    cat.includes('boucherie') || 
+    cat.includes('viande') || 
+    name.includes('لحم') || 
+    name.includes('دجاج') || 
+    name.includes('اسكالوب')
+  ) {
+    return { type: 'emoji', value: '🥩' };
+  }
+
+  // 21. Fruits
+  if (
+    name.includes('fruit') || 
+    name.includes('pomme') || 
+    name.includes('banane') || 
+    name.includes('orange') || 
+    name.includes('fraise') || 
+    name.includes('citron') || 
+    name.includes('غلال') || 
+    name.includes('تفاح') || 
+    name.includes('موز') || 
+    name.includes('برتقال') || 
+    name.includes('ليمون') || 
+    name.includes('فراولة')
+  ) {
     return { type: 'emoji', value: '🍎' };
   }
-  if (name.includes('legume') || name.includes('tomate') || name.includes('pdt') || name.includes('oignon') || name.includes('poivron')) {
+
+  // 22. Légumes
+  if (
+    name.includes('legume') || 
+    name.includes('légume') || 
+    name.includes('pdt') || 
+    name.includes('oignon') || 
+    name.includes('poivron') || 
+    name.includes('carotte') || 
+    name.includes('خضار') || 
+    name.includes('بصل') || 
+    name.includes('فلفل') || 
+    name.includes('بطاطا') || 
+    name.includes('جزر')
+  ) {
     return { type: 'emoji', value: '🥕' };
   }
-  if (name.includes('medicament') || name.includes('pansement') || name.includes('paracetamol') || name.includes('doliprane') || cat.includes('pharmacie') || name.includes('pill') || name.includes('comprime')) {
+
+  // 23. Pharmacie & Doliprane
+  if (
+    name.includes('medicament') || 
+    name.includes('médicament') || 
+    name.includes('pansement') || 
+    name.includes('paracetamol') || 
+    name.includes('doliprane') || 
+    cat.includes('pharmacie') || 
+    name.includes('pill') || 
+    name.includes('comprime') || 
+    name.includes('دواء') || 
+    name.includes('صيدلية')
+  ) {
     return { type: 'emoji', value: '💊' };
   }
-  if (name.includes('ciment') || name.includes('mortier') || name.includes('brique') || cat.includes('materiaux') || name.includes('peinture') || name.includes('fer')) {
-    return { type: 'emoji', value: '🧱' };
+
+  // 24. Fournitures scolaires
+  if (
+    name.includes('stylo') || 
+    name.includes('cahier') || 
+    name.includes('registre') || 
+    name.includes('fourniture') || 
+    cat.includes('scolaire') || 
+    name.includes('كراس') || 
+    name.includes('قلم')
+  ) {
+    return { type: 'emoji', value: '📝' };
   }
-  if (name.includes('marteau') || name.includes('tournevis') || name.includes('vis') || name.includes('clou') || name.includes('outil')) {
+
+  // 25. Bricolage & Outils
+  if (
+    name.includes('ciment') || 
+    name.includes('mortier') || 
+    name.includes('brique') || 
+    name.includes('peinture') || 
+    name.includes('marteau') || 
+    name.includes('tournevis') || 
+    name.includes('vis') || 
+    name.includes('clou') || 
+    name.includes('outil') || 
+    cat.includes('mater') || 
+    cat.includes('brico') || 
+    name.includes('مطرقة') || 
+    name.includes('مفك')
+  ) {
     return { type: 'emoji', value: '🔨' };
   }
 
-  // Category based matchers fallback
+  // Category fallback matchers
   if (cat.includes('pâte') || cat.includes('pain') || cat.includes('cereal') || cat.includes('cereale')) return { type: 'emoji', value: '🌾' };
   if (cat.includes('boiss') || cat.includes('eau') || cat.includes('jus')) return { type: 'emoji', value: '🥤' };
   if (cat.includes('conserv')) return { type: 'emoji', value: '🥫' };
@@ -798,8 +1141,11 @@ export function getProductVisual(prod: { name: string; category?: string; image?
   if (cat.includes('pharm') || cat.includes('sant') || cat.includes('soin')) return { type: 'emoji', value: '💊' };
   if (cat.includes('mater') || cat.includes('outill') || cat.includes('brico')) return { type: 'emoji', value: '🔨' };
   if (cat.includes('hygi') || cat.includes('entr') || cat.includes('nettoy')) return { type: 'emoji', value: '🧼' };
+  if (cat.includes('tabac') || cat.includes('cig')) return { type: 'emoji', value: '🚬' };
+  if (cat.includes('carburant')) return { type: 'emoji', value: '⛽' };
+  if (cat.includes('recharge') || cat.includes('télécom')) return { type: 'emoji', value: '📱' };
 
-  // Global default based on first letter or packaging
+  // Global default
   return { type: 'emoji', value: '📦' };
 }
 
