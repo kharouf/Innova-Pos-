@@ -676,9 +676,27 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
   useEffect(() => {
     if (isCameraActive) {
       setCameraError(null);
+      let attempts = 0;
+      let startTimer: any = null;
       
-      // Brief timer to guarantee browser rendering of video parent placeholder
-      const startTimer = setTimeout(() => {
+      const initScanner = () => {
+        const scannerElement = document.getElementById('pos-camera-scanner-view');
+        if (!scannerElement) {
+          attempts++;
+          if (attempts < 10) {
+            startTimer = setTimeout(initScanner, 100);
+          } else {
+            console.error('Html5Qrcode instance creation exception: Element #pos-camera-scanner-view not found after 10 attempts');
+            setCameraError(
+              language === 'ar'
+                ? '❌ جهاز الكاميرا غير مهيأ أو غير مدعوم في متصفحك.'
+                : '❌ La caméra n\'est pas supportée sur ce navigateur.'
+            );
+            setIsCameraActive(false);
+          }
+          return;
+        }
+
         try {
           const scannerInstance = new Html5Qrcode('pos-camera-scanner-view');
           html5QrCodeRef.current = scannerInstance;
@@ -721,7 +739,10 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
           );
           setIsCameraActive(false);
         }
-      }, 300);
+      };
+
+      // Brief timer to guarantee browser rendering of video parent placeholder
+      startTimer = setTimeout(initScanner, 300);
 
       return () => {
         clearTimeout(startTimer);

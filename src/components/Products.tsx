@@ -175,8 +175,27 @@ export default function Products({ db, onUpdateDb }: ProductsProps) {
   useEffect(() => {
     if (isCameraActive && showFormModal) {
       setCameraError(null);
+      let attempts = 0;
+      let startTimer: any = null;
       
-      const startTimer = setTimeout(() => {
+      const initScanner = () => {
+        const scannerElement = document.getElementById('product-form-camera-scanner-view');
+        if (!scannerElement) {
+          attempts++;
+          if (attempts < 10) {
+            startTimer = setTimeout(initScanner, 100);
+          } else {
+            console.error('Html5Qrcode instance creation exception: Element #product-form-camera-scanner-view not found after 10 attempts');
+            setCameraError(
+              language === 'ar'
+                ? '❌ جهاز الكاميرا غير مهيأ أو غير مدعوم في متصفحك.'
+                : '❌ La caméra n\'est pas supportée sur ce navigateur.'
+            );
+            setIsCameraActive(false);
+          }
+          return;
+        }
+
         try {
           const scannerInstance = new Html5Qrcode('product-form-camera-scanner-view');
           html5QrCodeRef.current = scannerInstance;
@@ -218,7 +237,9 @@ export default function Products({ db, onUpdateDb }: ProductsProps) {
           );
           setIsCameraActive(false);
         }
-      }, 350);
+      };
+
+      startTimer = setTimeout(initScanner, 350);
 
       return () => {
         clearTimeout(startTimer);
@@ -1461,6 +1482,16 @@ export default function Products({ db, onUpdateDb }: ProductsProps) {
                               {prod.batches && prod.batches.length > 0 && (
                                 <span className="bg-indigo-100 text-indigo-800 border border-indigo-200 text-[8.5px] font-black uppercase px-1 rounded flex items-center gap-0.5 shrink-0" title={`${prod.batches.length} lots`}>
                                   📦 {prod.batches.length} {language === 'ar' ? 'دفعات' : 'Lots'}
+                                </span>
+                              )}
+                              {isOut && (
+                                <span className="bg-rose-50 text-rose-700 border border-rose-200 text-[8.5px] font-bold uppercase px-1 py-0.5 rounded flex items-center gap-0.5 shrink-0 animate-pulse">
+                                  ⚠️ {language === 'ar' ? 'نفذ من المخزون' : 'Rupture'}
+                                </span>
+                              )}
+                              {isLow && (
+                                <span className="bg-amber-50 text-amber-700 border border-amber-200 text-[8.5px] font-bold uppercase px-1 py-0.5 rounded flex items-center gap-0.5 shrink-0">
+                                  ⚠️ {language === 'ar' ? 'مخزون منخفض' : 'Stock faible'}
                                 </span>
                               )}
                             </div>
