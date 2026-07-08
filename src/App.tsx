@@ -3185,9 +3185,14 @@ function AppContent() {
         {emailAlertToast && (
           <motion.div
             key={emailAlertToast.id}
-            initial={{ opacity: 0, scale: 0.85, y: -50, x: 50 }}
+            initial={{ opacity: 0, scale: 0.85, y: -20, x: 50 }}
             animate={{ opacity: 1, scale: 1, y: 0, x: 0 }}
-            exit={{ opacity: 0, scale: 0.8, y: -30, x: 20 }}
+            exit={{ opacity: 0, scale: 0.85, y: -10, x: 30 }}
+            transition={{
+              type: 'spring',
+              stiffness: 300,
+              damping: 24
+            }}
             className="fixed top-4 right-4 z-55 w-[335px] bg-slate-900 border border-slate-700 text-white rounded-xl shadow-2xl p-4 overflow-hidden"
             style={{ zIndex: 9999 }}
             dir={language === 'ar' ? 'rtl' : 'ltr'}

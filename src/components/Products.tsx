@@ -31,7 +31,9 @@ import {
   FileText,
   DollarSign,
   History,
-  Tag
+  Tag,
+  Calculator,
+  Percent
 } from 'lucide-react';
 
 const COMMON_FOODS = [
@@ -96,6 +98,8 @@ export default function Products({ db, onUpdateDb }: ProductsProps) {
   const [editPriceProductId, setEditPriceProductId] = useState<string | null>(null);
   const [editPurchasePrice, setEditPurchasePrice] = useState<number>(0);
   const [editSellingPrice, setEditSellingPrice] = useState<number>(0);
+  const [editStockQty, setEditStockQty] = useState<number>(0);
+  const [editExpiryDate, setEditExpiryDate] = useState<string>('');
 
   // Direct stock edit states
   const [editingStockProductId, setEditingStockProductId] = useState<string | null>(null);
@@ -115,6 +119,12 @@ export default function Products({ db, onUpdateDb }: ProductsProps) {
   const [showStoreNameOnLabel, setShowStoreNameOnLabel] = useState<boolean>(true);
   const [showPriceOnLabel, setShowPriceOnLabel] = useState<boolean>(true);
   const [showBarcodeTextOnLabel, setShowBarcodeTextOnLabel] = useState<boolean>(true);
+
+  // 🧮 Margin Calculator States
+  const [showMarginCalculator, setShowMarginCalculator] = useState(false);
+  const [calcCost, setCalcCost] = useState<string>('');
+  const [calcMargin, setCalcMargin] = useState<string>('30'); // Default 30%
+  const [calcMode, setCalcMode] = useState<'on_cost' | 'on_revenue'>('on_cost'); // 'on_cost' (Markup sur coût) or 'on_revenue' (Marge sur prix de vente)
 
   // Camera Barcode Scanner State for adding/editing product
   const [isCameraActive, setIsCameraActive] = useState(false);
@@ -350,7 +360,7 @@ export default function Products({ db, onUpdateDb }: ProductsProps) {
     );
   };
 
-  // Handle fast price adjustments from simple modal
+  // Handle fast price, stock, and expiry adjustments from simple modal
   const handleQuickPriceUpdate = (e: React.FormEvent) => {
     e.preventDefault();
     if (!editPriceProductId) return;
@@ -381,6 +391,9 @@ export default function Products({ db, onUpdateDb }: ProductsProps) {
           ...p,
           purchasePrice: newPurchase,
           sellingPrice: newSelling,
+          stock: Number(editStockQty),
+          expiryDate: editExpiryDate,
+          dateExpiration: editExpiryDate,
           priceHistory: currentHistory
         };
       }
@@ -391,8 +404,9 @@ export default function Products({ db, onUpdateDb }: ProductsProps) {
     setEditPriceProductId(null);
     showToast(
       language === 'ar' 
-        ? 'تم تحديث السعر بنجاح' 
-        : 'Prix de l\'article mis à jour avec succès'
+        ? 'تم تحديث البيانات بنجاح' 
+        : 'Informations de l\'article mises à jour avec succès',
+      'success'
     );
   };
 
@@ -420,13 +434,13 @@ export default function Products({ db, onUpdateDb }: ProductsProps) {
   }, [filteredProducts, startIndex, endIndex]);
 
   // Open modal for new creation
-  const handleOpenCreate = () => {
+  const handleOpenCreate = (pPrice?: number, sPrice?: number) => {
     setEditingProduct(null);
     setCode('');
     setName('');
     setCategory('');
-    setPurchasePrice(0);
-    setSellingPrice(0);
+    setPurchasePrice(pPrice !== undefined ? pPrice : 0);
+    setSellingPrice(sPrice !== undefined ? sPrice : 0);
     setStock(10);
     setMinAlertQty(5);
     setUnit('Pcs');
@@ -996,6 +1010,26 @@ export default function Products({ db, onUpdateDb }: ProductsProps) {
     }
   };
 
+  // 🧮 Computations for interactive Margin Calculator
+  const calcCostNum = parseFloat(calcCost) || 0;
+  const calcMarginNum = parseFloat(calcMargin) || 0;
+  
+  let finalSellingPrice = 0;
+  let profitAmount = 0;
+  let markupMultiplier = 0;
+  
+  if (calcMode === 'on_cost') {
+    finalSellingPrice = calcCostNum * (1 + calcMarginNum / 100);
+    profitAmount = finalSellingPrice - calcCostNum;
+    markupMultiplier = calcCostNum > 0 ? (finalSellingPrice / calcCostNum) : 1;
+  } else {
+    if (calcMarginNum < 100) {
+      finalSellingPrice = calcCostNum / (1 - calcMarginNum / 100);
+      profitAmount = finalSellingPrice - calcCostNum;
+      markupMultiplier = calcCostNum > 0 ? (finalSellingPrice / calcCostNum) : 1;
+    }
+  }
+
   return (
     <div className="space-y-6">
       
@@ -1039,8 +1073,21 @@ export default function Products({ db, onUpdateDb }: ProductsProps) {
             <span>{language === 'ar' ? 'الترويج والتخفيضات' : 'Promotions Produits'}</span>
           </button>
 
+          {/* Calculateur de Marge Button */}
           <button
-            onClick={handleOpenCreate}
+            onClick={() => setShowMarginCalculator(!showMarginCalculator)}
+            className={`px-4 py-2.5 rounded text-xs font-bold transition-all shadow-xs flex items-center justify-center gap-1.5 cursor-pointer ${
+              showMarginCalculator 
+                ? 'bg-amber-600 hover:bg-amber-700 text-white' 
+                : 'bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200'
+            }`}
+          >
+            <Calculator className="w-4 h-4" />
+            <span>{language === 'ar' ? 'حاسبة الهامش' : 'Calculateur de Marge'}</span>
+          </button>
+
+          <button
+            onClick={() => handleOpenCreate()}
             className="px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded text-xs font-bold transition-all shadow-xs flex items-center justify-center gap-1.5 cursor-pointer"
           >
             <PlusCircle className="w-4 h-4" />
@@ -1085,6 +1132,203 @@ export default function Products({ db, onUpdateDb }: ProductsProps) {
           </div>
         </div>
       </div>
+
+      {/* 🧮 CALCULATEUR DE MARGE INTERACTIF */}
+      <AnimatePresence>
+        {showMarginCalculator && (
+          <motion.div
+            initial={{ opacity: 0, height: 0, y: -15 }}
+            animate={{ opacity: 1, height: 'auto', y: 0 }}
+            exit={{ opacity: 0, height: 0, y: -15 }}
+            transition={{ type: 'spring', stiffness: 260, damping: 25 }}
+            className="overflow-hidden"
+          >
+            <div className="bg-gradient-to-br from-amber-50/75 to-orange-50/40 dark:from-zinc-900/60 dark:to-zinc-900/30 border border-amber-200/60 dark:border-zinc-800 rounded-xl p-5 shadow-sm relative mb-2">
+              <button 
+                onClick={() => setShowMarginCalculator(false)}
+                className="absolute top-4 right-4 text-slate-400 hover:text-slate-600 dark:hover:text-zinc-200 p-1.5 rounded-lg hover:bg-white/50 dark:hover:bg-zinc-800 transition-colors cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+
+              <div className="flex items-center gap-2.5 mb-4">
+                <div className="p-2 bg-amber-500 text-white rounded-lg shrink-0 shadow-[0_2px_8px_rgba(245,158,11,0.25)]">
+                  <Calculator className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-slate-800 dark:text-zinc-100 font-sans leading-none">
+                    {language === 'ar' ? 'حاسبة هامش الربح والأسعار' : 'Calculateur de Marge & Prix'}
+                  </h3>
+                  <p className="text-[11px] text-slate-500 mt-1">
+                    {language === 'ar' 
+                      ? 'اختبر وحلل أسعار البيع المثالية ومعدلات الربحية فورياً قبل إنشاء أو تعديل المنتجات.' 
+                      : 'Testez et simulez des prix de vente optimaux et ratios de rentabilité en temps réel.'}
+                  </p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-stretch">
+                {/* Inputs block */}
+                <div className="lg:col-span-7 grid grid-cols-1 md:grid-cols-2 gap-4 bg-white/80 dark:bg-zinc-900/90 p-4 rounded-xl border border-slate-200/60 dark:border-zinc-800/80">
+                  
+                  {/* Purchase Cost Input */}
+                  <div className="space-y-1.5">
+                    <label className="block text-xs font-bold text-slate-600 dark:text-zinc-400">
+                      {language === 'ar' ? 'تكلفة الشراء (د.ت)' : "Coût d'Achat (HT/TTC)"}
+                    </label>
+                    <div className="relative">
+                      <span className="absolute left-3 top-2.5 text-xs text-slate-400 font-mono font-bold">DT</span>
+                      <input
+                        type="number"
+                        step="0.001"
+                        min="0"
+                        placeholder="0.000"
+                        value={calcCost}
+                        onChange={(e) => setCalcCost(e.target.value)}
+                        className="w-full pl-9 pr-3 py-2 border border-slate-200 dark:border-zinc-700 rounded-lg text-sm bg-slate-50/50 dark:bg-zinc-800/50 text-slate-900 dark:text-zinc-100 focus:outline-hidden focus:border-amber-500 font-mono font-bold"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Profit Rate % Input */}
+                  <div className="space-y-1.5">
+                    <label className="block text-xs font-bold text-slate-600 dark:text-zinc-400 flex items-center justify-between">
+                      <span>{language === 'ar' ? 'نسبة الهامش / الربح (%)' : 'Taux de Marge (%)'}</span>
+                      <span className="text-[10px] text-amber-600 font-bold bg-amber-50 dark:bg-amber-950/40 px-1.5 py-0.5 rounded shrink-0">
+                        {calcMode === 'on_cost' 
+                          ? (language === 'ar' ? 'على الشراء' : 'Sur Coût') 
+                          : (language === 'ar' ? 'على البيع' : 'Sur Vente')}
+                      </span>
+                    </label>
+                    <div className="relative">
+                      <span className="absolute left-3 top-2.5 text-xs text-slate-400 font-mono font-bold">%</span>
+                      <input
+                        type="number"
+                        step="1"
+                        min="0"
+                        max={calcMode === 'on_revenue' ? "99" : "999"}
+                        value={calcMargin}
+                        onChange={(e) => setCalcMargin(e.target.value)}
+                        className="w-full pl-8 pr-3 py-2 border border-slate-200 dark:border-zinc-700 rounded-lg text-sm bg-slate-50/50 dark:bg-zinc-800/50 text-slate-900 dark:text-zinc-100 focus:outline-hidden focus:border-amber-500 font-mono font-bold"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Mode Selector Toggle */}
+                  <div className="md:col-span-2 space-y-1.5">
+                    <span className="block text-xs font-bold text-slate-600 dark:text-zinc-400">
+                      {language === 'ar' ? 'طريقة احتساب الهامش' : 'Méthode de calcul'}
+                    </span>
+                    <div className="grid grid-cols-2 gap-2 bg-slate-100 dark:bg-zinc-800 p-1 rounded-lg">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setCalcMode('on_cost');
+                        }}
+                        className={`py-1.5 text-xs font-bold rounded-md transition-all cursor-pointer ${
+                          calcMode === 'on_cost'
+                            ? 'bg-white dark:bg-zinc-700 text-amber-700 dark:text-amber-400 shadow-xs'
+                            : 'text-slate-500 dark:text-zinc-400 hover:text-slate-700'
+                        }`}
+                      >
+                        {language === 'ar' ? 'هامش على الكلفة (Markup)' : 'Taux de Marge (Sur Coût)'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setCalcMode('on_revenue');
+                          if (parseFloat(calcMargin) >= 100) {
+                            setCalcMargin('30');
+                          }
+                        }}
+                        className={`py-1.5 text-xs font-bold rounded-md transition-all cursor-pointer ${
+                          calcMode === 'on_revenue'
+                            ? 'bg-white dark:bg-zinc-700 text-amber-700 dark:text-amber-400 shadow-xs'
+                            : 'text-slate-500 dark:text-zinc-400 hover:text-slate-700'
+                        }`}
+                      >
+                        {language === 'ar' ? 'هامش على البيع (Margin)' : 'Taux de Marque (Sur Vente)'}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Results block */}
+                <div className="lg:col-span-5 bg-gradient-to-br from-slate-900 to-zinc-950 text-white p-4 rounded-xl flex flex-col justify-between border border-slate-800">
+                  <div className="space-y-3.5">
+                    <span className="text-[10px] uppercase font-bold tracking-widest text-slate-400 block">
+                      {language === 'ar' ? 'نتائج المحاكاة الفورية' : 'Rapports de simulation'}
+                    </span>
+
+                    <div className="grid grid-cols-2 gap-3">
+                      {/* Prix de vente conseillé */}
+                      <div className="col-span-2 bg-white/5 p-3 rounded-lg border border-white/10">
+                        <span className="block text-[10px] font-medium text-slate-400">
+                          {language === 'ar' ? 'سعر البيع النهائي المقترح' : 'Prix de Vente Conseillé (TTC)'}
+                        </span>
+                        <span className="text-2xl font-bold font-mono text-amber-400 block mt-0.5">
+                          {formatCurrency(finalSellingPrice)}
+                        </span>
+                      </div>
+
+                      {/* Profit */}
+                      <div className="bg-white/5 p-3 rounded-lg border border-white/10">
+                        <span className="block text-[10px] font-medium text-slate-400">
+                          {language === 'ar' ? 'صافي الربح المقدر' : 'Bénéfice Net'}
+                        </span>
+                        <span className="text-base font-bold font-mono text-emerald-400 block mt-0.5">
+                          +{formatCurrency(profitAmount)}
+                        </span>
+                      </div>
+
+                      {/* Multiplier Coefficient */}
+                      <div className="bg-white/5 p-3 rounded-lg border border-white/10">
+                        <span className="block text-[10px] font-medium text-slate-400">
+                          {language === 'ar' ? 'معامل الضرب' : 'Coef. Multiplicateur'}
+                        </span>
+                        <span className="text-base font-bold font-mono text-blue-400 block mt-0.5">
+                          x{markupMultiplier.toFixed(3)}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Actions inside results */}
+                  <div className="mt-4 pt-4 border-t border-white/10 flex gap-2">
+                    <button
+                      type="button"
+                      disabled={calcCostNum <= 0 || finalSellingPrice <= 0}
+                      onClick={() => {
+                        handleOpenCreate(calcCostNum, parseFloat(finalSellingPrice.toFixed(3)));
+                        showToast(
+                          language === 'ar' 
+                            ? 'تم إعداد نموذج المنتج الجديد بالأسعار المحسوبة!' 
+                            : 'Fiche pré-remplie avec les tarifs calculés !', 
+                          'success'
+                        );
+                      }}
+                      className="flex-1 py-2 bg-amber-500 hover:bg-amber-600 disabled:opacity-40 disabled:hover:bg-amber-500 text-slate-950 font-bold rounded-lg text-xs transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
+                    >
+                      <PlusCircle className="w-3.5 h-3.5 shrink-0" />
+                      <span className="truncate">{language === 'ar' ? 'إنشاء منتج بالأسعار' : 'Créer Produit avec ces prix'}</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setCalcCost('');
+                        setCalcMargin('30');
+                      }}
+                      className="px-3 py-2 bg-white/10 hover:bg-white/15 text-white font-medium rounded-lg text-xs transition-colors cursor-pointer"
+                    >
+                      {language === 'ar' ? 'إعادة تعيين' : 'Effacer'}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Filter panel */}
       <div className="bg-white p-4 rounded border border-slate-200 flex flex-col md:flex-row gap-4 items-center justify-between shadow-xs">
@@ -1392,9 +1636,11 @@ export default function Products({ db, onUpdateDb }: ProductsProps) {
                               setEditPriceProductId(prod.id);
                               setEditPurchasePrice(prod.purchasePrice);
                               setEditSellingPrice(prod.sellingPrice);
+                              setEditStockQty(prod.stock);
+                              setEditExpiryDate(prod.dateExpiration || prod.expiryDate || '');
                             }}
                             className="p-1.5 bg-slate-100 hover:bg-amber-50 hover:text-amber-600 rounded text-slate-500 transition-colors cursor-pointer flex items-center justify-center"
-                            title={language === 'ar' ? 'تعديل سريع للأسعار' : 'Modifier prix rapidement'}
+                            title={language === 'ar' ? 'تعديل سريع للأسعار والكمية وتاريخ الصلاحية' : 'Modifier rapidement prix, stock & péremption'}
                           >
                             <DollarSign className="w-3.5 h-3.5" />
                           </button>
@@ -2177,7 +2423,7 @@ export default function Products({ db, onUpdateDb }: ProductsProps) {
               <div className="flex items-center justify-between border-b border-slate-100 pb-3">
                 <h3 className="text-base font-bold text-slate-900 flex items-center gap-1.5">
                   <DollarSign className="w-5 h-5 text-amber-500" />
-                  <span>{language === 'ar' ? 'تعديل سريع للأسعار' : 'Modification rapide des prix'}</span>
+                  <span>{language === 'ar' ? 'تعديل سريع للمنتج' : 'Modification rapide du produit'}</span>
                 </h3>
                 <button type="button" onClick={() => setEditPriceProductId(null)} className="text-slate-400 hover:text-slate-600 cursor-pointer">
                   <X className="w-4 h-4" />
@@ -2198,10 +2444,11 @@ export default function Products({ db, onUpdateDb }: ProductsProps) {
               </div>
 
               <form onSubmit={handleQuickPriceUpdate} className="space-y-4 font-sans text-xs">
+                {/* Price block */}
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-1">
                     <label className="text-xs font-bold text-slate-700 block">
-                      {language === 'ar' ? 'سعر الشراء' : "Prix d'Achat"}
+                      {language === 'ar' ? 'سعر الشراء (د.ت)' : "Prix d'Achat (DT)"}
                     </label>
                     <input
                       type="number"
@@ -2215,7 +2462,7 @@ export default function Products({ db, onUpdateDb }: ProductsProps) {
                   </div>
                   <div className="space-y-1">
                     <label className="text-xs font-bold text-slate-700 block">
-                      {language === 'ar' ? 'سعر البيع' : 'Prix de Vente'}
+                      {language === 'ar' ? 'سعر البيع (د.ت)' : 'Prix de Vente (DT)'}
                     </label>
                     <input
                       type="number"
@@ -2224,6 +2471,35 @@ export default function Products({ db, onUpdateDb }: ProductsProps) {
                       required
                       value={editSellingPrice}
                       onChange={(e) => setEditSellingPrice(Number(e.target.value))}
+                      className="w-full bg-slate-50 border border-slate-200 rounded py-2 px-3 focus:outline-hidden text-slate-800 font-semibold text-center font-mono"
+                    />
+                  </div>
+                </div>
+
+                {/* Stock & Expiration Date block */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <label className="text-xs font-bold text-slate-700 block">
+                      {language === 'ar' ? 'الكمية في المخزون' : 'Quantité en Stock'}
+                    </label>
+                    <input
+                      type="number"
+                      step="any"
+                      min="0"
+                      required
+                      value={editStockQty}
+                      onChange={(e) => setEditStockQty(Number(e.target.value))}
+                      className="w-full bg-slate-50 border border-slate-200 rounded py-2 px-3 focus:outline-hidden text-slate-800 font-semibold text-center font-mono"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-xs font-bold text-slate-700 block">
+                      {language === 'ar' ? 'تاريخ انتهاء الصلاحية' : "Date d'Expiration"}
+                    </label>
+                    <input
+                      type="date"
+                      value={editExpiryDate}
+                      onChange={(e) => setEditExpiryDate(e.target.value)}
                       className="w-full bg-slate-50 border border-slate-200 rounded py-2 px-3 focus:outline-hidden text-slate-800 font-semibold text-center font-mono"
                     />
                   </div>
@@ -2241,7 +2517,7 @@ export default function Products({ db, onUpdateDb }: ProductsProps) {
                     type="submit"
                     className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded text-xs font-bold cursor-pointer transition-all shadow-xs font-sans"
                   >
-                    {language === 'ar' ? 'تحديث السعر' : 'Mettre à jour'}
+                    {language === 'ar' ? 'حفظ التعديلات' : 'Enregistrer'}
                   </button>
                 </div>
               </form>

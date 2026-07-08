@@ -299,80 +299,95 @@ export default function InvoicesList({ db, onUpdateDb }: InvoicesListProps) {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 font-mono">
-                {paginatedInvoices.map(inv => {
-                  const isPaid = inv.balance === 0;
+                <AnimatePresence mode="popLayout">
+                  {paginatedInvoices.map(inv => {
+                    const isPaid = inv.balance === 0;
 
-                  return (
-                    <tr key={inv.id} className="hover:bg-slate-50/60 transition-colors">
-                      <td className="p-4 font-bold text-slate-950 text-xs whitespace-nowrap">
-                        <span className={`px-2 py-0.5 text-[9px] font-bold rounded-sm mr-1.5 uppercase ${
-                          inv.isReturn 
-                            ? 'bg-rose-100 text-rose-800' 
-                            : (inv.type === 'facture' ? 'bg-blue-100 text-blue-800' : 'bg-slate-200 text-slate-800')
-                        }`}>
-                          {inv.isReturn ? 'Retour' : inv.type}
-                        </span>
-                        {inv.number}
-                      </td>
-                      <td className="p-4 text-slate-500 whitespace-nowrap">
-                        {inv.date.includes('T') ? inv.date.split('T')[0] : inv.date}
-                      </td>
-                      <td className="p-4 font-sans font-bold text-slate-800 truncate max-w-[160px]">
-                        {inv.partnerName}
-                      </td>
-                      <td className="p-4 text-right font-bold text-slate-900 whitespace-nowrap">
-                        {formatCurrency(inv.total)}
-                      </td>
-                      <td className="p-4 text-right text-emerald-600 whitespace-nowrap font-bold">
-                        {formatCurrency(inv.paidAmount)}
-                      </td>
-                      <td className="p-4 text-right font-bold text-rose-600 whitespace-nowrap">
-                        {formatCurrency(inv.balance)}
-                      </td>
-                      <td className="p-4 text-center whitespace-nowrap">
-                        <span className={`text-[9px] font-bold px-2 py-1 rounded-sm w-max ${
-                          isPaid 
-                            ? 'bg-emerald-50 text-emerald-700 font-semibold' 
-                            : inv.paidAmount > 0 
-                              ? 'bg-amber-50 text-amber-700' 
-                              : 'bg-rose-50 text-rose-700 font-semibold'
-                        }`}>
-                          {isPaid ? 'Réglement Total' : inv.paidAmount > 0 ? 'Partiel (Encours)' : 'Impayé'}
-                        </span>
-                      </td>
-                      <td className="p-4 text-right flex items-center justify-end gap-2">
-                        <button
-                          onClick={() => handleDirectDownloadPDF(inv, db.settings?.activitySector === 'superette' ? 'ticket' : 'a4')}
-                          title={language === 'ar' ? 'تحميل مباشر PDF 📥' : 'Télécharger directement en PDF 📥'}
-                          className="p-1.5 bg-emerald-50 text-emerald-600 hover:bg-emerald-100 rounded-lg cursor-pointer transition-colors"
-                        >
-                          <Download className="w-3.5 h-3.5" />
-                        </button>
-                        <button
-                          onClick={() => { setSelectedInvoice(inv); setPaymentInput(inv.balance.toString()); setPrintFormat('ticket'); }}
-                          title="Preview Thermal Receipt"
-                          className="p-1.5 bg-blue-50 text-blue-600 hover:bg-blue-100 rounded-lg cursor-pointer"
-                        >
-                          <Printer className="w-3.5 h-3.5" />
-                        </button>
-                        <button
-                          onClick={() => { setSelectedInvoice(inv); setPaymentInput(inv.balance.toString()); setPrintFormat('a4'); }}
-                          title="View Document Details"
-                          className="p-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg cursor-pointer"
-                        >
-                          <Eye className="w-3.5 h-3.5" />
-                        </button>
-                        <button
-                          onClick={() => setDeleteInvoiceId(inv.id)}
-                          title={language === 'ar' ? 'حذف الفاتورة' : 'Supprimer la facture'}
-                          className="p-1.5 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-lg cursor-pointer transition-colors"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </td>
-                    </tr>
-                  );
-                })}
+                    return (
+                      <motion.tr
+                        layout
+                        key={inv.id}
+                        initial={{ opacity: 0, y: 15 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, x: -15, scale: 0.98 }}
+                        transition={{
+                          type: 'spring',
+                          stiffness: 300,
+                          damping: 26,
+                          layout: { type: 'spring', stiffness: 300, damping: 28 }
+                        }}
+                        className="hover:bg-slate-50/60 transition-colors"
+                      >
+                        <td className="p-4 font-bold text-slate-950 text-xs whitespace-nowrap">
+                          <span className={`px-2 py-0.5 text-[9px] font-bold rounded-sm mr-1.5 uppercase ${
+                            inv.isReturn 
+                              ? 'bg-rose-100 text-rose-800' 
+                              : (inv.type === 'facture' ? 'bg-blue-100 text-blue-800' : 'bg-slate-200 text-slate-800')
+                          }`}>
+                            {inv.isReturn ? 'Retour' : inv.type}
+                          </span>
+                          {inv.number}
+                        </td>
+                        <td className="p-4 text-slate-500 whitespace-nowrap">
+                          {inv.date.includes('T') ? inv.date.split('T')[0] : inv.date}
+                        </td>
+                        <td className="p-4 font-sans font-bold text-slate-800 truncate max-w-[160px]">
+                          {inv.partnerName}
+                        </td>
+                        <td className="p-4 text-right font-bold text-slate-900 whitespace-nowrap">
+                          {formatCurrency(inv.total)}
+                        </td>
+                        <td className="p-4 text-right text-emerald-600 whitespace-nowrap font-bold">
+                          {formatCurrency(inv.paidAmount)}
+                        </td>
+                        <td className="p-4 text-right font-bold text-rose-600 whitespace-nowrap">
+                          {formatCurrency(inv.balance)}
+                        </td>
+                        <td className="p-4 text-center whitespace-nowrap">
+                          <span className={`text-[9px] font-bold px-2 py-1 rounded-sm w-max ${
+                            isPaid 
+                              ? 'bg-emerald-50 text-emerald-700 font-semibold' 
+                              : inv.paidAmount > 0 
+                                ? 'bg-amber-50 text-amber-700' 
+                                : 'bg-rose-50 text-rose-700 font-semibold'
+                          }`}>
+                            {isPaid ? 'Réglement Total' : inv.paidAmount > 0 ? 'Partiel (Encours)' : 'Impayé'}
+                          </span>
+                        </td>
+                        <td className="p-4 text-right flex items-center justify-end gap-2">
+                          <button
+                            onClick={() => handleDirectDownloadPDF(inv, db.settings?.activitySector === 'superette' ? 'ticket' : 'a4')}
+                            title={language === 'ar' ? 'تحميل مباشر PDF 📥' : 'Télécharger directement en PDF 📥'}
+                            className="p-1.5 bg-emerald-50 text-emerald-600 hover:bg-emerald-100 rounded-lg cursor-pointer transition-colors"
+                          >
+                            <Download className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            onClick={() => { setSelectedInvoice(inv); setPaymentInput(inv.balance.toString()); setPrintFormat('ticket'); }}
+                            title="Preview Thermal Receipt"
+                            className="p-1.5 bg-blue-50 text-blue-600 hover:bg-blue-100 rounded-lg cursor-pointer"
+                          >
+                            <Printer className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            onClick={() => { setSelectedInvoice(inv); setPaymentInput(inv.balance.toString()); setPrintFormat('a4'); }}
+                            title="View Document Details"
+                            className="p-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg cursor-pointer"
+                          >
+                            <Eye className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            onClick={() => setDeleteInvoiceId(inv.id)}
+                            title={language === 'ar' ? 'حذف الفاتورة' : 'Supprimer la facture'}
+                            className="p-1.5 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-lg cursor-pointer transition-colors"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </td>
+                      </motion.tr>
+                    );
+                  })}
+                </AnimatePresence>
               </tbody>
             </table>
           </div>

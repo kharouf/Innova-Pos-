@@ -1893,9 +1893,14 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
         {scanToast && (
           <motion.div
             key={scanToast.id}
-            initial={{ opacity: 0, y: -45, x: '-50%', scale: 0.92 }}
+            initial={{ opacity: 0, y: -20, x: '-50%', scale: 0.92 }}
             animate={{ opacity: 1, y: 0, x: '-50%', scale: 1 }}
-            exit={{ opacity: 0, y: -25, x: '-50%', scale: 0.92 }}
+            exit={{ opacity: 0, y: -15, x: '-50%', scale: 0.92 }}
+            transition={{
+              type: 'spring',
+              stiffness: 350,
+              damping: 24
+            }}
             className="bg-emerald-600 text-white rounded-xl py-3 px-5 shadow-xl border border-emerald-500/35 flex items-center justify-between gap-4 font-sans select-none z-50 fixed md:absolute top-4 left-1/2 w-[92%] max-w-sm backdrop-blur-md"
           >
             <div className="flex items-center gap-2.5">
