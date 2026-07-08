@@ -844,10 +844,10 @@ function AppContent() {
           const isTrialValid = userLicense.licenseStatus === 'trial' && new Date() <= new Date(userLicense.licenseExpiry);
           const isActiveValid = userLicense.licenseStatus === 'active' && isVerified;
 
-          // Bypass checks if developer is logged in (kharoufwala24@gmail.com, walakharouf65@gmail.com)
-          // admin walakharouf6665@gmail.com must still have license expiry alerts active (no bypass)
+          // Bypass checks if developer/admin is logged in (kharoufwala24@gmail.com, walakharouf665@gmail.com, walakharouf6665@gmail.com)
           const isDeveloper = currentUser.email === 'kharoufwala24@gmail.com' || 
-                              currentUser.email === 'walakharouf665@gmail.com';
+                              currentUser.email === 'walakharouf665@gmail.com' ||
+                              currentUser.email === 'walakharouf6665@gmail.com';
 
           if (!isDeveloper && (userLicense.licenseStatus === 'suspended' || (!isTrialValid && !isActiveValid))) {
             setIsLicenseLocked(true);
@@ -1436,7 +1436,7 @@ function AppContent() {
 
     if (status === 'active') {
       let expiryInfo = '';
-      if (license.licenseExpiry) {
+      if (license.licenseExpiry && !isSuperAdmin) {
         try {
           const expiryDateObj = new Date(license.licenseExpiry);
           const today = new Date();
@@ -1466,6 +1466,11 @@ function AppContent() {
         : `✅ Votre abonnement INNOVA POS PRO est entièrement actif. Merci pour votre fidélité et votre confiance !${expiryInfo}`;
     } else {
       // trial/default
+      if (isSuperAdmin) {
+        return language === 'ar'
+          ? '✅ مرحباً بك يا مدير النظام! تم تفعيل الوصول الكامل وغير المحدود بنجاح.'
+          : '✅ Bienvenue Administrateur ! L\'accès complet et illimité est activé.';
+      }
       return language === 'ar'
         ? 'مرحباً بك في النسخة التجريبية لـ INNOVA POS. اتصل بنا للتنشيط النهائي.'
         : 'Bienvenue dans la version d\'essai de INNOVA POS. Contactez-nous pour l\'activation finale.';
@@ -1484,6 +1489,10 @@ function AppContent() {
       custom !== 'Bienvenue sur INNOVA POS.'
     ) {
       return language === 'ar' ? 'إعلان عاجل من الموزع الفني' : 'Message urgent du distributeur';
+    }
+    
+    if (isSuperAdmin) {
+      return language === 'ar' ? 'وصول غير محدود 👑' : 'Accès Illimité 👑';
     }
     
     return license.licenseStatus === 'active'
@@ -2310,7 +2319,7 @@ function AppContent() {
                     exit={{ opacity: 0, y: -12 }}
                     transition={{ duration: 0.22, ease: "easeInOut" }}
                   >
-                    <Dashboard db={db} onNavigate={(tab) => { setActiveTab(tab); }} onUpdateDb={handleUpdateDb} license={license} />
+                    <Dashboard db={db} onNavigate={(tab) => { setActiveTab(tab); }} onUpdateDb={handleUpdateDb} license={license} user={user} />
                   </motion.div>
                 )}
                 {activeTab === 'pos' && (

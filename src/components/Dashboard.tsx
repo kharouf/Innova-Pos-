@@ -51,9 +51,10 @@ interface DashboardProps {
   onNavigate: (tab: string) => void;
   onUpdateDb?: (updatedDb: DatabaseState) => void;
   license?: any;
+  user?: any;
 }
 
-export default function Dashboard({ db, onNavigate, onUpdateDb, license }: DashboardProps) {
+export default function Dashboard({ db, onNavigate, onUpdateDb, license, user }: DashboardProps) {
   const { language, t, formatCurrency } = useLanguage();
   const [showNotificationDetails, setShowNotificationDetails] = useState(false);
   const [showExpirationDetails, setShowExpirationDetails] = useState(false);
@@ -267,7 +268,14 @@ export default function Dashboard({ db, onNavigate, onUpdateDb, license }: Dashb
     }
   }, [license]);
 
-  const showLicenseAlert = licenseExpiryDays !== null && licenseExpiryDays <= 7;
+  // Bypass showing the SaaS license warning alerts to administrative / developer accounts
+  const isBypassedAdmin = user && (
+    user.email === 'kharoufwala24@gmail.com' ||
+    user.email === 'walakharouf6665@gmail.com' ||
+    user.email === 'walakharouf665@gmail.com'
+  );
+
+  const showLicenseAlert = !isBypassedAdmin && licenseExpiryDays !== null && licenseExpiryDays <= 7;
 
   // ============================================
   // ACTIVE SHIFT LIVE MONITOR & COMPARATIVE RATIO
