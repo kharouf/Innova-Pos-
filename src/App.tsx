@@ -844,10 +844,10 @@ function AppContent() {
           const isTrialValid = userLicense.licenseStatus === 'trial' && new Date() <= new Date(userLicense.licenseExpiry);
           const isActiveValid = userLicense.licenseStatus === 'active' && isVerified;
 
-          // Bypass checks if developer is logged in (kharoufwala24@gmail.com, walakharouf665@gmail.com, walakharouf6665@gmail.com)
+          // Bypass checks if developer is logged in (kharoufwala24@gmail.com, walakharouf65@gmail.com)
+          // admin walakharouf6665@gmail.com must still have license expiry alerts active (no bypass)
           const isDeveloper = currentUser.email === 'kharoufwala24@gmail.com' || 
-                              currentUser.email === 'walakharouf665@gmail.com' ||
-                              currentUser.email === 'walakharouf6665@gmail.com';
+                              currentUser.email === 'walakharouf665@gmail.com';
 
           if (!isDeveloper && (userLicense.licenseStatus === 'suspended' || (!isTrialValid && !isActiveValid))) {
             setIsLicenseLocked(true);
