@@ -487,8 +487,8 @@ export default function Products({ db, onUpdateDb }: ProductsProps) {
     return filteredProducts.slice(startIndex, endIndex);
   }, [filteredProducts, startIndex, endIndex]);
 
-  // Bulk import Tunisian presets (tobacco and fuel)
-  const handleImportTunisianProducts = (type: 'tobacco' | 'fuel' | 'all') => {
+  // Bulk import Tunisian presets (tobacco, fuel, and telecom)
+  const handleImportTunisianProducts = (type: 'tobacco' | 'fuel' | 'telecom' | 'all') => {
     const productsToAdd: any[] = [];
     
     const presets = {
@@ -525,6 +525,14 @@ export default function Products({ db, onUpdateDb }: ProductsProps) {
         { name: 'Benzine Vert 1L (بنزين أخضر خالي من الرصاص 1 لتر)', category: 'Carburant / بنزين', code: '619002000201', purchasePrice: 2.100, sellingPrice: 2.650, stock: 50, minAlertQty: 5, unit: 'Litre', tvaRate: 19 },
         { name: 'Benzine Vert 1.5L (بنزين أخضر خالي من الرصاص 1.5 لتر)', category: 'Carburant / بنزين', code: '619002000202', purchasePrice: 3.150, sellingPrice: 3.970, stock: 50, minAlertQty: 5, unit: 'Litre', tvaRate: 19 },
         { name: 'Benzine Vert 0.5L (بنزين أخضر خالي من الرصاص نصف لتر)', category: 'Carburant / بنزين', code: '619002000203', purchasePrice: 1.050, sellingPrice: 1.320, stock: 50, minAlertQty: 5, unit: 'Litre', tvaRate: 19 }
+      ],
+      telecom: [
+        { name: 'Ticket Ooredoo 1 DT (تذكرة أوريدو 1 د)', category: 'Télécom / شحن', code: '619003000101', purchasePrice: 0.930, sellingPrice: 1.000, stock: 100, minAlertQty: 10, unit: 'Ticket', tvaRate: 19 },
+        { name: 'Ticket Ooredoo 5 DT (تذكرة أوريدو 5 د)', category: 'Télécom / شحن', code: '619003000102', purchasePrice: 4.650, sellingPrice: 5.000, stock: 50, minAlertQty: 5, unit: 'Ticket', tvaRate: 19 },
+        { name: 'Ticket Tunisie Telecom 1 DT (تذكرة اتصالات تونس 1 د)', category: 'Télécom / شحن', code: '619003000201', purchasePrice: 0.930, sellingPrice: 1.000, stock: 100, minAlertQty: 10, unit: 'Ticket', tvaRate: 19 },
+        { name: 'Ticket Tunisie Telecom 5 DT (تذكرة اتصالات تونس 5 د)', category: 'Télécom / شحن', code: '619003000202', purchasePrice: 4.650, sellingPrice: 5.000, stock: 50, minAlertQty: 5, unit: 'Ticket', tvaRate: 19 },
+        { name: 'Ticket Orange 1 DT (تذكرة أورنج 1 د)', category: 'Télécom / شحن', code: '619003000301', purchasePrice: 0.930, sellingPrice: 1.000, stock: 100, minAlertQty: 10, unit: 'Ticket', tvaRate: 19 },
+        { name: 'Ticket Orange 5 DT (تذكرة أورنج 5 د)', category: 'Télécom / شحن', code: '619003000302', purchasePrice: 4.650, sellingPrice: 5.000, stock: 50, minAlertQty: 5, unit: 'Ticket', tvaRate: 19 }
       ]
     };
 
@@ -533,6 +541,9 @@ export default function Products({ db, onUpdateDb }: ProductsProps) {
     }
     if (type === 'fuel' || type === 'all') {
       productsToAdd.push(...presets.fuel);
+    }
+    if (type === 'telecom' || type === 'all') {
+      productsToAdd.push(...presets.telecom);
     }
 
     let addedCount = 0;
@@ -1530,13 +1541,13 @@ export default function Products({ db, onUpdateDb }: ProductsProps) {
                   </h3>
                   <p className="text-slate-500 dark:text-zinc-400 text-[11px] mt-1">
                     {language === 'ar' 
-                      ? 'أضف سلع التبغ/الدخان (بالعلبة والسيجارة) وبنزين السيارات بمختلف السعات (لتر، لتر ونصف، نصف لتر) إلى مخزونك بنقرة واحدة.' 
-                      : 'Pré-remplissez votre catalogue avec les articles de tabac tunisiens et les différents formats de carburants.'}
+                      ? 'أضف سلع التبغ/الدخان، بنزين السيارات بمختلف السعات، وتذاكر شحن الهاتف (أوريدو، اتصالات تونس، أورنج) إلى مخزونك بنقرة واحدة.' 
+                      : 'Pré-remplissez votre catalogue avec les articles de tabac tunisiens, les carburants et les tickets de recharge télécom.'}
                   </p>
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
                 {/* Tobacco Presets Card */}
                 <div className="bg-white/95 dark:bg-zinc-800/95 p-4 rounded-xl border border-indigo-100/80 dark:border-zinc-700/60 flex flex-col justify-between">
                   <div>
@@ -1595,6 +1606,34 @@ export default function Products({ db, onUpdateDb }: ProductsProps) {
                     <span>{language === 'ar' ? 'إضافة 6 سلع وقود وبنزين' : 'Ajouter les 6 formats de Carburant'}</span>
                   </button>
                 </div>
+
+                {/* Telecom Presets Card */}
+                <div className="bg-white/95 dark:bg-zinc-800/95 p-4 rounded-xl border border-indigo-100/80 dark:border-zinc-700/60 flex flex-col justify-between">
+                  <div>
+                    <h4 className="text-xs font-bold text-slate-800 dark:text-zinc-100 flex items-center gap-1.5 mb-2">
+                      <span className="text-sm">📱</span>
+                      {language === 'ar' ? 'تذاكر شحن الهاتف (1 د و 5 د)' : 'Tickets de Recharge (1 DT & 5 DT)'}
+                    </h4>
+                    <p className="text-[11px] text-slate-500 dark:text-zinc-400 leading-relaxed mb-3">
+                      {language === 'ar'
+                        ? 'يشمل: تذاكر شحن هاتف لشركات أوريدو (Ooredoo)، اتصالات تونس (Telecom)، وأورنج (Orange) بفئات 1 د و5 د.'
+                        : 'Inclut: Tickets de recharge pour Ooredoo, Tunisie Telecom et Orange en formats 1 DT et 5 DT prêts pour la caisse.'}
+                    </p>
+                    <div className="flex flex-wrap gap-1 mb-4">
+                      <span className="text-[9px] bg-red-50 text-red-700 dark:bg-red-950/40 dark:text-red-300 py-0.5 px-2 rounded-full font-medium">Ooredoo (1D / 5D)</span>
+                      <span className="text-[9px] bg-blue-50 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300 py-0.5 px-2 rounded-full font-medium">Telecom (1D / 5D)</span>
+                      <span className="text-[9px] bg-orange-50 text-orange-700 dark:bg-orange-950/40 dark:text-orange-300 py-0.5 px-2 rounded-full font-medium">Orange (1D / 5D)</span>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => handleImportTunisianProducts('telecom')}
+                    className="w-full py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg text-xs transition-colors flex items-center justify-center gap-1.5 cursor-pointer shadow-xs"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>{language === 'ar' ? 'إضافة 6 تذاكر شحن هاتف' : 'Ajouter les 6 tickets Télécom'}</span>
+                  </button>
+                </div>
               </div>
 
               <div className="mt-4 pt-3 border-t border-indigo-100/60 dark:border-zinc-800/80 flex flex-col sm:flex-row justify-between items-center gap-2">
@@ -1609,7 +1648,7 @@ export default function Products({ db, onUpdateDb }: ProductsProps) {
                   className="py-2 px-4 bg-gradient-to-r from-indigo-600 to-emerald-600 hover:from-indigo-700 hover:to-emerald-700 text-white font-bold rounded-lg text-xs transition-all flex items-center gap-1.5 shadow-xs cursor-pointer"
                 >
                   <Sparkles className="w-4 h-4" />
-                  <span>{language === 'ar' ? 'إضافة الكل معاً (30 منتج)' : 'Tout importer en un clic (30 articles)'}</span>
+                  <span>{language === 'ar' ? 'إضافة الكل معاً (36 منتج)' : 'Tout importer en un clic (36 articles)'}</span>
                 </button>
               </div>
             </div>

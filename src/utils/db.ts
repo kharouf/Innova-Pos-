@@ -491,32 +491,57 @@ export const DEFAULT_SETTINGS = {
 
 export const SAMPLE_PRODUCTS: Record<'superette' | 'pharmacie' | 'materiaux' | 'general', Product[]> = {
   superette: [
+    // Céréales & Pâtes
     { id: 'sup-1', code: '6191002003001', name: 'Couscous Fin Diari 1kg (كسكسي دياري جويد)', category: 'Céréales & Pâtes', purchasePrice: 0.850, sellingPrice: 1.100, stock: 120, minAlertQty: 20, unit: 'Pcs' },
-    { id: 'sup-2', code: '6192403104523', name: 'Lait Demi-Écrémé Délice UHT 1L (حليب دليس)', category: 'Produits Laitiers', purchasePrice: 1.350, sellingPrice: 1.450, stock: 145, minAlertQty: 30, unit: 'Pcs' },
-    { id: 'sup-3', code: '6194512001122', name: 'Thon Entier à l\'Huile d\'Olive Sidi Daoud 160g (تن سيدي داود)', category: 'Conserves', purchasePrice: 4.200, sellingPrice: 4.900, stock: 65, minAlertQty: 15, unit: 'Pcs' },
-    { id: 'sup-4', code: '6198502214433', name: 'Harissa Traditionnelle Sicam 135g (هريسة سيكام)', category: 'Conserves', purchasePrice: 0.950, sellingPrice: 1.250, stock: 80, minAlertQty: 15, unit: 'Pcs' },
-    { id: 'sup-5', code: '6190015022354', name: 'Eau Minérale Safia Naturelle 1.5L (ماء معدني صافية)', category: 'Boissons', purchasePrice: 0.650, sellingPrice: 0.850, stock: 180, minAlertQty: 40, unit: 'Pcs' },
-    { id: 'sup-6', code: '6191501004112', name: 'Double Concentré de Tomate Sicam 400g (طماطم معلبة سيكام)', category: 'Conserves', purchasePrice: 1.850, sellingPrice: 2.150, stock: 85, minAlertQty: 20, unit: 'Pcs' },
     { id: 'sup-7', code: '6191114002341', name: 'Spaghetti N°2 Randa 500g (معكرونة رندة)', category: 'Céréales & Pâtes', purchasePrice: 0.680, sellingPrice: 0.850, stock: 200, minAlertQty: 30, unit: 'Pcs' },
-    { id: 'sup-8', code: '6192224018872', name: 'Café Moulu Ben Yedder Tradition 250g (قهوة بن يدر)', category: 'Café & Thé', purchasePrice: 3.100, sellingPrice: 3.800, stock: 40, minAlertQty: 10, unit: 'Pcs' },
     { id: 'sup-9', code: '6191002003002', name: 'Couscous Moyen Warda 1kg (كسكسي وردة وسط)', category: 'Céréales & Pâtes', purchasePrice: 0.840, sellingPrice: 1.050, stock: 95, minAlertQty: 20, unit: 'Pcs' },
+
+    // Produits Laitiers
+    { id: 'sup-2', code: '6192403104523', name: 'Lait Demi-Écrémé Délice UHT 1L (حليب دليس)', category: 'Produits Laitiers', purchasePrice: 1.350, sellingPrice: 1.450, stock: 145, minAlertQty: 30, unit: 'Pcs' },
     { id: 'sup-10', code: '6192003004005', name: 'Yaourt Brassé Délice Fraise (ياغورت دليس فراولة)', category: 'Produits Laitiers', purchasePrice: 0.480, sellingPrice: 0.550, stock: 120, minAlertQty: 25, unit: 'Pcs' },
     { id: 'sup-11', code: '6192404001258', name: 'Cheese Giga Carré 24 Pcs (جبن قيقا 24 قطعة)', category: 'Produits Laitiers', purchasePrice: 4.800, sellingPrice: 5.400, stock: 35, minAlertQty: 8, unit: 'Pcs' },
     { id: 'sup-12', code: '6193001004521', name: 'Fromage Râpé Président 100g (جبن مرحي بريزيدن)', category: 'Produits Laitiers', purchasePrice: 3.200, sellingPrice: 3.800, stock: 48, minAlertQty: 10, unit: 'Pcs' },
-    { id: 'sup-13', code: '6194002005612', name: 'Huile de Tournesol Safia 1L (زيت صافية)', category: 'Boissons', purchasePrice: 4.800, sellingPrice: 5.500, stock: 60, minAlertQty: 15, unit: 'Pcs' },
-    { id: 'sup-14', code: '6195003006721', name: 'Huile d\'Olive Extra Vierge Châal 1L (زيت زيتون شعال)', category: 'Boissons', purchasePrice: 22.000, sellingPrice: 25.000, stock: 20, minAlertQty: 5, unit: 'Pcs' },
     { id: 'sup-15', code: '6196004007832', name: 'Margarine Goldina 250g (مارغرين غولدينا)', category: 'Produits Laitiers', purchasePrice: 1.400, sellingPrice: 1.700, stock: 75, minAlertQty: 15, unit: 'Pcs' },
+
+    // Conserves
+    { id: 'sup-3', code: '6194512001122', name: 'Thon Entier à l\'Huile d\'Olive Sidi Daoud 160g (تن سيدي داود)', category: 'Conserves', purchasePrice: 4.200, sellingPrice: 4.900, stock: 65, minAlertQty: 15, unit: 'Pcs' },
+    { id: 'sup-4', code: '6198502214433', name: 'Harissa Traditionnelle Sicam 135g (هريسة سيكام)', category: 'Conserves', purchasePrice: 0.950, sellingPrice: 1.250, stock: 80, minAlertQty: 15, unit: 'Pcs' },
+    { id: 'sup-6', code: '6191501004112', name: 'Double Concentré de Tomate Sicam 400g (طماطم معلبة سيكام)', category: 'Conserves', purchasePrice: 1.850, sellingPrice: 2.150, stock: 85, minAlertQty: 20, unit: 'Pcs' },
     { id: 'sup-16', code: '6197005008943', name: 'Thon Entier à l\'Huile El Manar 160g (تن المنار)', category: 'Conserves', purchasePrice: 4.300, sellingPrice: 5.100, stock: 50, minAlertQty: 12, unit: 'Pcs' },
     { id: 'sup-17', code: '6198006009054', name: 'Sardines à l\'Huile Piquante El Manar 125g (سردينة المنار حارة)', category: 'Conserves', purchasePrice: 1.800, sellingPrice: 2.200, stock: 90, minAlertQty: 15, unit: 'Pcs' },
+
+    // Boissons / مشروبات
+    { id: 'sup-5', code: '6190015022354', name: 'Eau Minérale Safia Naturelle 1.5L (ماء معدني صافية)', category: 'Boissons / مشروبات', purchasePrice: 0.650, sellingPrice: 0.850, stock: 180, minAlertQty: 40, unit: 'Pcs' },
+    { id: 'sup-19', code: '6190008011276', name: 'Soda Coca-Cola Original 1.5L (كوكاكولا)', category: 'Boissons / مشروبات', purchasePrice: 2.650, sellingPrice: 3.100, stock: 150, minAlertQty: 30, unit: 'Pcs' },
+    { id: 'sup-20', code: '6190109012387', name: 'Soda Boga Blanche 1.5L (بوغا بيضاء)', category: 'Boissons / مشروبات', purchasePrice: 2.300, sellingPrice: 2.700, stock: 120, minAlertQty: 25, unit: 'Pcs' },
+    { id: 'sup-20-f', code: '6190109012399', name: 'Soda Fanta Orange 1.5L (فانتا برتقال)', category: 'Boissons / مشروبات', purchasePrice: 2.400, sellingPrice: 2.900, stock: 100, minAlertQty: 20, unit: 'Pcs' },
+    { id: 'sup-20-s', code: '6190109012411', name: 'Eau Minérale Sabrine 1.5L (ماء معدني صابرين)', category: 'Boissons / مشروبات', purchasePrice: 0.600, sellingPrice: 0.800, stock: 160, minAlertQty: 35, unit: 'Pcs' },
+
+    // Jus / عصير
+    { id: 'sup-j1', code: '6190022013012', name: 'Jus d\'Orange Délice 1L (عصير برتقال دليس)', category: 'Jus / عصير', purchasePrice: 2.800, sellingPrice: 3.400, stock: 75, minAlertQty: 15, unit: 'Pcs' },
+    { id: 'sup-j2', code: '6190022013029', name: 'Jus Oh! Pêche 1L (عصير أوه خوخ)', category: 'Jus / عصير', purchasePrice: 2.100, sellingPrice: 2.600, stock: 90, minAlertQty: 15, unit: 'Pcs' },
+    { id: 'sup-j3', code: '6190022013036', name: 'Jus Diva Pomme 1L (عصير تفاح ديفا)', category: 'Jus / عصير', purchasePrice: 2.905, sellingPrice: 3.500, stock: 60, minAlertQty: 10, unit: 'Pcs' },
+
+    // Glaces / مثلجات
+    { id: 'sup-g1', code: '6190023014018', name: 'Glace Selja Chocolat (مثلجات سلجة شوكولا)', category: 'Glaces / مثلجات', purchasePrice: 1.100, sellingPrice: 1.500, stock: 50, minAlertQty: 10, unit: 'Pcs' },
+    { id: 'sup-g2', code: '6190023014025', name: 'Glace Cornetto Royal Vanille (مثلجات كورنيتو)', category: 'Glaces / مثلجات', purchasePrice: 2.200, sellingPrice: 2.800, stock: 40, minAlertQty: 8, unit: 'Pcs' },
+    { id: 'sup-g3', code: '6190023014032', name: 'Glace Solero Fraise (مثلجات سوليرو توت)', category: 'Glaces / مثلجات', purchasePrice: 1.800, sellingPrice: 2.300, stock: 45, minAlertQty: 8, unit: 'Pcs' },
+
+    // Café & Thé / الحلويات
+    { id: 'sup-8', code: '6192224018872', name: 'Café Moulu Ben Yedder Tradition 250g (قهوة بن يدر)', category: 'Café & Thé', purchasePrice: 3.100, sellingPrice: 3.800, stock: 40, minAlertQty: 10, unit: 'Pcs' },
     { id: 'sup-18', code: '6199007010165', name: 'Chamia Ghazala Nature 350g (شامية الغزالة حلوى)', category: 'Café & Thé', purchasePrice: 4.200, sellingPrice: 5.100, stock: 42, minAlertQty: 8, unit: 'Pcs' },
-    { id: 'sup-19', code: '6190008011276', name: 'Soda Coca-Cola Original 1.5L (كوكاكولا)', category: 'Boissons', purchasePrice: 2.650, sellingPrice: 3.100, stock: 150, minAlertQty: 30, unit: 'Pcs' },
-    { id: 'sup-20', code: '6190109012387', name: 'Soda Boga Blanche 1.5L (بوغا بيضاء)', category: 'Boissons', purchasePrice: 2.300, sellingPrice: 2.700, stock: 120, minAlertQty: 25, unit: 'Pcs' },
     { id: 'sup-21', code: '6190201013498', name: 'Chocolat Saida El Baka Bleue 100g (شوكولا الباقة زرقاء)', category: 'Café & Thé', purchasePrice: 1.900, sellingPrice: 2.400, stock: 85, minAlertQty: 15, unit: 'Pcs' },
     { id: 'sup-22', code: '6190302014509', name: 'Biscuits Major Chocolat Saida (بسكويت ماجور شوكولا)', category: 'Café & Thé', purchasePrice: 0.700, sellingPrice: 0.850, stock: 240, minAlertQty: 40, unit: 'Pcs' },
-    { id: 'sup-23', code: '6190403015610', name: 'Lessive Poudre Omo Machine 1.5kg (أوموو غسيل)', category: 'Céréales & Pâtes', purchasePrice: 8.500, sellingPrice: 9.800, stock: 30, minAlertQty: 8, unit: 'Pcs' },
-    { id: 'sup-24', code: '6190504016721', name: 'Eau de Javel Sany Sica 3L (جافيل سيكا)', category: 'Céréales & Pâtes', purchasePrice: 2.400, sellingPrice: 2.900, stock: 70, minAlertQty: 15, unit: 'Pcs' },
-    { id: 'sup-25', code: '6190605017832', name: 'Papier Toilette Rose Lilas 4 Rouleaux (ورق صحي مريح ليلا)', category: 'Boissons', purchasePrice: 2.100, sellingPrice: 2.650, stock: 65, minAlertQty: 10, unit: 'Pcs' },
-    { id: 'sup-26', code: '6190706018943', name: 'Sucre Blanc cristallisé Tunisien 1kg (سكر مائدة أبيض)', category: 'Épices & Condiments', purchasePrice: 1.200, sellingPrice: 1.400, stock: 300, minAlertQty: 50, unit: 'Pcs' }
+
+    // Huiles & Épices
+    { id: 'sup-13', code: '6194002005612', name: 'Huile de Tournesol Safia 1L (زيت صافية)', category: 'Huiles & Épices', purchasePrice: 4.800, sellingPrice: 5.500, stock: 60, minAlertQty: 15, unit: 'Pcs' },
+    { id: 'sup-14', code: '6195003006721', name: 'Huile d\'Olive Extra Vierge Châal 1L (زيت زيتون شعال)', category: 'Huiles & Épices', purchasePrice: 22.000, sellingPrice: 25.000, stock: 20, minAlertQty: 5, unit: 'Pcs' },
+    { id: 'sup-26', code: '6190706018943', name: 'Sucre Blanc cristallisé Tunisien 1kg (سكر مائدة أبيض)', category: 'Huiles & Épices', purchasePrice: 1.200, sellingPrice: 1.400, stock: 300, minAlertQty: 50, unit: 'Pcs' },
+
+    // Hygiène & Nettoyage
+    { id: 'sup-23', code: '6190403015610', name: 'Lessive Poudre Omo Machine 1.5kg (أوموو غسيل)', category: 'Hygiène & Nettoyage', purchasePrice: 8.500, sellingPrice: 9.800, stock: 30, minAlertQty: 8, unit: 'Pcs' },
+    { id: 'sup-24', code: '6190504016721', name: 'Eau de Javel Sany Sica 3L (جافيل سيكا)', category: 'Hygiène & Nettoyage', purchasePrice: 2.400, sellingPrice: 2.900, stock: 70, minAlertQty: 15, unit: 'Pcs' },
+    { id: 'sup-25', code: '6190605017832', name: 'Papier Toilette Rose Lilas 4 Rouleaux (ورق صحي مريح ليلا)', category: 'Hygiène & Nettoyage', purchasePrice: 2.100, sellingPrice: 2.650, stock: 65, minAlertQty: 10, unit: 'Pcs' }
   ],
   pharmacie: [
     { id: 'ph-1', code: '3024501112234', name: 'Amoxicilline Biogaran 1g (أموكسيسيلين مضاد حيوي)', category: 'Antibiotiques', purchasePrice: 3.200, sellingPrice: 4.500, stock: 40, minAlertQty: 10, unit: 'Boîte' },
@@ -724,51 +749,11 @@ export function getProductVisual(prod: { name: string; category?: string; image?
     return { type: 'emoji', value: prod.image };
   }
 
-  // Fallback to name-based or category-based emoji
+  // Fallback to name-based or category-based elegant Unsplash illustration
   const name = prod.name.toLowerCase();
   const cat = (prod.category || '').toLowerCase();
 
-  // 1. Tabac & Cigarettes
-  if (
-    name.includes('tabac') || 
-    name.includes('cig') || 
-    name.includes('paquet') || 
-    name.includes('légère') || 
-    name.includes('mars') || 
-    name.includes('cristal') || 
-    name.includes('royale') || 
-    name.includes('oris') || 
-    name.includes('winston') || 
-    name.includes('marlboro') || 
-    name.includes('merit') || 
-    cat.includes('tabac') || 
-    name.includes('دخان') || 
-    name.includes('سيڨار') || 
-    name.includes('علبة')
-  ) {
-    return { type: 'emoji', value: '🚬' };
-  }
-
-  // 2. Carburants & Oils
-  if (
-    name.includes('carburant') || 
-    name.includes('essence') || 
-    name.includes('benzine') || 
-    name.includes('gasoil') || 
-    name.includes('diesel') || 
-    name.includes('fuel') || 
-    name.includes('rouge') || 
-    name.includes('vert') || 
-    name.includes('sans plomb') || 
-    cat.includes('carburant') || 
-    name.includes('بنزين') || 
-    name.includes('وقود') || 
-    name.includes('مازوت')
-  ) {
-    return { type: 'emoji', value: '⛽' };
-  }
-
-  // 3. Télécom & Recharges
+  // 1. Télécom & Recharges
   if (
     name.includes('recharge') || 
     name.includes('telecom') || 
@@ -787,10 +772,165 @@ export function getProductVisual(prod: { name: string; category?: string; image?
     name.includes('شحن') || 
     name.includes('بطاقة')
   ) {
-    return { type: 'emoji', value: '📱' };
+    return { type: 'image', value: 'https://images.unsplash.com/photo-1562408590-e32931084e23?w=200&q=80&fit=crop' };
   }
 
-  // 4. Couscous & Pâtes (Tunisian staples)
+  // 2. Tabac & Cigarettes (Pack)
+  if (
+    name.includes('tabac') || 
+    name.includes('paquet') || 
+    name.includes('légère') || 
+    name.includes('mars') || 
+    name.includes('cristal') || 
+    name.includes('royale') || 
+    name.includes('oris') || 
+    name.includes('winston') || 
+    name.includes('marlboro') || 
+    name.includes('merit') || 
+    cat.includes('tabac') || 
+    name.includes('دخان') || 
+    name.includes('سيڨار') || 
+    name.includes('علبة')
+  ) {
+    return { type: 'image', value: 'https://images.unsplash.com/photo-1601049541289-9b1b7bbbfe19?w=200&q=80&fit=crop' };
+  }
+
+  // 3. Cigarettes (Unitaire)
+  if (name.includes('cigarette') || name.includes('cigare')) {
+    return { type: 'image', value: 'https://images.unsplash.com/photo-1542838132-92c53300491e?w=200&q=80&fit=crop' };
+  }
+
+  // 4. Vape
+  if (name.includes('vape') || name.includes('vapote') || name.includes('pod') || name.includes('e-liquide')) {
+    return { type: 'image', value: 'https://images.unsplash.com/photo-1556911220-e15b29be8c8f?w=200&q=80&fit=crop' };
+  }
+
+  // 5. Eau Minérale
+  if (
+    name.includes('eau') || 
+    name.includes('safia') || 
+    name.includes('sabrine') || 
+    name.includes('fourat') || 
+    name.includes('mineral') || 
+    name.includes('sabrine') ||
+    name.includes('ماء') ||
+    cat.includes('eau')
+  ) {
+    return { type: 'image', value: 'https://images.unsplash.com/photo-1523362628745-0c100150b504?w=200&q=80&fit=crop' };
+  }
+
+  // 6. Jus
+  if (
+    name.includes('jus') || 
+    name.includes('juice') || 
+    name.includes('oh!') || 
+    name.includes('diva') || 
+    name.includes('délice orange') || 
+    name.includes('عصير') ||
+    cat.includes('jus')
+  ) {
+    return { type: 'image', value: 'https://images.unsplash.com/photo-1621506289937-a8e4df240d0b?w=200&q=80&fit=crop' };
+  }
+
+  // 7. Glaces
+  if (
+    name.includes('glace') || 
+    name.includes('selja') || 
+    name.includes('cornetto') || 
+    name.includes('solero') || 
+    name.includes('مثلجات') ||
+    cat.includes('glace')
+  ) {
+    return { type: 'image', value: 'https://images.unsplash.com/photo-1563805042-7684c019e1cb?w=200&q=80&fit=crop' };
+  }
+
+  // 8. Sodas, Boissons & Cola
+  if (
+    name.includes('coca') || 
+    name.includes('fanta') || 
+    name.includes('boga') || 
+    name.includes('soda') || 
+    name.includes('drink') || 
+    name.includes('boisson') || 
+    name.includes('apla') || 
+    name.includes('schweppes') || 
+    cat.includes('boiss') || 
+    name.includes('بوغا') || 
+    name.includes('مشروب') || 
+    name.includes('كوكا')
+  ) {
+    return { type: 'image', value: 'https://images.unsplash.com/photo-1622483767028-3f66f32aef97?w=200&q=80&fit=crop' };
+  }
+
+  // 9. Yaourt / Crèmes
+  if (
+    name.includes('yaourt') || 
+    name.includes('délice') || 
+    name.includes('brassé') || 
+    name.includes('nature') || 
+    name.includes('ياغورت') || 
+    name.includes('زبادي')
+  ) {
+    return { type: 'image', value: 'https://images.unsplash.com/photo-1571244856341-4f3dd95db33e?w=200&q=80&fit=crop' };
+  }
+
+  // 10. Fromage & Cheese
+  if (
+    name.includes('fromage') || 
+    name.includes('jbn') || 
+    name.includes('mozzarella') || 
+    name.includes('ricotta') || 
+    name.includes('président') || 
+    name.includes('giga') || 
+    name.includes('جبن')
+  ) {
+    return { type: 'image', value: 'https://images.unsplash.com/photo-1552767059-ce182ead6c1b?w=200&q=80&fit=crop' };
+  }
+
+  // 11. Lait / Produits Laitiers
+  if (
+    name.includes('lait') || 
+    name.includes('hlib') || 
+    name.includes('dairy') || 
+    cat.includes('laitier') || 
+    name.includes('حليب') || 
+    name.includes('لبن')
+  ) {
+    return { type: 'image', value: 'https://images.unsplash.com/photo-1550583724-b2692b85b150?w=200&q=80&fit=crop' };
+  }
+
+  // 12. Thon & Sardines (Canned fish)
+  if (
+    name.includes('thon') || 
+    name.includes('sardine') || 
+    name.includes('fish') || 
+    name.includes('poisson') || 
+    name.includes('el manar') || 
+    name.includes('sidi daoud') || 
+    name.includes('تن') || 
+    name.includes('سردينة') || 
+    name.includes('حوت')
+  ) {
+    return { type: 'image', value: 'https://images.unsplash.com/photo-1607305387299-a3d9611cd46f?w=200&q=80&fit=crop' };
+  }
+
+  // 13. Harissa & Tomate (Canned spreads)
+  if (
+    name.includes('harissa') || 
+    name.includes('sauce') || 
+    name.includes('tomate') || 
+    name.includes('sicam') || 
+    name.includes('double concentré') || 
+    cat.includes('conserve') || 
+    name.includes('boite') || 
+    name.includes('طماطم') || 
+    name.includes('هريسة') || 
+    name.includes('صلصة')
+  ) {
+    return { type: 'image', value: 'https://images.unsplash.com/photo-1534482421-64566f976cfa?w=200&q=80&fit=crop' };
+  }
+
+  // 14. Couscous & Pâtes (Tunisian staples)
   if (
     name.includes('couscous') || 
     name.includes('pâte') || 
@@ -805,110 +945,10 @@ export function getProductVisual(prod: { name: string; category?: string; image?
     name.includes('مقرونة') || 
     name.includes('سميد')
   ) {
-    return { type: 'emoji', value: '🍝' };
+    return { type: 'image', value: 'https://images.unsplash.com/photo-1563379091339-03b21ab4a4f8?w=200&q=80&fit=crop' };
   }
 
-  // 5. Lait / Produits Laitiers
-  if (
-    name.includes('lait') || 
-    name.includes('hlib') || 
-    name.includes('dairy') || 
-    cat.includes('laitier') || 
-    name.includes('حليب') || 
-    name.includes('لبن')
-  ) {
-    return { type: 'emoji', value: '🥛' };
-  }
-
-  // 6. Fromage & Cheese
-  if (
-    name.includes('fromage') || 
-    name.includes('jbn') || 
-    name.includes('mozzarella') || 
-    name.includes('ricotta') || 
-    name.includes('président') || 
-    name.includes('giga') || 
-    name.includes('جبن')
-  ) {
-    return { type: 'emoji', value: '🧀' };
-  }
-
-  // 7. Yaourt / Crèmes
-  if (
-    name.includes('yaourt') || 
-    name.includes('délice') || 
-    name.includes('brassé') || 
-    name.includes('nature') || 
-    name.includes('ياغورت') || 
-    name.includes('زبادي')
-  ) {
-    return { type: 'emoji', value: '🍮' };
-  }
-
-  // 8. Thon & Sardines (Canned fish)
-  if (
-    name.includes('thon') || 
-    name.includes('sardine') || 
-    name.includes('fish') || 
-    name.includes('poisson') || 
-    name.includes('el manar') || 
-    name.includes('sidi daoud') || 
-    name.includes('تن') || 
-    name.includes('سردينة') || 
-    name.includes('حوت')
-  ) {
-    return { type: 'emoji', value: '🐟' };
-  }
-
-  // 9. Harissa & Tomate (Canned products)
-  if (
-    name.includes('harissa') || 
-    name.includes('sauce') || 
-    name.includes('tomate') || 
-    name.includes('sicam') || 
-    name.includes('double concentré') || 
-    cat.includes('conserve') || 
-    name.includes('boite') || 
-    name.includes('طماطم') || 
-    name.includes('هريسة') || 
-    name.includes('صلصة')
-  ) {
-    return { type: 'emoji', value: '🥫' };
-  }
-
-  // 10. Eau Minérale
-  if (
-    name.includes('eau') || 
-    name.includes('safia') || 
-    name.includes('sabrine') || 
-    name.includes('fourat') || 
-    name.includes('mineral') || 
-    name.includes('ماء')
-  ) {
-    return { type: 'emoji', value: '💧' };
-  }
-
-  // 11. Sodas, Boissons & Jus
-  if (
-    name.includes('coca') || 
-    name.includes('fanta') || 
-    name.includes('boga') || 
-    name.includes('soda') || 
-    name.includes('jus') || 
-    name.includes('drink') || 
-    name.includes('boisson') || 
-    name.includes('apla') || 
-    name.includes('schweppes') || 
-    cat.includes('boiss') || 
-    name.includes('عصير') || 
-    name.includes('بوغا') || 
-    name.includes('مشروب') || 
-    name.includes('كوكا')
-  ) {
-    return { type: 'emoji', value: '🥤' };
-  }
-
-  // 12. Huile d'Olive / Végétale
+  // 15. Huile d'Olive / Végétale
   if (
     name.includes('huile') || 
     name.includes('zit') || 
@@ -916,10 +956,10 @@ export function getProductVisual(prod: { name: string; category?: string; image?
     name.includes('tournesol') || 
     name.includes('زيت')
   ) {
-    return { type: 'emoji', value: '🫒' };
+    return { type: 'image', value: 'https://images.unsplash.com/photo-1474979266404-7eaacbcd87c5?w=200&q=80&fit=crop' };
   }
 
-  // 13. Pain, Boulangerie & Croissant
+  // 16. Pain, Boulangerie & Croissant
   if (
     name.includes('pain') || 
     name.includes('khobz') || 
@@ -931,10 +971,10 @@ export function getProductVisual(prod: { name: string; category?: string; image?
     name.includes('باقات') || 
     name.includes('كرواسون')
   ) {
-    return { type: 'emoji', value: '🍞' };
+    return { type: 'image', value: 'https://images.unsplash.com/photo-1509440159596-0249088772ff?w=200&q=80&fit=crop' };
   }
 
-  // 14. Chocolat, Biscuits & Chips (Sweets & Snacks)
+  // 17. Chocolat, Biscuits & Chips (Sweets & Snacks)
   if (
     name.includes('chocolat') || 
     name.includes('biscuit') || 
@@ -953,10 +993,10 @@ export function getProductVisual(prod: { name: string; category?: string; image?
     name.includes('حلوى') || 
     name.includes('شامية')
   ) {
-    return { type: 'emoji', value: '🍫' };
+    return { type: 'image', value: 'https://images.unsplash.com/photo-1558961309-dbdf71791454?w=200&q=80&fit=crop' };
   }
 
-  // 15. Café & Thé
+  // 18. Café & Thé
   if (
     name.includes('café') || 
     name.includes('coffee') || 
@@ -969,10 +1009,10 @@ export function getProductVisual(prod: { name: string; category?: string; image?
     name.includes('قهوة') || 
     name.includes('شاي')
   ) {
-    return { type: 'emoji', value: '☕' };
+    return { type: 'image', value: 'https://images.unsplash.com/photo-1514432324607-a09d9b4aefdd?w=200&q=80&fit=crop' };
   }
 
-  // 16. Hygiène & Savons
+  // 19. Hygiène & Savons
   if (
     name.includes('savon') || 
     name.includes('shampooing') || 
@@ -986,10 +1026,10 @@ export function getProductVisual(prod: { name: string; category?: string; image?
     name.includes('شامبو') || 
     name.includes('معجون')
   ) {
-    return { type: 'emoji', value: '🧼' };
+    return { type: 'image', value: 'https://images.unsplash.com/photo-1559594806-c9b2910d8a4d?w=200&q=80&fit=crop' };
   }
 
-  // 17. Détergents & Javel
+  // 20. Détergents & Javel
   if (
     name.includes('javel') || 
     name.includes('lessive') || 
@@ -1001,10 +1041,10 @@ export function getProductVisual(prod: { name: string; category?: string; image?
     name.includes('جافيل') || 
     name.includes('منظف')
   ) {
-    return { type: 'emoji', value: '🧴' };
+    return { type: 'image', value: 'https://images.unsplash.com/photo-1607344645866-009c320c5ab8?w=200&q=80&fit=crop' };
   }
 
-  // 18. Sucre, Sel & Épices
+  // 21. Sucre, Sel & Épices
   if (
     name.includes('sucre') || 
     name.includes('sel') || 
@@ -1018,10 +1058,10 @@ export function getProductVisual(prod: { name: string; category?: string; image?
     name.includes('بهارات') || 
     name.includes('فرينة')
   ) {
-    return { type: 'emoji', value: '🧂' };
+    return { type: 'image', value: 'https://images.unsplash.com/photo-1506368249639-73a05d6f6488?w=200&q=80&fit=crop' };
   }
 
-  // 19. Oeufs / Eggs
+  // 22. Oeufs / Eggs
   if (
     name.includes('œuf') || 
     name.includes('oeuf') || 
@@ -1031,10 +1071,10 @@ export function getProductVisual(prod: { name: string; category?: string; image?
     name.includes('حارة') || 
     name.includes('plateau')
   ) {
-    return { type: 'emoji', value: '🥚' };
+    return { type: 'image', value: 'https://images.unsplash.com/photo-1516448620398-c5f44bf9f441?w=200&q=80&fit=crop' };
   }
 
-  // 20. Boucherie & Viandes
+  // 23. Boucherie & Viandes
   if (
     name.includes('viande') || 
     name.includes('poulet') || 
@@ -1047,10 +1087,10 @@ export function getProductVisual(prod: { name: string; category?: string; image?
     name.includes('دجاج') || 
     name.includes('اسكالوب')
   ) {
-    return { type: 'emoji', value: '🥩' };
+    return { type: 'image', value: 'https://images.unsplash.com/photo-1603048588665-791ca8aea617?w=200&q=80&fit=crop' };
   }
 
-  // 21. Fruits
+  // 24. Fruits
   if (
     name.includes('fruit') || 
     name.includes('pomme') || 
@@ -1065,10 +1105,10 @@ export function getProductVisual(prod: { name: string; category?: string; image?
     name.includes('ليمون') || 
     name.includes('فراولة')
   ) {
-    return { type: 'emoji', value: '🍎' };
+    return { type: 'image', value: 'https://images.unsplash.com/photo-1619546813926-a78fa6372cd2?w=200&q=80&fit=crop' };
   }
 
-  // 22. Légumes
+  // 25. Légumes
   if (
     name.includes('legume') || 
     name.includes('légume') || 
@@ -1082,10 +1122,29 @@ export function getProductVisual(prod: { name: string; category?: string; image?
     name.includes('بطاطا') || 
     name.includes('جزر')
   ) {
-    return { type: 'emoji', value: '🥕' };
+    return { type: 'image', value: 'https://images.unsplash.com/photo-1518843025211-955837db5c4a?w=200&q=80&fit=crop' };
   }
 
-  // 23. Pharmacie & Doliprane
+  // 26. Carburants
+  if (
+    name.includes('carburant') || 
+    name.includes('essence') || 
+    name.includes('benzine') || 
+    name.includes('gasoil') || 
+    name.includes('diesel') || 
+    name.includes('fuel') || 
+    name.includes('rouge') || 
+    name.includes('vert') || 
+    name.includes('sans plomb') || 
+    cat.includes('carburant') || 
+    name.includes('بنزين') || 
+    name.includes('وقود') || 
+    name.includes('مازوت')
+  ) {
+    return { type: 'image', value: 'https://images.unsplash.com/photo-1508962914676-134849a727f0?w=200&q=80&fit=crop' };
+  }
+
+  // 27. Pharmacie & Médicaments
   if (
     name.includes('medicament') || 
     name.includes('médicament') || 
@@ -1098,10 +1157,10 @@ export function getProductVisual(prod: { name: string; category?: string; image?
     name.includes('دواء') || 
     name.includes('صيدلية')
   ) {
-    return { type: 'emoji', value: '💊' };
+    return { type: 'image', value: 'https://images.unsplash.com/photo-1584308666744-24d5c474f2ae?w=200&q=80&fit=crop' };
   }
 
-  // 24. Fournitures scolaires
+  // 28. Fournitures scolaires
   if (
     name.includes('stylo') || 
     name.includes('cahier') || 
@@ -1111,10 +1170,10 @@ export function getProductVisual(prod: { name: string; category?: string; image?
     name.includes('كراس') || 
     name.includes('قلم')
   ) {
-    return { type: 'emoji', value: '📝' };
+    return { type: 'image', value: 'https://images.unsplash.com/photo-1516962215378-7fa2e137ae93?w=200&q=80&fit=crop' };
   }
 
-  // 25. Bricolage & Outils
+  // 29. Bricolage & Outils
   if (
     name.includes('ciment') || 
     name.includes('mortier') || 
@@ -1130,22 +1189,48 @@ export function getProductVisual(prod: { name: string; category?: string; image?
     name.includes('مطرقة') || 
     name.includes('مفك')
   ) {
-    return { type: 'emoji', value: '🔨' };
+    return { type: 'image', value: 'https://images.unsplash.com/photo-1530124410755-b9f807ff11dc?w=200&q=80&fit=crop' };
   }
 
-  // Category fallback matchers
-  if (cat.includes('pâte') || cat.includes('pain') || cat.includes('cereal') || cat.includes('cereale')) return { type: 'emoji', value: '🌾' };
-  if (cat.includes('boiss') || cat.includes('eau') || cat.includes('jus')) return { type: 'emoji', value: '🥤' };
-  if (cat.includes('conserv')) return { type: 'emoji', value: '🥫' };
-  if (cat.includes('frais') || cat.includes('legum') || cat.includes('fruit')) return { type: 'emoji', value: '🍏' };
-  if (cat.includes('pharm') || cat.includes('sant') || cat.includes('soin')) return { type: 'emoji', value: '💊' };
-  if (cat.includes('mater') || cat.includes('outill') || cat.includes('brico')) return { type: 'emoji', value: '🔨' };
-  if (cat.includes('hygi') || cat.includes('entr') || cat.includes('nettoy')) return { type: 'emoji', value: '🧼' };
-  if (cat.includes('tabac') || cat.includes('cig')) return { type: 'emoji', value: '🚬' };
-  if (cat.includes('carburant')) return { type: 'emoji', value: '⛽' };
-  if (cat.includes('recharge') || cat.includes('télécom')) return { type: 'emoji', value: '📱' };
+  // Fallback matchers by category
+  if (cat.includes('pâte') || cat.includes('pain') || cat.includes('cereal') || cat.includes('cereale')) {
+    return { type: 'image', value: 'https://images.unsplash.com/photo-1509440159596-0249088772ff?w=200&q=80&fit=crop' };
+  }
+  if (cat.includes('boiss') || cat.includes('eau') || cat.includes('soda')) {
+    return { type: 'image', value: 'https://images.unsplash.com/photo-1622483767028-3f66f32aef97?w=200&q=80&fit=crop' };
+  }
+  if (cat.includes('jus')) {
+    return { type: 'image', value: 'https://images.unsplash.com/photo-1621506289937-a8e4df240d0b?w=200&q=80&fit=crop' };
+  }
+  if (cat.includes('glace') || cat.includes('gelat')) {
+    return { type: 'image', value: 'https://images.unsplash.com/photo-1563805042-7684c019e1cb?w=200&q=80&fit=crop' };
+  }
+  if (cat.includes('conserv')) {
+    return { type: 'image', value: 'https://images.unsplash.com/photo-1607305387299-a3d9611cd46f?w=200&q=80&fit=crop' };
+  }
+  if (cat.includes('frais') || cat.includes('legum') || cat.includes('fruit')) {
+    return { type: 'image', value: 'https://images.unsplash.com/photo-1619546813926-a78fa6372cd2?w=200&q=80&fit=crop' };
+  }
+  if (cat.includes('pharm') || cat.includes('sant') || cat.includes('soin')) {
+    return { type: 'image', value: 'https://images.unsplash.com/photo-1584308666744-24d5c474f2ae?w=200&q=80&fit=crop' };
+  }
+  if (cat.includes('mater') || cat.includes('outill') || cat.includes('brico')) {
+    return { type: 'image', value: 'https://images.unsplash.com/photo-1530124410755-b9f807ff11dc?w=200&q=80&fit=crop' };
+  }
+  if (cat.includes('hygi') || cat.includes('entr') || cat.includes('nettoy')) {
+    return { type: 'image', value: 'https://images.unsplash.com/photo-1559594806-c9b2910d8a4d?w=200&q=80&fit=crop' };
+  }
+  if (cat.includes('tabac') || cat.includes('cig')) {
+    return { type: 'image', value: 'https://images.unsplash.com/photo-1601049541289-9b1b7bbbfe19?w=200&q=80&fit=crop' };
+  }
+  if (cat.includes('carburant')) {
+    return { type: 'image', value: 'https://images.unsplash.com/photo-1508962914676-134849a727f0?w=200&q=80&fit=crop' };
+  }
+  if (cat.includes('recharge') || cat.includes('télécom')) {
+    return { type: 'image', value: 'https://images.unsplash.com/photo-1562408590-e32931084e23?w=200&q=80&fit=crop' };
+  }
 
-  // Global default
+  // Global default representation
   return { type: 'emoji', value: '📦' };
 }
 
