@@ -73,6 +73,9 @@ export default function DatabaseControl({ db, onUpdateDb, license, user }: Datab
   const [importStatus, setImportStatus] = useState<'idle' | 'success' | 'failed'>('idle');
   const [errorMessage, setErrorMessage] = useState('');
   const logoUploadRef = useRef<HTMLInputElement>(null);
+  
+  // Real-time live visualizer active tab
+  const [previewTab, setPreviewTab] = useState<'ticket' | 'invoice'>('ticket');
 
   // States for Cloud Backup features
   const [backupCloudStatus, setBackupCloudStatus] = useState<'idle' | 'uploading' | 'success' | 'failed'>('idle');
@@ -2542,6 +2545,274 @@ encryption_mode: High-Security Advanced
                       </div>
                     </div>
                   </div>
+                </div>
+
+                {/* 🎨 LIVE DYNAMIC PREVIEW VISUALIZER */}
+                <div className="border-t border-slate-200/80 pt-5 mt-5">
+                  <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-4 gap-2.5">
+                    <span className="text-[11px] font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+                      <span>🎨</span>
+                      {language === 'ar' ? 'معاينة حية ومباشرة للتعديلات' : 'Visualisation Interactive en Temps Réel'}
+                    </span>
+                    <div className="flex bg-slate-200/60 p-0.5 rounded-lg border border-slate-300">
+                      <button
+                        type="button"
+                        onClick={() => setPreviewTab('ticket')}
+                        className={`px-3 py-1 text-[10px] font-bold rounded-md transition-all cursor-pointer ${previewTab === 'ticket' ? 'bg-white text-slate-900 shadow-3xs' : 'text-slate-650 hover:text-slate-900'}`}
+                      >
+                        🎫 {language === 'ar' ? 'وصول حراري (80mm)' : 'Ticket Thermique'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setPreviewTab('invoice')}
+                        className={`px-3 py-1 text-[10px] font-bold rounded-md transition-all cursor-pointer ${previewTab === 'invoice' ? 'bg-white text-indigo-900 shadow-3xs' : 'text-slate-650 hover:text-indigo-900'}`}
+                      >
+                        📄 {language === 'ar' ? 'فاتورة A4' : 'Facture A4'}
+                      </button>
+                    </div>
+                  </div>
+
+                  {previewTab === 'ticket' ? (
+                    /* 🎟️ THERMAL TICKET REALISTIC VIEW */
+                    <div className="flex justify-center bg-slate-100 border border-slate-200/60 p-5 rounded-2xl relative overflow-hidden select-none">
+                      {/* Thermal Receipt Paper representation */}
+                      <div 
+                        className="bg-white text-slate-900 shadow-md border border-slate-250 w-full max-w-[280px] relative transition-all"
+                        style={{
+                          paddingTop: `${Math.max(8, receiptMarginTop || 0)}px`,
+                          paddingBottom: `${Math.max(8, receiptMarginBottom || 0)}px`,
+                          paddingLeft: `${Math.max(8, receiptMarginLeft || 0)}px`,
+                          paddingRight: `${Math.max(8, receiptMarginRight || 0)}px`,
+                        }}
+                      >
+                        {/* Wavy Cut effect helper indicators */}
+                        <div className="absolute top-0 inset-x-0 h-1 bg-[radial-gradient(circle,_transparent_3px,_#fff_3px)] bg-[length:12px_12px] bg-repeat-x -translate-y-1"></div>
+                        
+                        <div className={`text-center space-y-1.5 ${receiptCompactSize ? 'font-mono text-[9px]' : 'font-sans text-[10.5px]'}`}>
+                          {/* Logo */}
+                          {receiptShowLogo && (
+                            <div className="flex justify-center pb-1">
+                              {receiptCustomLogo || db.settings?.storeLogo ? (
+                                <img 
+                                  src={receiptCustomLogo || db.settings?.storeLogo} 
+                                  alt="Preview Logo" 
+                                  className="w-10 h-10 object-contain rounded bg-white"
+                                />
+                              ) : (
+                                <div className="w-8 h-8 border border-dashed border-slate-300 rounded flex items-center justify-center text-slate-400">
+                                  🏪
+                                </div>
+                              )}
+                            </div>
+                          )}
+
+                          {/* Store Name */}
+                          <h4 className="font-extrabold text-[12px] tracking-tight text-slate-950 uppercase leading-none">
+                            {db.settings?.storeName || 'INNOVA POS PRO'}
+                          </h4>
+
+                          {/* Address & Phone */}
+                          {receiptShowStoreDetails && (
+                            <div className="text-[9px] text-slate-500 font-medium space-y-0.5 border-b border-dashed border-slate-200 pb-1.5">
+                              <p className="flex justify-center gap-1"><span>📍</span> {db.settings?.storeAddress || 'Alger, Algérie'}</p>
+                              <p className="flex justify-center gap-1"><span>📞</span> {db.settings?.storePhone || '0550 12 34 56'}</p>
+                            </div>
+                          )}
+
+                          {/* Ticket Header Metadata */}
+                          <div className="text-left text-[8.5px] text-slate-450 py-1 border-b border-dashed border-slate-200 space-y-0.5">
+                            <div className="flex justify-between">
+                              <span>Ticket N°: <strong className="text-slate-800 font-bold">TK-2026-0089</strong></span>
+                              <span>Date: 18/07/2026 14:32</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span>Caissier: Admin</span>
+                              <span>Mode: Comptant</span>
+                            </div>
+                          </div>
+
+                          {/* Ticket Items List */}
+                          <div className="space-y-1 py-1.5 border-b border-dashed border-slate-200 text-left">
+                            <div className="font-bold flex justify-between text-[9px] text-slate-400 uppercase">
+                              <span>{language === 'ar' ? 'المنتج' : 'Produit'}</span>
+                              <span>{language === 'ar' ? 'المجموع' : 'Total'}</span>
+                            </div>
+                            <div className="space-y-1">
+                              <div className="flex justify-between font-semibold text-slate-800">
+                                <span>1x Couscous Tunisien (Poulet)</span>
+                                <span>12,000 DT</span>
+                              </div>
+                              <div className="flex justify-between font-semibold text-slate-800">
+                                <span>2x Eau Minérale Safia 1.5L</span>
+                                <span>2,400 DT</span>
+                              </div>
+                              <div className="flex justify-between font-semibold text-slate-800">
+                                <span>1x Thon El Manar 160g</span>
+                                <span>5,500 DT</span>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Financial Totals */}
+                          <div className="py-1.5 space-y-1 font-bold">
+                            <div className="flex justify-between text-[9px] text-slate-600">
+                              <span>Total Brut:</span>
+                              <span>19,900 DT</span>
+                            </div>
+                            <div className="flex justify-between text-[9px] text-rose-600">
+                              <span>Remise (5%):</span>
+                              <span>-0,900 DT</span>
+                            </div>
+                            <div className="flex justify-between text-[11px] text-slate-950 pt-1 border-t border-slate-100 font-black">
+                              <span>NET À PAYER :</span>
+                              <span className="font-mono text-indigo-700">19,000 DT</span>
+                            </div>
+                          </div>
+
+                          {/* Commercial Terms Return/Refund policy */}
+                          {receiptShowCommercialTerms && (
+                            <p className="text-[8px] text-slate-500 italic text-center py-1.5 border-t border-dashed border-slate-200 bg-slate-50/50 leading-normal rounded">
+                              {language === 'ar' 
+                                ? '⚠️ البضاعة المباعة لا ترد ولا تستبدل إلا في حال وجود خلل مصنعي خلال 7 أيام مع الاستظهار بالتذكرة.' 
+                                : '⚠️ Échanges sous 7 jours sur présentation de ce ticket. Les articles soldés ne sont ni repris ni échangés.'}
+                            </p>
+                          )}
+
+                          {/* Dynamic Custom Thank You Note */}
+                          {receiptCustomThankYou && (
+                            <div className="pt-2 text-center border-t border-dashed border-slate-200">
+                              <p className="text-[9px] font-bold text-slate-800 bg-amber-50/60 p-1 rounded border border-dashed border-amber-200">
+                                🌸 {receiptCustomThankYou}
+                              </p>
+                            </div>
+                          )}
+
+                          {/* Barcode Mock */}
+                          <div className="pt-2 flex flex-col items-center">
+                            <div className="h-6 w-28 bg-[repeating-linear-gradient(90deg,#111,#111_1.5px,#fff_1.5px,#fff_4px)] opacity-85"></div>
+                            <span className="text-[7.5px] font-mono tracking-widest text-slate-400 mt-1">0089180720261432</span>
+                          </div>
+                        </div>
+
+                        {/* Wavy bottom effect */}
+                        <div className="absolute bottom-0 inset-x-0 h-1 bg-[radial-gradient(circle,_transparent_3px,_#fff_3px)] bg-[length:12px_12px] bg-repeat-x translate-y-1 rotate-180"></div>
+                      </div>
+                    </div>
+                  ) : (
+                    /* 📄 A4 PROFESSIONAL INVOICE VIEW */
+                    <div className="flex justify-center bg-slate-100 border border-slate-200/60 p-5 rounded-2xl relative overflow-hidden select-none">
+                      {/* A4 Sheet representation */}
+                      <div 
+                        className="bg-white text-slate-900 shadow-md border border-slate-250 w-full max-w-[380px] aspect-[1/1.41] relative transition-all text-[8px]"
+                        style={{
+                          paddingTop: `${Math.max(12, invoiceMarginTop || 0)}px`,
+                          paddingBottom: `${Math.max(12, invoiceMarginBottom || 0)}px`,
+                          paddingLeft: `${Math.max(12, invoiceMarginLeft || 0)}px`,
+                          paddingRight: `${Math.max(12, invoiceMarginRight || 0)}px`,
+                        }}
+                      >
+                        <div className="space-y-3 font-sans h-full flex flex-col justify-between">
+                          <div className="space-y-2.5">
+                            {/* Invoice Header */}
+                            <div className="flex justify-between items-start border-b border-slate-200 pb-2">
+                              <div>
+                                {invoiceCustomLogo || db.settings?.storeLogo ? (
+                                  <img 
+                                    src={invoiceCustomLogo || db.settings?.storeLogo} 
+                                    alt="Invoice Logo" 
+                                    className="h-8 w-20 object-contain object-left mb-1 bg-white"
+                                  />
+                                ) : (
+                                  <h3 className="text-[10px] font-extrabold text-indigo-700 leading-none mb-1">{db.settings?.storeName || 'INNOVA POS PRO'}</h3>
+                                )}
+                                <p className="text-[6.5px] text-slate-500 font-medium">📍 {db.settings?.storeAddress || 'Alger, Algérie'}</p>
+                                <p className="text-[6.5px] text-slate-500 font-medium">📞 {db.settings?.storePhone || '0550 12 34 56'}</p>
+                              </div>
+                              <div className="text-right">
+                                <h2 className="text-[9.5px] font-black text-slate-900 uppercase tracking-tight leading-none">{language === 'ar' ? 'فاتورة بيع مخصصة' : 'FACTURE DE VENTE'}</h2>
+                                <p className="text-[6px] font-bold text-slate-500 mt-1">Facture N°: <span className="text-indigo-600 font-bold font-mono">FT-2026-0034</span></p>
+                                <p className="text-[6px] font-bold text-slate-500">Date: 18/07/2026</p>
+                              </div>
+                            </div>
+
+                            {/* Client & Vendor Sections */}
+                            <div className="grid grid-cols-2 gap-3 bg-slate-50 p-2 rounded border border-slate-150">
+                              <div>
+                                <span className="text-[6px] font-bold text-slate-400 uppercase tracking-wider block mb-0.5">{language === 'ar' ? 'معلومات المصدر' : 'Émetteur :'}</span>
+                                <p className="font-extrabold text-slate-800 text-[6.5px]">{db.settings?.storeName || 'INNOVA POS PRO'}</p>
+                                <p className="text-[5.5px] text-slate-500 mt-0.5">Ventes de Gros & Détails</p>
+                              </div>
+                              <div className="border-l border-slate-200 pl-3">
+                                <span className="text-[6px] font-bold text-slate-400 uppercase tracking-wider block mb-0.5">{language === 'ar' ? 'معلومات العميل' : 'Facturé à :'}</span>
+                                <p className="font-extrabold text-indigo-850 text-[6.5px]">Sarl Hydra Distribution</p>
+                                <p className="text-[5.5px] text-slate-500 mt-0.5">NIF: 001923058479234</p>
+                              </div>
+                            </div>
+
+                            {/* Main Items Table */}
+                            <table className="w-full text-left text-[6.5px] border-collapse">
+                              <thead>
+                                <tr className="border-b border-slate-300 text-slate-400 font-bold uppercase">
+                                  <th className="py-1">Désignation</th>
+                                  <th className="py-1 text-center">Qté</th>
+                                  <th className="py-1 text-right">P.U (DT)</th>
+                                  <th className="py-1 text-right">Total (DT)</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                <tr className="border-b border-slate-100 font-medium">
+                                  <td className="py-1 font-bold text-slate-800">Couscous Tunisien (Poulet)</td>
+                                  <td className="py-1 text-center font-mono">1.00</td>
+                                  <td className="py-1 text-right font-mono">12,000</td>
+                                  <td className="py-1 text-right font-bold font-mono">12,000</td>
+                                </tr>
+                                <tr className="border-b border-slate-100 font-medium">
+                                  <td className="py-1 font-bold text-slate-800">Eau Minérale Safia 1.5L</td>
+                                  <td className="py-1 text-center font-mono">2.00</td>
+                                  <td className="py-1 text-right font-mono">1,200</td>
+                                  <td className="py-1 text-right font-bold font-mono">2,400</td>
+                                </tr>
+                                <tr className="border-b border-slate-100 font-medium">
+                                  <td className="py-1 font-bold text-slate-800">Thon El Manar 160g</td>
+                                  <td className="py-1 text-center font-mono">1.00</td>
+                                  <td className="py-1 text-right font-mono">5,500</td>
+                                  <td className="py-1 text-right font-bold font-mono">5,500</td>
+                                </tr>
+                              </tbody>
+                            </table>
+                          </div>
+
+                          {/* Table totals & signatures */}
+                          <div className="space-y-2">
+                            <div className="flex justify-end">
+                              <div className="w-32 space-y-1 text-right text-[6px] border-t border-slate-200 pt-1.5 font-bold">
+                                <div className="flex justify-between">
+                                  <span className="text-slate-400">Total HT:</span>
+                                  <span className="font-mono">19,900 DT</span>
+                                </div>
+                                <div className="flex justify-between text-rose-600">
+                                  <span>Remise (5%):</span>
+                                  <span className="font-mono">-0,900 DT</span>
+                                </div>
+                                <div className="flex justify-between text-[7px] text-slate-900 font-black border-t border-slate-150 pt-0.5">
+                                  <span>NET À PAYER:</span>
+                                  <span className="font-mono text-indigo-700">19,000 DT</span>
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Terms and Signatures */}
+                            <div className="flex justify-between items-center text-[5px] text-slate-400 pt-1.5 border-t border-dashed border-slate-200">
+                              <p>Facture générée sur la solution de gestion InnovaPOS Pro.</p>
+                              <div className="w-16 text-center border-t border-slate-300 pt-0.5 text-slate-500 font-bold">
+                                Cachet / Client
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>

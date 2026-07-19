@@ -13,7 +13,9 @@ import {
   TrendingUp,
   X,
   FileText,
-  ExternalLink
+  ExternalLink,
+  MessageSquare,
+  Share2
 } from 'lucide-react';
 import PartnersMap from './PartnersMap';
 import { checkIsIframe } from '../utils/storage';
@@ -33,6 +35,12 @@ export default function Partners({ db, onUpdateDb }: PartnersProps) {
   const [paymentAmount, setPaymentAmount] = useState<string>('');
   const [paymentNotes, setPaymentNotes] = useState<string>('');
   const [showCreditStatementPartner, setShowCreditStatementPartner] = useState<Partner | null>(null);
+
+  // Debt reminder modals state
+  const [reminderPartner, setReminderPartner] = useState<Partner | null>(null);
+  const [reminderLanguage, setReminderLanguage] = useState<'ar' | 'fr'>('ar');
+  const [reminderTemplate, setReminderTemplate] = useState<'friendly' | 'formal' | 'urgent'>('friendly');
+  const [customReminderText, setCustomReminderText] = useState('');
 
   // Register state
   const [showPartnerModal, setShowPartnerModal] = useState(false);
@@ -117,6 +125,45 @@ export default function Partners({ db, onUpdateDb }: PartnersProps) {
     setPartnerTypeToCreate(activeTab === 'fournisseur' ? 'fournisseur' : 'client');
     setShowPartnerModal(true);
   };
+
+  const generateReminderText = (partner: Partner | null, lang: 'ar' | 'fr', temp: 'friendly' | 'formal' | 'urgent') => {
+    if (!partner) return '';
+    const storeName = db.settings?.storeName || 'INNOVA POS PRO';
+    const amountStr = formatCurrency(Math.abs(partner.currentBalance));
+    
+    if (lang === 'ar') {
+      if (temp === 'friendly') {
+        return `السلام عليكم ورحمة الله، السيد/ة ${partner.name}. نود تذكيركم بلطف بأن رصيدكم المتبقي المستحق لدى ${storeName} هو ${amountStr}. شكراً جزيلاً لثقتكم وتعاملكم الطيب معنا.`;
+      } else if (temp === 'formal') {
+        return `مرحباً، السيد/ة ${partner.name}. نرسل لكم هذا الإشعار بخصوص تسوية المستحقات المالية المتأخرة لفائدة ${storeName} والتي تبلغ قيمتها ${amountStr}. نرجو منكم التفضل بزيارتنا قريباً لتسوية رصيدكم الحسابي. مع الشكر والتقدير.`;
+      } else {
+        return `⚠️ تنبيه هام وعاجل، السيد/ة ${partner.name}. يرجى التكرم بتسوية رصيدكم المالي المستحق بقيمة ${amountStr} لدى ${storeName} في أقرب أجل ممكن لتفادي تعليق حسابكم والمعاملات التجارية. نشكر تفهمكم وحرصكم.`;
+      }
+    } else {
+      if (temp === 'friendly') {
+        return `Bonjour M./Mme ${partner.name}. Nous vous rappelons gentiment que votre solde restant dû chez ${storeName} est de ${amountStr}. Merci pour votre fidélité et votre confiance constante.`;
+      } else if (temp === 'formal') {
+        return `Bonjour M./Mme ${partner.name}. Nous vous contactons pour le règlement de votre solde impayé concernant vos achats chez ${storeName}, d'un montant de ${amountStr}. Nous vous prions de bien vouloir passer au magasin afin de régulariser votre situation. Cordialement.`;
+      } else {
+        return `⚠️ Rappel Urgent M./Mme ${partner.name}. Veuillez procéder au règlement de votre solde débiteur d'un montant de ${amountStr} chez ${storeName} dans les plus brefs délais pour éviter toute suspension de vos facilités de paiement. Merci pour votre diligence.`;
+      }
+    }
+  };
+
+  const handleOpenReminder = (partner: Partner) => {
+    setReminderPartner(partner);
+    setReminderLanguage(language === 'ar' ? 'ar' : 'fr');
+    setReminderTemplate('friendly');
+    const text = generateReminderText(partner, language === 'ar' ? 'ar' : 'fr', 'friendly');
+    setCustomReminderText(text);
+  };
+
+  // Trigger text update when options change
+  React.useEffect(() => {
+    if (reminderPartner) {
+      setCustomReminderText(generateReminderText(reminderPartner, reminderLanguage, reminderTemplate));
+    }
+  }, [reminderLanguage, reminderTemplate, reminderPartner]);
 
   const handleOpenEdit = (partner: Partner) => {
     setEditingPartner(partner);
@@ -791,6 +838,17 @@ export default function Partners({ db, onUpdateDb }: PartnersProps) {
                       <span>{language === 'ar' ? 'سداد الدين' : 'Saisir Versement'}</span>
                     </button>
                   )}
+
+                  {isClient && hasDebt && (
+                    <button
+                      onClick={() => handleOpenReminder(p)}
+                      className="flex-1 min-w-[90px] bg-emerald-600 hover:bg-emerald-700 text-white py-1.5 rounded text-[11px] font-bold transition-all text-center flex items-center justify-center gap-1 cursor-pointer"
+                      title={language === 'ar' ? 'إرسال تذكير بالدين عبر الواتساب' : 'Envoyer un rappel de dette via WhatsApp'}
+                    >
+                      <MessageSquare className="w-3 h-3" />
+                      <span>{language === 'ar' ? 'تذكير بالدفع' : 'Rappel Dette'}</span>
+                    </button>
+                  )}
                   
                   <button
                     onClick={() => setShowCreditStatementPartner(p)}
@@ -874,6 +932,161 @@ export default function Partners({ db, onUpdateDb }: PartnersProps) {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* 🟢 DEBT REMINDER MODAL (WHATSAPP / SMS CUSTOM DIALOG) */}
+      {reminderPartner && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md flex items-center justify-center p-3 md:p-4 z-50 overflow-y-auto">
+          <div className="bg-white rounded-2xl max-w-md w-full p-5 md:p-6 shadow-2xl space-y-4 my-auto">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <h3 className="text-sm font-bold text-slate-900 flex items-center gap-1.5">
+                <span>💬</span>
+                <span>{language === 'ar' ? 'مولد تذكير الديون التفاعلي (WhatsApp)' : 'Rappel de Dette Interactif (WhatsApp)'}</span>
+              </h3>
+              <button onClick={() => setReminderPartner(null)} className="text-slate-400 hover:text-slate-600">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="bg-indigo-50/50 p-3 rounded-lg border border-indigo-100 flex items-start gap-2.5 text-xs text-indigo-850">
+              <span className="text-base">💡</span>
+              <p className="leading-relaxed font-sans text-[11px]">
+                {language === 'ar'
+                  ? 'اختر اللهجة ونوع التذكير، ثم انسخ النص أو افتح الواتساب مباشرة لإرسال الرسالة بنقرة واحدة.'
+                  : 'Sélectionnez le ton et la langue de notification, puis copiez ou lancez WhatsApp directement pour notifier votre client.'}
+              </p>
+            </div>
+
+            <div className="space-y-3 font-sans text-xs">
+              {/* Language Selector */}
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">
+                    {language === 'ar' ? 'لغة الرسالة :' : 'Langue du message :'}
+                  </label>
+                  <div className="flex border border-slate-200 rounded-lg overflow-hidden bg-slate-50">
+                    <button
+                      type="button"
+                      onClick={() => setReminderLanguage('ar')}
+                      className={`flex-1 py-1 text-center text-[10.5px] font-bold transition-colors cursor-pointer ${reminderLanguage === 'ar' ? 'bg-indigo-600 text-white' : 'text-slate-600'}`}
+                    >
+                      العربية 🇹🇳
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setReminderLanguage('fr')}
+                      className={`flex-1 py-1 text-center text-[10.5px] font-bold transition-colors cursor-pointer ${reminderLanguage === 'fr' ? 'bg-indigo-600 text-white' : 'text-slate-600'}`}
+                    >
+                      Français 🇫🇷
+                    </button>
+                  </div>
+                </div>
+
+                {/* Tone/Template Selector */}
+                <div>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">
+                    {language === 'ar' ? 'أسلوب الخطاب :' : 'Ton du Rappel :'}
+                  </label>
+                  <select
+                    value={reminderTemplate}
+                    onChange={(e) => setReminderTemplate(e.target.value as any)}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-lg py-1 px-2 font-bold focus:outline-hidden text-slate-800"
+                  >
+                    <option value="friendly">🌸 {language === 'ar' ? 'ودي ولطيف' : 'Amical & Courtois'}</option>
+                    <option value="formal">👔 {language === 'ar' ? 'رسمي ومهني' : 'Formel & Professionnel'}</option>
+                    <option value="urgent">⚠️ {language === 'ar' ? 'عاجل وحازم' : 'Urgent & Important'}</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Message Preview Textarea */}
+              <div>
+                <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">
+                  {language === 'ar' ? 'معاينة الرسالة (يمكنك تعديلها) :' : 'Message pré-rempli (éditable) :'}
+                </label>
+                <textarea
+                  value={customReminderText}
+                  onChange={(e) => setCustomReminderText(e.target.value)}
+                  rows={4}
+                  className="w-full border border-slate-250 p-2.5 rounded-lg bg-slate-50 focus:bg-white focus:outline-hidden text-slate-800 font-semibold leading-relaxed text-xs resize-none"
+                  dir={reminderLanguage === 'ar' ? 'rtl' : 'ltr'}
+                />
+              </div>
+
+              {/* Destination phone input check */}
+              <div>
+                <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">
+                  {language === 'ar' ? 'رقم الهاتف المستهدف :' : 'Numéro de téléphone :'}
+                </label>
+                <div className="flex items-center bg-slate-100 p-2 rounded-lg font-mono text-xs font-bold text-slate-700">
+                  <span className="mr-1.5">📞</span>
+                  <span>{reminderPartner.phone || (language === 'ar' ? 'غير مسجل' : 'Non renseigné')}</span>
+                </div>
+              </div>
+
+              {/* Form buttons */}
+              <div className="flex items-center gap-2 pt-3 border-t border-slate-150">
+                <button
+                  type="button"
+                  onClick={() => setReminderPartner(null)}
+                  className="flex-1 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-lg text-xs font-bold transition-all text-center cursor-pointer"
+                >
+                  {language === 'ar' ? 'إلغاء' : 'Fermer'}
+                </button>
+
+                {/* Copy Text Button */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    navigator.clipboard.writeText(customReminderText);
+                    showToast(language === 'ar' ? "📋 تم نسخ نص التذكير إلى الحافظة بنجاح!" : "📋 Message copié !", 'success');
+                  }}
+                  className="px-3 py-1.5 bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1 cursor-pointer"
+                  title="Copier le texte"
+                >
+                  <Share2 className="w-3.5 h-3.5" />
+                  <span>{language === 'ar' ? 'نسخ' : 'Copier'}</span>
+                </button>
+
+                {/* WhatsApp Link button */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    let cleanPhone = (reminderPartner.phone || '').trim().replace(/\s+/g, '');
+                    if (/^\d{8}$/.test(cleanPhone)) {
+                      cleanPhone = '216' + cleanPhone;
+                    } else if (cleanPhone.startsWith('00')) {
+                      cleanPhone = cleanPhone.substring(2);
+                    } else if (cleanPhone.startsWith('+')) {
+                      cleanPhone = cleanPhone.substring(1);
+                    }
+                    
+                    const encodedText = encodeURIComponent(customReminderText);
+                    const isIframe = checkIsIframe();
+                    const url = `https://api.whatsapp.com/send?phone=${cleanPhone}&text=${encodedText}`;
+                    
+                    if (isIframe) {
+                      navigator.clipboard.writeText(customReminderText);
+                      showToast(language === 'ar' 
+                        ? "🔗 تم نسخ النص! يرجى فتح الواتساب ولصق الرسالة." 
+                        : "🔗 Texte copié ! Ouvrez WhatsApp et collez-le.", 'success');
+                      window.open(url, '_blank');
+                    } else {
+                      window.open(url, '_blank');
+                    }
+                  }}
+                  disabled={!reminderPartner.phone}
+                  className="flex-1 py-1.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1 cursor-pointer"
+                >
+                  <svg className="w-3.5 h-3.5 fill-current mr-1" viewBox="0 0 24 24">
+                    <path d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946C.06 5.348 5.397.01 12.008.01c3.202.001 6.212 1.246 8.477 3.514 2.266 2.268 3.507 5.28 3.505 8.484-.004 6.657-5.34 11.997-11.953 11.997-2.005-.001-3.973-.502-5.724-1.455L0 24zm6.59-4.846c1.66.986 3.292 1.503 4.909 1.504 5.518 0 10.005-4.486 10.008-10.007.001-2.674-1.019-5.187-2.889-7.057C16.81 1.724 14.3 1.701 12.012 1.701c-5.525 0-10.013 4.487-10.017 10.009-.001 1.94.509 3.511 1.488 5.109l-.982 3.59 3.687-.968c1.623.882 3.1 1.332 3.867 1.332zM15.85 13.56c-.27-.134-1.603-.79-1.85-.88-.248-.09-.43-.134-.61.134-.18.27-.7.88-.86 1.05-.16.18-.32.2-.59.07-.27-.134-1.14-.42-2.17-1.34-.8-.71-1.34-1.59-1.5-1.86-.16-.27-.02-.42.12-.55.12-.12.27-.32.4-.48.13-.16.18-.27.27-.45.09-.18.04-.34-.02-.48-.06-.14-.6-1.44-.82-1.98-.22-.53-.44-.45-.6-.46-.15-.01-.33-.01-.51-.01-.18 0-.48.07-.73.34-.25.27-.95.93-.95 2.27s.98 2.62 1.11 2.8c.14.18 1.93 2.95 4.67 4.14.65.28 1.16.45 1.56.58.66.21 1.25.18 1.72.11.53-.08 1.6-.66 1.83-1.26.23-.61.23-1.13.16-1.24-.07-.11-.27-.18-.54-.31z"/>
+                  </svg>
+                  <span>WhatsApp</span>
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}
