@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
-import { DatabaseState, Product, Partner, Invoice, InvoiceItem } from '../types';
+import { DatabaseState, Product, Partner, Invoice, InvoiceItem, HeldTicket } from '../types';
 import { getProductVisual, isProductInPromo, getActiveProductPrice } from '../utils/db';
 import { useLanguage } from '../utils/LanguageContext';
 import { safeLocalStorage, checkIsIframe } from '../utils/storage';
@@ -36,7 +36,14 @@ import {
   Minimize,
   Lock,
   Unlock,
-  History
+  History,
+  Zap,
+  QrCode,
+  Image as ImageIcon,
+  RotateCcw,
+  Upload,
+  Flashlight,
+  Clock
 } from 'lucide-react';
 import { downloadInvoicePDF } from '../utils/pdfGenerator';
 
@@ -160,6 +167,132 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
       { id: '1', time: new Date(Date.now() - 3600000).toLocaleTimeString(), action: 'Fonds de caisse initial configuré', user: 'Administrateur', amount: 150.0 }
     ];
   });
+
+  // ⏸️ Held Tickets / Queue (File d'attente / تأجيل السلة)
+  const [heldTickets, setHeldTickets] = useState<HeldTicket[]>(() => {
+    const saved = safeLocalStorage.getItem('pos_held_tickets');
+    if (!saved) return [];
+    try {
+      return JSON.parse(saved);
+    } catch (_) {
+      return [];
+    }
+  });
+  const [isHeldTicketsOpen, setIsHeldTicketsOpen] = useState<boolean>(false);
+  const [heldSearchQuery, setHeldSearchQuery] = useState<string>('');
+
+  useEffect(() => {
+    safeLocalStorage.setItem('pos_held_tickets', JSON.stringify(heldTickets));
+  }, [heldTickets]);
+
+  // Function to move current cart into queue/file d'attente
+  const handleHoldCurrentCart = (noteStr?: string) => {
+    if (cart.length === 0) {
+      showToast(
+        language === 'ar' ? '⚠️ السلة فارغة! ضع سلعاً بالسلة أولاً لتأجيلها.' : '⚠️ Le panier est vide ! Ajoutez des articles avant de mettre en attente.',
+        'error'
+      );
+      return;
+    }
+
+    const partner = db.partners.find(p => p.id === selectedPartnerId);
+    const clientLabel = partner ? partner.name : (noteStr || (language === 'ar' ? `حريف #${heldTickets.length + 1}` : `Client #${heldTickets.length + 1}`));
+
+    const subtotal = cart.reduce((sum, item) => sum + item.customPrice * item.qty, 0);
+    const finalTotal = subtotal - (globalDiscount || 0);
+
+    const newHeldTicket: HeldTicket = {
+      id: `HELD-${Date.now()}`,
+      ticketRef: `ATT-${heldTickets.length + 1}`,
+      customerName: clientLabel,
+      partnerId: selectedPartnerId || undefined,
+      items: [...cart],
+      createdAt: new Date().toISOString(),
+      totalAmount: Math.max(0, finalTotal),
+      globalDiscount: globalDiscount,
+      note: noteStr || '',
+    };
+
+    setHeldTickets(prev => [newHeldTicket, ...prev]);
+
+    // Clear active cart for the next customer
+    setCart([]);
+    setSelectedCartIdx(-1);
+    setPaidAmount('');
+    setSelectedPartnerId('');
+    setGlobalDiscount(0);
+
+    playScanBeep('success');
+
+    showToast(
+      language === 'ar'
+        ? `⏳ تم وضع سلة الحريف (${newHeldTicket.ticketRef}) في قائمة الانتظار بنجاح!`
+        : `⏳ Panier (${newHeldTicket.ticketRef}) mis en attente ! Prêt pour le client suivant.`,
+      'success'
+    );
+  };
+
+  // Restore a ticket from held queue back to active cart
+  const handleRestoreHeldTicket = (ticket: HeldTicket) => {
+    // If current active cart has items, swap & auto hold active cart first so nothing is lost!
+    if (cart.length > 0) {
+      const subtotal = cart.reduce((sum, item) => sum + item.customPrice * item.qty, 0);
+      const finalTotal = subtotal - (globalDiscount || 0);
+      const autoHold: HeldTicket = {
+        id: `HELD-${Date.now()}`,
+        ticketRef: `ATT-${heldTickets.length + 1}`,
+        customerName: language === 'ar' ? 'سلة متبادلة تلقائياً' : 'Panier permuté auto',
+        partnerId: selectedPartnerId || undefined,
+        items: [...cart],
+        createdAt: new Date().toISOString(),
+        totalAmount: Math.max(0, finalTotal),
+        globalDiscount: globalDiscount,
+      };
+
+      setHeldTickets(prev => [
+        autoHold,
+        ...prev.filter(t => t.id !== ticket.id)
+      ]);
+
+      showToast(
+        language === 'ar'
+          ? 'ℹ️ تم وضع السلة الحالية تلقائياً في الانتظار واسترجاع السلة المطلوبة.'
+          : 'ℹ️ Le panier actuel a été permuté en attente et la commande restaurée.',
+        'info'
+      );
+    } else {
+      setHeldTickets(prev => prev.filter(t => t.id !== ticket.id));
+    }
+
+    setCart(ticket.items);
+    if (ticket.partnerId) {
+      setSelectedPartnerId(ticket.partnerId);
+    } else {
+      setSelectedPartnerId('');
+    }
+    if (typeof ticket.globalDiscount === 'number') {
+      setGlobalDiscount(ticket.globalDiscount);
+    }
+
+    setIsHeldTicketsOpen(false);
+    playScanBeep('success');
+
+    showToast(
+      language === 'ar'
+        ? `✅ تم استرجاع سلة (${ticket.ticketRef}) لمواصلة البيع!`
+        : `✅ Panier (${ticket.ticketRef}) restauré avec succès !`,
+      'success'
+    );
+  };
+
+  // Delete a held ticket
+  const handleDeleteHeldTicket = (ticketId: string) => {
+    setHeldTickets(prev => prev.filter(t => t.id !== ticketId));
+    showToast(
+      language === 'ar' ? 'تم حذف السلة المؤجلة.' : 'Ticket en attente supprimé.',
+      'info'
+    );
+  };
 
   const [drawerCashComposition, setDrawerCashComposition] = useState<Record<string, number>>(() => {
     try {
@@ -431,7 +564,7 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
     };
   }, []);
 
-  // Camera Barcode Scanner State and Refs
+  // Camera & Mobile Hardware Infrared Barcode/QR Scanner State and Refs
   const [isCameraActive, setIsCameraActive] = useState(false);
   const [cameraError, setCameraError] = useState<string | null>(null);
   const [lastScannedText, setLastScannedText] = useState<string>('');
@@ -439,6 +572,16 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
   const [isBeepEnabled, setIsBeepEnabled] = useState<boolean>(() => {
     return safeLocalStorage.getItem('pos_scan_beep') !== 'false';
   });
+  
+  // Hardware Infrared Laser Scanner Mode (PDA, Sunmi, Zebra, Bluetooth Douchette)
+  const [isInfraredMode, setIsInfraredMode] = useState<boolean>(() => {
+    return safeLocalStorage.getItem('pos_infrared_mode') === 'true';
+  });
+
+  // Mobile camera controls
+  const [cameraFacingMode, setCameraFacingMode] = useState<'environment' | 'user'>('environment');
+  const [isTorchOn, setIsTorchOn] = useState<boolean>(false);
+  const galleryInputRef = useRef<HTMLInputElement | null>(null);
   
   const html5QrCodeRef = useRef<Html5Qrcode | null>(null);
   const lastScanTimesRef = useRef<Record<string, number>>({});
@@ -468,36 +611,91 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
   }, [scanHistory]);
 
   // Clean Web Audio API scanner beep indicator sound generator
-  const playScanBeep = () => {
+  const playScanBeep = (type: 'success' | 'error' = 'success') => {
     if (!isBeepEnabled) return;
     try {
-      const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+      const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+      if (!AudioCtx) return;
+      const audioCtx = new AudioCtx();
+      if (audioCtx.state === 'suspended') {
+        audioCtx.resume();
+      }
+
       const oscillator = audioCtx.createOscillator();
       const gainNode = audioCtx.createGain();
-      
-      oscillator.type = 'sine';
-      oscillator.frequency.setValueAtTime(800, audioCtx.currentTime); // Standard POS beep frequency (800Hz)
-      gainNode.gain.setValueAtTime(0.06, audioCtx.currentTime);
-      gainNode.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.12); // Fast decay
-      
-      oscillator.connect(gainNode);
-      gainNode.connect(audioCtx.destination);
-      
-      oscillator.start();
-      oscillator.stop(audioCtx.currentTime + 0.12);
+
+      if (type === 'error') {
+        oscillator.type = 'sawtooth';
+        oscillator.frequency.setValueAtTime(320, audioCtx.currentTime);
+        oscillator.frequency.exponentialRampToValueAtTime(160, audioCtx.currentTime + 0.18);
+        gainNode.gain.setValueAtTime(0.08, audioCtx.currentTime);
+        gainNode.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.18);
+        oscillator.connect(gainNode);
+        gainNode.connect(audioCtx.destination);
+        oscillator.start();
+        oscillator.stop(audioCtx.currentTime + 0.18);
+      } else {
+        // High-pitched, crisp retail scanner beep tone (1200Hz)
+        oscillator.type = 'sine';
+        oscillator.frequency.setValueAtTime(1200, audioCtx.currentTime);
+        gainNode.gain.setValueAtTime(0.09, audioCtx.currentTime);
+        gainNode.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.10);
+        oscillator.connect(gainNode);
+        gainNode.connect(audioCtx.destination);
+        oscillator.start();
+        oscillator.stop(audioCtx.currentTime + 0.10);
+      }
     } catch (err) {
       console.warn('AudioContext scanner beep failed:', err);
     }
   };
 
-  // Resolves standard barcode matches and EAN-13 weight/price embedded balance barcodes
+  // Resolves standard barcode matches, 2D QR Codes (JSON/URL/Text), and EAN-13 weight/price embedded balance barcodes
   const handleResolveAndAddProduct = (barcodeRaw: string): { success: boolean; productName?: string; qty?: number } => {
-    const cleaned = barcodeRaw.trim();
+    let cleaned = barcodeRaw.trim();
     if (!cleaned) return { success: false };
 
-    // 1) First check for an exact match for the whole barcode in db
+    let requestedQty: number | null = null;
+
+    // 0) Parse JSON QR Code payload if present (e.g. {"code": "12345", "qty": 2})
+    if ((cleaned.startsWith('{') && cleaned.endsWith('}')) || (cleaned.startsWith('[') && cleaned.endsWith(']'))) {
+      try {
+        const parsed = JSON.parse(cleaned);
+        const codeVal = parsed.code || parsed.sku || parsed.barcode || parsed.id || parsed.qrCode;
+        if (codeVal) {
+          cleaned = String(codeVal).trim();
+        }
+        if (typeof parsed.qty === 'number' && parsed.qty > 0) {
+          requestedQty = parsed.qty;
+        } else if (typeof parsed.quantity === 'number' && parsed.quantity > 0) {
+          requestedQty = parsed.quantity;
+        }
+      } catch (e) {
+        // Continue with raw string
+      }
+    }
+
+    // 0.b) Parse URL QR Code if present (e.g. https://.../product?code=12345)
+    if (cleaned.startsWith('http://') || cleaned.startsWith('https://')) {
+      try {
+        const urlObj = new URL(cleaned);
+        const codeParam = urlObj.searchParams.get('code') || urlObj.searchParams.get('sku') || urlObj.searchParams.get('barcode') || urlObj.searchParams.get('id');
+        if (codeParam) {
+          cleaned = codeParam.trim();
+        } else {
+          const pathSegments = urlObj.pathname.split('/').filter(Boolean);
+          if (pathSegments.length > 0) {
+            cleaned = pathSegments[pathSegments.length - 1].trim();
+          }
+        }
+      } catch (e) {
+        // Fallback to raw string
+      }
+    }
+
+    // 1) First check for an exact match for the code or ID in db
     let matched = db.products.find(
-      p => p.code === cleaned || p.code.toLowerCase() === cleaned.toLowerCase()
+      p => p.code === cleaned || p.code.toLowerCase() === cleaned.toLowerCase() || p.id === cleaned
     );
 
     if (matched) {
@@ -508,7 +706,9 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
           'info'
         );
       }
-      const qtyToAdd = isReturnMode ? -1 : 1;
+      const qtyMultiplier = requestedQty ? requestedQty : 1;
+      const qtyToAdd = isReturnMode ? -qtyMultiplier : qtyMultiplier;
+      
       // Add exact match to cart
       setCart(prevCart => {
         const existingIdx = prevCart.findIndex(item => item.product.id === matched!.id);
@@ -623,6 +823,16 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
       return; 
     }
     lastScanTimesRef.current[cleaned] = now;
+    setLastScannedText(cleaned);
+
+    // Trigger mobile haptic vibration if supported
+    if (typeof navigator !== 'undefined' && navigator.vibrate) {
+      try {
+        navigator.vibrate([30, 20, 30]);
+      } catch (e) {
+        // Haptic unsupported
+      }
+    }
 
     // Resolve and add the barcode product safely (Handles standard & Scale barcodes)
     const result = handleResolveAndAddProduct(cleaned);
@@ -672,6 +882,43 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
     }
   }, [scanToast]);
 
+  // Gallery QR Code & Barcode image file scanner
+  const handleScanFromGallery = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // Ensure temp container for image scan exists in DOM
+    let tempElem = document.getElementById('pos-gallery-qr-temp-view');
+    if (!tempElem) {
+      tempElem = document.createElement('div');
+      tempElem.id = 'pos-gallery-qr-temp-view';
+      tempElem.style.display = 'none';
+      document.body.appendChild(tempElem);
+    }
+
+    try {
+      const html5QrCode = new Html5Qrcode('pos-gallery-qr-temp-view');
+      const decodedText = await html5QrCode.scanFile(file, true);
+      handleBarcodeScanSuccess(decodedText);
+      showToast(
+        language === 'ar' ? `✅ تم التعرّف على الرمز من الصورة: ${decodedText}` : `✅ QR Code scanné avec succès: ${decodedText}`,
+        'success'
+      );
+      try {
+        html5QrCode.clear();
+      } catch (e) {
+        // Ignore clear warnings
+      }
+    } catch (err) {
+      showToast(
+        language === 'ar' ? '⚠️ لم يتم التعرّف على رمز QR أو باركود واضح في هذه الصورة.' : '⚠️ Aucun QR Code ou code-barres décelé dans cette image.',
+        'error'
+      );
+    } finally {
+      if (e.target) e.target.value = '';
+    }
+  };
+
   // Manage camera barcode capture flow
   useEffect(() => {
     if (isCameraActive) {
@@ -681,12 +928,12 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
       
       const initScanner = () => {
         const scannerElement = document.getElementById('pos-camera-scanner-view');
-        if (!scannerElement) {
+        if (!scannerElement || !scannerElement.isConnected) {
           attempts++;
-          if (attempts < 10) {
+          if (attempts < 35) {
             startTimer = setTimeout(initScanner, 100);
           } else {
-            console.error('Html5Qrcode instance creation exception: Element #pos-camera-scanner-view not found after 10 attempts');
+            console.warn('Html5Qrcode scanner element #pos-camera-scanner-view not ready after 35 attempts');
             setCameraError(
               language === 'ar'
                 ? '❌ جهاز الكاميرا غير مهيأ أو غير مدعوم في متصفحك.'
@@ -698,19 +945,31 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
         }
 
         try {
+          // If previous instance exists, clear it before re-initializing
+          if (html5QrCodeRef.current) {
+            try {
+              if (html5QrCodeRef.current.isScanning) {
+                html5QrCodeRef.current.stop();
+              }
+            } catch (e) {
+              // Ignore
+            }
+            html5QrCodeRef.current = null;
+          }
+
           const scannerInstance = new Html5Qrcode('pos-camera-scanner-view');
           html5QrCodeRef.current = scannerInstance;
 
           scannerInstance.start(
-            { facingMode: 'environment' },
+            { facingMode: cameraFacingMode },
             {
-              fps: 15,
-              // Design responsive search rectangular box overlay centered and optimized for scanning labels
+              fps: 20,
+              // Responsive box overlay optimized for both 1D Barcodes & 2D QR Codes
               qrbox: (w, h) => {
-                const len = Math.min(w, h);
+                const minDim = Math.min(w, h);
                 return {
-                  width: Math.floor(w * 0.82),
-                  height: Math.floor(len * 0.45)
+                  width: Math.floor(Math.min(w * 0.85, 280)),
+                  height: Math.floor(Math.min(minDim * 0.70, 240))
                 };
               },
               aspectRatio: 1.777778
@@ -719,7 +978,7 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
               handleBarcodeScanSuccess(decodedText);
             },
             () => {
-              // Frame scan failure handles are ignored to prevent noise in browser console log
+              // Frame scan failure handles are ignored
             }
           ).catch((err) => {
             console.error('Camera startup exception:', err);
@@ -731,13 +990,18 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
             setIsCameraActive(false);
           });
         } catch (err) {
-          console.error('Html5Qrcode instance creation exception:', err);
-          setCameraError(
-            language === 'ar'
-              ? '❌ جهاز الكاميرا غير مهيأ أو غير مدعوم في متصفحك.'
-              : '❌ La caméra n\'est pas supportée sur ce navigateur.'
-          );
-          setIsCameraActive(false);
+          console.warn('Html5Qrcode instance creation attempt pending retry:', attempts, err);
+          attempts++;
+          if (attempts < 35) {
+            startTimer = setTimeout(initScanner, 150);
+          } else {
+            setCameraError(
+              language === 'ar'
+                ? '❌ جهاز الكاميرا غير مهيأ أو غير مدعوم في متصفحك.'
+                : '❌ La caméra n\'est pas supportée sur ce navigateur.'
+            );
+            setIsCameraActive(false);
+          }
         }
       };
 
@@ -763,7 +1027,7 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
         }
       }
     }
-  }, [isCameraActive]);
+  }, [isCameraActive, cameraFacingMode]);
 
   // Always show ticket preview modal first so the user can see it before printing.
   // There is no automatic, silent printing or immediate popup closing, honoring the user's workflow.
@@ -793,6 +1057,13 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
           paidAmountInputRef.current?.select();
           setActiveNumpadTarget('paidAmount');
           setKeyboardLayout('numeric');
+        }
+      } else if (e.key === 'F6') {
+        e.preventDefault();
+        if (cart.length > 0) {
+          handleHoldCurrentCart();
+        } else {
+          setIsHeldTicketsOpen(prev => !prev);
         }
       } else if (e.key === 'F7') {
         e.preventDefault();
@@ -1685,7 +1956,31 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
             <span><kbd className="bg-white px-1.5 py-0.5 border border-slate-300 rounded shadow-3xs font-bold text-slate-900 select-all">F3</kbd> Recherche</span>
             <span className="text-slate-300">|</span>
             <span><kbd className="bg-white px-1.5 py-0.5 border border-slate-300 rounded shadow-3xs font-bold text-slate-900 select-all">F4</kbd> Encaisser</span>
+            <span className="text-slate-300">|</span>
+            <span><kbd className="bg-white px-1.5 py-0.5 border border-slate-300 rounded shadow-3xs font-bold text-slate-900 select-all">F6</kbd> Attente</span>
           </div>
+
+          {/* File d'attente / Attente client button */}
+          <button
+            type="button"
+            onClick={() => setIsHeldTicketsOpen(true)}
+            className={`px-3 py-1.5 rounded text-xs font-black transition-all shadow-3xs flex items-center gap-2 cursor-pointer border ${
+              heldTickets.length > 0
+                ? 'bg-amber-500 hover:bg-amber-600 text-white border-amber-600 animate-pulse'
+                : 'bg-amber-50 hover:bg-amber-100 text-amber-800 border-amber-200'
+            }`}
+            title={language === 'ar' ? 'عرض سلات الحرفاء المؤجلة بالانتظار (F6)' : 'Afficher la file d\'attente des billets suspendus (F6)'}
+          >
+            <Clock className="w-3.5 h-3.5" />
+            <span>{language === 'ar' ? 'قائمة الانتظار ⏳' : 'File d\'attente ⏳'}</span>
+            <span className={`font-mono text-[10px] px-1.5 py-0.2 rounded font-black border ${
+              heldTickets.length > 0
+                ? 'bg-white text-amber-900 border-amber-300'
+                : 'bg-amber-100 text-amber-800 border-amber-300'
+            }`}>
+              {heldTickets.length}
+            </span>
+          </button>
 
           {/* Quick Scanner Launch Button in Header */}
           <button
@@ -1961,10 +2256,37 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
                   <span className={`animate-ping absolute inline-flex h-full w-full rounded-full ${isRapidScanFocused ? 'bg-emerald-400 opacity-75' : 'bg-slate-300'}`}></span>
                   <span className={`relative inline-flex rounded-full h-2 w-2 ${isRapidScanFocused ? 'bg-emerald-500' : 'bg-slate-400'}`}></span>
                 </span>
-                <span>{language === 'ar' ? 'سحب سريع للباركود (بدون نقر)' : 'Saisie Directe Code-barres (Sans clic)'}</span>
+                <span>{language === 'ar' ? 'سحب سريع للباركود و QR (بدون نقر)' : 'Saisie Directe Code-barres / QR Code'}</span>
               </div>
               
-              <div className="flex flex-wrap items-center gap-2.5">
+              <div className="flex flex-wrap items-center gap-2">
+                {/* Hardware Infrared Laser Scanner Mode Toggle button */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    const next = !isInfraredMode;
+                    setIsInfraredMode(next);
+                    safeLocalStorage.setItem('pos_infrared_mode', String(next));
+                    if (next) {
+                      showToast(
+                        language === 'ar'
+                          ? '⚡ تم تفعيل وضع الماسح الضوئي بالأشعة تحت الحمراء (PDA / Laser) بدون لوحة مفاتيح شاشة'
+                          : '⚡ Mode Scanner Infrarouge & Laser PDA Actif (Clavier virtuel masqué)',
+                        'success'
+                      );
+                    }
+                  }}
+                  className={`px-2.5 py-1 rounded-lg text-[10px] font-black tracking-wide flex items-center gap-1.5 transition-all cursor-pointer ${
+                    isInfraredMode
+                      ? 'bg-rose-600 text-white shadow-xs border border-rose-500 animate-pulse'
+                      : 'bg-white hover:bg-slate-100 text-slate-700 border border-slate-250 shadow-3xs'
+                  }`}
+                  title={language === 'ar' ? 'وضع ماسح الإنفراروج للموبايل و PDA' : 'Mode Scanner Infrarouge / Laser PDA'}
+                >
+                  <Zap className="w-3 h-3 text-amber-300" />
+                  <span>{isInfraredMode ? (language === 'ar' ? 'إنفراروج نشط ⚡' : 'Infrarouge Actif ⚡') : (language === 'ar' ? 'ماسح إنفراروج/PDA' : 'Scanner IR / Laser')}</span>
+                </button>
+
                 {/* Active scan indicator */}
                 <div 
                   onClick={() => rapidScanInputRef.current?.focus()}
@@ -1996,16 +2318,34 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
               </div>
             </div>
 
+            {/* Infrared Mode Status Banner */}
+            {isInfraredMode && (
+              <div className="bg-gradient-to-r from-rose-900 via-rose-800 to-slate-900 text-white p-2 rounded-lg text-[10.5px] font-bold flex items-center justify-between shadow-inner border border-rose-700/50">
+                <div className="flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-rose-400 animate-ping"></span>
+                  <p>
+                    {language === 'ar'
+                      ? '⚡ وضع الإنفراروج و PDA شغّال: يقرأ الباركود و QR بدون ظهور لوحة المفاتيح على الشاشة.'
+                      : '⚡ Mode Infrarouge & PDA Actif : Scannez avec la douchette / bouton laser sans ouvrir le clavier tactile !'}
+                  </p>
+                </div>
+                <span className="text-[9px] font-mono bg-rose-950/80 px-2 py-0.5 rounded text-rose-200 border border-rose-800">
+                  Hardware Wedge
+                </span>
+              </div>
+            )}
+
             <form onSubmit={handleRapidBarcodeSubmit} className="flex gap-2">
               <div className="relative flex-1">
                 <span className="absolute left-3.5 top-3 text-sm select-none">📟</span>
                 <input
                   ref={rapidScanInputRef}
                   type="text"
+                  inputMode={isInfraredMode ? 'none' : undefined}
                   placeholder={
-                    language === 'ar'
-                      ? 'امسح باركود السلعة هنا لإضافتها فوراً (دون لمس الفأرة)...'
-                      : 'Scannez un code-barres ici... Le produit s\'ajoutera instantanément !'
+                    isInfraredMode
+                      ? (language === 'ar' ? 'وجه ليزر PDA / الإنفراروج للمسح الضوئي المباشر...' : 'Scannez avec la douchette infrarouge PDA...')
+                      : (language === 'ar' ? 'امسح باركود أو QR السلعة هنا لإضافتها فوراً...' : 'Scannez un code-barres ou QR Code ici...')
                   }
                   value={rapidScanValue}
                   onChange={(e) => setRapidScanValue(e.target.value)}
@@ -2166,7 +2506,7 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
             </div>
           </form>
 
-          {/* Continuous Camera Barcode Scanner Panel */}
+          {/* Continuous Camera Barcode & QR Code Scanner Panel */}
           <AnimatePresence>
             {isCameraActive && (
               <motion.div
@@ -2175,19 +2515,49 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
                 exit={{ opacity: 0, height: 0 }}
                 className="overflow-hidden border border-slate-200 bg-slate-50/70 rounded-xl p-4 space-y-3 shadow-3xs relative mr-0.5"
               >
-                <div className="flex items-center justify-between">
+                <div className="flex flex-wrap items-center justify-between gap-2">
                   <div className="flex items-center gap-2">
                     <span className="relative flex h-2 w-2">
                       <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
                       <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
                     </span>
-                    <h4 className="text-xs font-bold text-slate-800 uppercase tracking-widest font-mono">
-                      {language === 'ar' ? 'قارئ الباركود المتواصل بالكاميرا' : 'Lecteur Code-barres Caméra (Mode Continu)'}
+                    <h4 className="text-xs font-bold text-slate-800 uppercase tracking-widest font-mono flex items-center gap-1.5">
+                      <QrCode className="w-3.5 h-3.5 text-indigo-600" />
+                      <span>{language === 'ar' ? 'قارئ الباركود و QR Code بالكاميرا' : 'Lecteur Code-barres & QR Code (Caméra)'}</span>
                     </h4>
                   </div>
                   
-                  {/* Scanner controls: sound toggle and dismiss */}
-                  <div className="flex items-center gap-2">
+                  {/* Scanner mobile toolbar: Flip camera, Gallery picker, sound toggle, close */}
+                  <div className="flex items-center gap-1.5">
+                    {/* Hidden input for gallery image QR scanner */}
+                    <input
+                      ref={galleryInputRef}
+                      type="file"
+                      accept="image/*"
+                      onChange={handleScanFromGallery}
+                      className="hidden"
+                    />
+
+                    <button
+                      type="button"
+                      onClick={() => galleryInputRef.current?.click()}
+                      className="px-2 py-1 rounded text-[10px] font-bold bg-white hover:bg-slate-100 border border-slate-250 text-slate-700 flex items-center gap-1 transition-all cursor-pointer shadow-3xs"
+                      title={language === 'ar' ? 'مسح رمز QR من صورة بالمجلس / المعرض' : 'Scanner une image QR depuis la galerie'}
+                    >
+                      <ImageIcon className="w-3.5 h-3.5 text-sky-600" />
+                      <span>{language === 'ar' ? 'من المعرض' : 'Galerie'}</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setCameraFacingMode(prev => prev === 'environment' ? 'user' : 'environment')}
+                      className="px-2 py-1 rounded text-[10px] font-bold bg-white hover:bg-slate-100 border border-slate-250 text-slate-700 flex items-center gap-1 transition-all cursor-pointer shadow-3xs"
+                      title={language === 'ar' ? 'قلب الكاميرا (أمامية / خلفية)' : 'Changer de caméra (Avant / Arrière)'}
+                    >
+                      <RotateCcw className="w-3.5 h-3.5 text-indigo-600" />
+                      <span>{cameraFacingMode === 'environment' ? (language === 'ar' ? 'خلفية' : 'Arrière') : (language === 'ar' ? 'أمامية' : 'Avant')}</span>
+                    </button>
+
                     <button
                       type="button"
                       onClick={() => {
@@ -2204,6 +2574,7 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
                     >
                       {isBeepEnabled ? <Volume2 className="w-3.5 h-3.5" /> : <VolumeX className="w-3.5 h-3.5" />}
                     </button>
+                    
                     <button
                       type="button"
                       onClick={() => setIsCameraActive(false)}
@@ -2228,24 +2599,24 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
                   {/* Laser aiming guides layer overlay */}
                   <div className="absolute inset-x-0 inset-y-0 flex flex-col justify-between pointer-events-none p-5 sm:p-8">
                     <div className="w-full flex justify-between">
-                      <div className="w-4 h-4 border-t-2 border-l-2 border-indigo-500"></div>
-                      <div className="w-4 h-4 border-t-2 border-r-2 border-indigo-500"></div>
+                      <div className="w-4 h-4 border-t-2 border-l-2 border-emerald-400"></div>
+                      <div className="w-4 h-4 border-t-2 border-r-2 border-emerald-400"></div>
                     </div>
                     
-                    {/* Glowing active barcode laser tracker */}
-                    <div className="w-full border-t border-rose-500 shadow-[0_0_6px_rgba(239,68,68,0.7)] animate-pulse relative"></div>
+                    {/* Glowing active barcode & QR laser tracker */}
+                    <div className="w-full border-t border-rose-500 shadow-[0_0_8px_rgba(239,68,68,0.9)] animate-pulse relative"></div>
                     
                     <div className="w-full flex justify-between">
-                      <div className="w-4 h-4 border-b-2 border-l-2 border-indigo-500"></div>
-                      <div className="w-4 h-4 border-b-2 border-r-2 border-indigo-500"></div>
+                      <div className="w-4 h-4 border-b-2 border-l-2 border-emerald-400"></div>
+                      <div className="w-4 h-4 border-b-2 border-r-2 border-emerald-400"></div>
                     </div>
                   </div>
 
                   {/* Visual helpful subtitles overlay */}
                   <div className="absolute bottom-2 left-2 right-2 bg-slate-950/80 px-2.5 py-1.5 rounded text-center text-[9px] text-slate-300 font-mono tracking-wide max-w-[90%] mx-auto">
                     {language === 'ar' 
-                      ? 'ضع الرموز المقروءة أمام الكاميرا للإضافة التلقائية المتواصلة بالسلة 🚀' 
-                      : 'Placez les codes-barres devant la caméra pour l\'ajout automatique en continu 🚀'}
+                      ? 'وجه الكاميرا نحو باركود 1D أو رمز QR Code 2D للإضافة التلقائية المباشرة 🚀' 
+                      : 'Pointez la caméra vers un Code-Barres ou un QR Code pour l\'ajout automatique 🚀'}
                   </div>
                 </div>
 
@@ -3436,7 +3807,7 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
               </div>
 
               {/* Bottom touch operational action grid keys */}
-              <div className="bg-slate-105 border border-slate-200 p-2 rounded-2xl shrink-0 select-none grid grid-cols-2 sm:grid-cols-4 gap-2 text-center text-white">
+              <div className="bg-slate-105 border border-slate-200 p-2 rounded-2xl shrink-0 select-none grid grid-cols-2 sm:grid-cols-5 gap-2 text-center text-white">
                 
                 <button
                   type="button"
@@ -3451,6 +3822,17 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
                 >
                   <span>🗑️</span>
                   <span>{language === 'ar' ? 'مسح السلة' : 'Vider Panier'}</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => handleHoldCurrentCart()}
+                  disabled={cart.length === 0}
+                  className="bg-amber-500 hover:bg-amber-600 disabled:opacity-50 disabled:pointer-events-none text-white font-black text-[10px] py-3 rounded-lg uppercase transition-all duration-150 cursor-pointer active:scale-95 flex items-center justify-center gap-1.5 shadow-2xs border-b-2 border-amber-700"
+                  title={language === 'ar' ? 'تأجيل السلة الحالية لحريف آخر (F6)' : 'Mettre le panier en attente (F6)'}
+                >
+                  <span>⏳</span>
+                  <span>{language === 'ar' ? 'تأجيل السلة' : 'En Attente'}</span>
                 </button>
 
                 <button
@@ -6038,6 +6420,204 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
                 </button>
               </div>
 
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* ⏳ File d'attente (Held Tickets / Parked Carts) Modal */}
+      <AnimatePresence>
+        {isHeldTicketsOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-slate-950/75 backdrop-blur-xs no-print">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 10 }}
+              transition={{ duration: 0.2 }}
+              className="bg-white border border-slate-200 rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden text-slate-800"
+            >
+              {/* Modal Header */}
+              <div className="bg-gradient-to-r from-amber-600 via-amber-500 to-amber-600 p-4 text-white flex items-center justify-between shrink-0 shadow-md">
+                <div className="flex items-center gap-3">
+                  <div className="p-2.5 bg-white/20 rounded-xl backdrop-blur-sm">
+                    <Clock className="w-6 h-6 text-white" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <h2 className="text-base sm:text-lg font-black tracking-tight uppercase">
+                        {language === 'ar' ? 'قائمة الانتظار - السلات المؤجلة' : 'File d\'attente - Tickets en Attente'}
+                      </h2>
+                      <span className="bg-white/30 text-white text-xs font-mono font-extrabold px-2 py-0.5 rounded-full border border-white/20">
+                        {heldTickets.length}
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-amber-100 font-medium">
+                      {language === 'ar'
+                        ? 'تأجيل سلة الحريف الحالي وخدمة الحرفاء الآخرين، ثم استرجاعها بضغطة زر عند عودته للكونتوار'
+                        : 'Mettez le ticket en attente pour servir le client suivant et rappelez-le en un clic'}
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsHeldTicketsOpen(false)}
+                  className="p-2 hover:bg-white/20 rounded-xl transition-colors cursor-pointer text-white"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* Action & Filter Toolbar */}
+              <div className="p-4 bg-slate-50 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3 shrink-0">
+                <div className="relative flex-1 min-w-[200px]">
+                  <Search className="w-4 h-4 absolute left-3 top-2.5 text-slate-400" />
+                  <input
+                    type="text"
+                    value={heldSearchQuery}
+                    onChange={(e) => setHeldSearchQuery(e.target.value)}
+                    placeholder={language === 'ar' ? 'بحث باسم الحريف أو مرجع السلة...' : 'Rechercher par client ou référence...'}
+                    className="w-full pl-9 pr-3 py-2 text-xs bg-white border border-slate-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:outline-none"
+                  />
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => handleHoldCurrentCart()}
+                  disabled={cart.length === 0}
+                  className="px-4 py-2 bg-amber-600 hover:bg-amber-700 disabled:opacity-50 text-white rounded-lg text-xs font-black uppercase tracking-wider flex items-center gap-2 transition-all cursor-pointer shadow-sm border-b-2 border-amber-800"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span>{language === 'ar' ? 'تأجيل السلة الحالية الآن' : 'Mettre panier actuel en attente'}</span>
+                </button>
+              </div>
+
+              {/* Modal Body - Tickets Grid */}
+              <div className="p-4 sm:p-6 overflow-y-auto flex-1 bg-slate-100/60 space-y-4">
+                {heldTickets.length === 0 ? (
+                  <div className="py-16 text-center space-y-3 bg-white border border-dashed border-slate-300 rounded-2xl p-6">
+                    <div className="w-16 h-16 bg-amber-50 text-amber-500 rounded-full flex items-center justify-center mx-auto border border-amber-200">
+                      <Clock className="w-8 h-8" />
+                    </div>
+                    <h3 className="text-sm font-extrabold text-slate-700 uppercase">
+                      {language === 'ar' ? 'لا توجد سلات مؤجلة في الانتظار حالياً' : 'Aucun ticket en attente actuellement'}
+                    </h3>
+                    <p className="text-xs text-slate-500 max-w-md mx-auto leading-relaxed">
+                      {language === 'ar'
+                        ? 'عندما يحتاج الحريف لإضافة بضائع أخرى أو الخروج مؤقتاً، انقر على زر "تأجيل السلة" أو F6 لإفراغ الكاسيا مؤقتاً وحفظ السلة هنا.'
+                        : 'Si un client s\'absente temporairement, cliquez sur "Mettre en attente" (ou touche F6) pour sauvegarder son panier ici et encaisser les clients suivants.'}
+                    </p>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {heldTickets
+                      .filter(t => {
+                        const query = heldSearchQuery.toLowerCase().trim();
+                        if (!query) return true;
+                        return (
+                          t.ticketRef.toLowerCase().includes(query) ||
+                          (t.customerName && t.customerName.toLowerCase().includes(query)) ||
+                          t.items.some(item => item.product.name.toLowerCase().includes(query))
+                        );
+                      })
+                      .map((ticket) => {
+                        const totalQty = ticket.items.reduce((acc, i) => acc + i.qty, 0);
+                        const createdDate = new Date(ticket.createdAt);
+                        const formattedTime = createdDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                        const minutesAgo = Math.floor((Date.now() - createdDate.getTime()) / 60000);
+
+                        return (
+                          <div
+                            key={ticket.id}
+                            className="bg-white border-2 border-slate-200 hover:border-amber-400 rounded-2xl p-4 shadow-sm hover:shadow-md transition-all flex flex-col justify-between space-y-3 relative overflow-hidden group"
+                          >
+                            {/* Card Top Row */}
+                            <div className="flex items-start justify-between border-b border-slate-100 pb-2.5">
+                              <div>
+                                <div className="flex items-center gap-2">
+                                  <span className="bg-amber-100 text-amber-900 border border-amber-300 px-2 py-0.5 rounded-md font-mono text-xs font-black">
+                                    #{ticket.ticketRef}
+                                  </span>
+                                  <span className="text-[10px] text-slate-400 font-mono">
+                                    🕒 {formattedTime} {minutesAgo > 0 ? `(${language === 'ar' ? `منذ ${minutesAgo} د` : `il y a ${minutesAgo} min`})` : ''}
+                                  </span>
+                                </div>
+                                <h4 className="text-xs font-extrabold text-slate-900 mt-1 flex items-center gap-1">
+                                  <span>👤</span>
+                                  <span>{ticket.customerName || (language === 'ar' ? 'حريف عام' : 'Client passage')}</span>
+                                </h4>
+                              </div>
+
+                              <div className="text-right">
+                                <span className="text-sm font-black text-emerald-700 font-mono block">
+                                  {formatCurrency(ticket.totalAmount)}
+                                </span>
+                                <span className="text-[10px] text-slate-500 font-medium">
+                                  {totalQty} {language === 'ar' ? 'سلعة' : 'articles'}
+                                </span>
+                              </div>
+                            </div>
+
+                            {/* Items List Preview */}
+                            <div className="bg-slate-50 rounded-xl p-2.5 border border-slate-150 text-[11px] space-y-1 max-h-28 overflow-y-auto font-mono">
+                              {ticket.items.map((item, idx) => (
+                                <div key={idx} className="flex justify-between items-center text-slate-700">
+                                  <span className="truncate max-w-[200px]">
+                                    <strong className="text-indigo-600 font-extrabold mr-1">{item.qty}x</strong> {item.product.name}
+                                  </span>
+                                  <span className="text-slate-500 font-semibold">
+                                    {formatCurrency(item.customPrice * item.qty)}
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
+
+                            {/* Note if any */}
+                            {ticket.note && (
+                              <p className="text-[10px] text-slate-500 bg-amber-50/70 p-1.5 rounded border border-amber-100 italic">
+                                💬 {ticket.note}
+                              </p>
+                            )}
+
+                            {/* Action Buttons */}
+                            <div className="flex items-center gap-2 pt-1 border-t border-slate-100">
+                              <button
+                                type="button"
+                                onClick={() => handleRestoreHeldTicket(ticket)}
+                                className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white py-2 rounded-xl text-xs font-black uppercase tracking-wide flex items-center justify-center gap-1.5 transition-all shadow-xs cursor-pointer active:scale-95 border-b-2 border-emerald-800"
+                              >
+                                <span>⚡</span>
+                                <span>{language === 'ar' ? 'استرجاع وإكمال البيع' : 'Restaurer Ticket'}</span>
+                              </button>
+
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteHeldTicket(ticket.id)}
+                                className="px-3 py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-xl text-xs font-bold transition-all cursor-pointer hover:border-rose-300"
+                                title={language === 'ar' ? 'حذف هذه السلة' : 'Supprimer'}
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                  </div>
+                )}
+              </div>
+
+              {/* Modal Footer */}
+              <div className="p-4 bg-slate-50 border-t border-slate-200 flex justify-between items-center shrink-0 text-xs">
+                <span className="text-slate-500 font-mono text-[10px]">
+                  💡 {language === 'ar' ? 'اختصار المفتاح F6 لتأجيل وفتح قائمة الانتظار مباشرة' : 'Raccourci F6 pour mettre en attente ou ouvrir la file'}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setIsHeldTicketsOpen(false)}
+                  className="px-4 py-2 bg-slate-800 hover:bg-slate-900 text-white font-extrabold text-xs rounded-lg transition-colors cursor-pointer"
+                >
+                  {language === 'ar' ? 'إغلاق' : 'Fermer'}
+                </button>
+              </div>
             </motion.div>
           </div>
         )}

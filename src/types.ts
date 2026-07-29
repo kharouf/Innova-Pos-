@@ -245,3 +245,16 @@ export interface SystemUpdate {
   type: 'major' | 'feature' | 'patch';
 }
 
+export interface HeldTicket {
+  id: string;
+  ticketRef: string;
+  customerName?: string;
+  partnerId?: string;
+  items: { product: Product; qty: number; customPrice: number }[];
+  createdAt: string;
+  totalAmount: number;
+  globalDiscount?: number;
+  note?: string;
+}
+
+

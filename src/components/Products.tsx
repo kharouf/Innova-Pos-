@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
+import QRCode from 'qrcode';
 import { DatabaseState, Product, ProductBatch } from '../types';
 import { getProductVisual, isProductInPromo, getActiveProductPrice } from '../utils/db';
 import ProductPromotionsModal from './ProductPromotionsModal';
@@ -33,8 +34,78 @@ import {
   History,
   Tag,
   Calculator,
-  Percent
+  Percent,
+  RotateCcw,
+  QrCode as QrCodeIcon
 } from 'lucide-react';
+
+/**
+ * Computes EAN-13 structure, binary bitstring (1s and 0s), and formatted 13-digit code.
+ */
+export function getEAN13Binary(rawCode: string): { binary: string; digits: string; isValidEAN13: boolean } {
+  let digitsOnly = (rawCode || '').replace(/\D/g, '');
+
+  if (digitsOnly.length < 12) {
+    const numPart = digitsOnly.padStart(9, '0').slice(-9);
+    digitsOnly = '200' + numPart;
+  } else if (digitsOnly.length > 13) {
+    digitsOnly = digitsOnly.slice(0, 12);
+  }
+
+  if (digitsOnly.length === 12) {
+    let sum = 0;
+    for (let i = 0; i < 12; i++) {
+      const digit = parseInt(digitsOnly[i], 10);
+      sum += i % 2 === 0 ? digit : digit * 3;
+    }
+    const checkDigit = (10 - (sum % 10)) % 10;
+    digitsOnly += checkDigit.toString();
+  }
+
+  const ean13 = digitsOnly.slice(0, 13);
+
+  const L_CODES: Record<string, string> = {
+    '0': '0001101', '1': '0011001', '2': '0010011', '3': '0111101', '4': '0100011',
+    '5': '0110001', '6': '0101111', '7': '0111011', '8': '0110111', '9': '0001011'
+  };
+
+  const G_CODES: Record<string, string> = {
+    '0': '0100111', '1': '0110011', '2': '0011011', '3': '0100001', '4': '0011101',
+    '5': '0111001', '6': '0000101', '7': '0010001', '8': '0001001', '9': '0010111'
+  };
+
+  const R_CODES: Record<string, string> = {
+    '0': '1110010', '1': '1100110', '2': '1101100', '3': '1000010', '4': '1011100',
+    '5': '1001100', '6': '1010000', '7': '1000100', '8': '1001000', '9': '1110100'
+  };
+
+  const FIRST_DIGIT_STRUCTURE: Record<string, string> = {
+    '0': 'LLLLLL', '1': 'LLGLGG', '2': 'LLGGLG', '3': 'LLGGGL', '4': 'LGLLGG',
+    '5': 'LGGLLG', '6': 'LGGGLL', '7': 'LGLGLG', '8': 'LGLGGL', '9': 'LGGLGL'
+  };
+
+  const firstDigit = ean13[0];
+  const structure = FIRST_DIGIT_STRUCTURE[firstDigit] || 'LLLLLL';
+
+  let binary = '101'; // Left Guard
+
+  for (let i = 1; i <= 6; i++) {
+    const digit = ean13[i];
+    const codeType = structure[i - 1];
+    binary += (codeType === 'L' ? L_CODES[digit] : G_CODES[digit]) || '0001101';
+  }
+
+  binary += '01010'; // Center Guard
+
+  for (let i = 7; i <= 12; i++) {
+    const digit = ean13[i];
+    binary += R_CODES[digit] || '1110010';
+  }
+
+  binary += '101'; // Right Guard
+
+  return { binary, digits: ean13, isValidEAN13: true };
+}
 
 const COMMON_FOODS = [
   { name: 'Couscous Fin Diari 1kg (كسكسي دياري)', category: 'Céréales & Pâtes', code: '6191002003001', purchasePrice: 0.850, sellingPrice: 1.100, unit: 'Pcs' },
@@ -147,10 +218,27 @@ export default function Products({ db, onUpdateDb }: ProductsProps) {
   const [showBarcodeModal, setShowBarcodeModal] = useState(false);
   const [selectedBarcodeProduct, setSelectedBarcodeProduct] = useState<Product | null>(null);
   const [barcodeCount, setBarcodeCount] = useState<number>(12);
-  const [barcodeLabelSize, setBarcodeLabelSize] = useState<'mini' | 'standard'>('standard');
+  const [barcodeLabelSize, setBarcodeLabelSize] = useState<'mini' | 'standard' | 'large'>('standard');
+  const [barcodeType, setBarcodeType] = useState<'ean13' | 'code128' | 'qrcode'>('ean13');
+  const [qrCodeDataUrl, setQrCodeDataUrl] = useState<string>('');
   const [showStoreNameOnLabel, setShowStoreNameOnLabel] = useState<boolean>(true);
   const [showPriceOnLabel, setShowPriceOnLabel] = useState<boolean>(true);
   const [showBarcodeTextOnLabel, setShowBarcodeTextOnLabel] = useState<boolean>(true);
+
+  // Generate QR Code data URL dynamically when barcode modal is open or product changes
+  useEffect(() => {
+    if (showBarcodeModal && selectedBarcodeProduct) {
+      const codeStr = selectedBarcodeProduct.code || '000000000000';
+      QRCode.toDataURL(codeStr, {
+        margin: 1,
+        width: 240,
+        color: { dark: '#000000', light: '#ffffff' },
+        errorCorrectionLevel: 'M'
+      })
+        .then(url => setQrCodeDataUrl(url))
+        .catch(err => console.error('QR code generation error:', err));
+    }
+  }, [showBarcodeModal, selectedBarcodeProduct, barcodeType]);
 
   // 🧮 Margin Calculator States
   const [showMarginCalculator, setShowMarginCalculator] = useState(false);
@@ -166,26 +254,163 @@ export default function Products({ db, onUpdateDb }: ProductsProps) {
   const [isBeepEnabled, setIsBeepEnabled] = useState<boolean>(() => {
     return safeLocalStorage.getItem('product_scan_beep') !== 'false';
   });
+
+  // 📸 Product Photo Capture via Camera state
+  const [showPhotoCameraModal, setShowPhotoCameraModal] = useState<boolean>(false);
+  const [photoFacingMode, setPhotoFacingMode] = useState<'environment' | 'user'>('environment');
+  const [photoStream, setPhotoStream] = useState<MediaStream | null>(null);
+  const [capturedPhotoUrl, setCapturedPhotoUrl] = useState<string | null>(null);
+  const [targetProductForPhoto, setTargetProductForPhoto] = useState<Product | null>(null);
+  const photoVideoRef = useRef<HTMLVideoElement>(null);
+
+  const startPhotoCamera = async (facing: 'environment' | 'user' = photoFacingMode) => {
+    try {
+      if (photoStream) {
+        photoStream.getTracks().forEach(track => track.stop());
+      }
+      setCapturedPhotoUrl(null);
+
+      const constraints: MediaStreamConstraints = {
+        video: {
+          facingMode: facing,
+          width: { ideal: 1280 },
+          height: { ideal: 720 },
+        },
+        audio: false,
+      };
+
+      const stream = await navigator.mediaDevices.getUserMedia(constraints);
+      setPhotoStream(stream);
+      if (photoVideoRef.current) {
+        photoVideoRef.current.srcObject = stream;
+        photoVideoRef.current.play().catch(e => console.log('Video play error:', e));
+      }
+    } catch (err: any) {
+      console.error('Photo camera access error:', err);
+      showToast(
+        language === 'ar'
+          ? '❌ متعذر فتح الكاميرا. يرجى التأكد من السماح باستخدام الكاميرا.'
+          : '❌ Impossible d\'accéder à la caméra. Vérifiez les permissions de votre navigateur.',
+        'error'
+      );
+      setShowPhotoCameraModal(false);
+    }
+  };
+
+  const stopPhotoCamera = () => {
+    if (photoStream) {
+      photoStream.getTracks().forEach(track => track.stop());
+      setPhotoStream(null);
+    }
+  };
+
+  const handleOpenPhotoCamera = (prodTarget: Product | null = null) => {
+    setTargetProductForPhoto(prodTarget);
+    setShowPhotoCameraModal(true);
+    setCapturedPhotoUrl(null);
+    startPhotoCamera('environment');
+  };
+
+  const handleClosePhotoCamera = () => {
+    stopPhotoCamera();
+    setShowPhotoCameraModal(false);
+    setCapturedPhotoUrl(null);
+    setTargetProductForPhoto(null);
+  };
+
+  const handleToggleCameraFacing = () => {
+    const nextFacing = photoFacingMode === 'environment' ? 'user' : 'environment';
+    setPhotoFacingMode(nextFacing);
+    startPhotoCamera(nextFacing);
+  };
+
+  const handleSnapProductPhoto = () => {
+    if (!photoVideoRef.current) return;
+    const video = photoVideoRef.current;
+    const canvas = document.createElement('canvas');
+    const max_size = 350; // crisp square thumbnail for product image
+    const width = video.videoWidth || 640;
+    const height = video.videoHeight || 480;
+
+    const minDim = Math.min(width, height);
+    const startX = (width - minDim) / 2;
+    const startY = (height - minDim) / 2;
+
+    canvas.width = max_size;
+    canvas.height = max_size;
+
+    const ctx = canvas.getContext('2d');
+    if (ctx) {
+      if (photoFacingMode === 'user') {
+        ctx.translate(max_size, 0);
+        ctx.scale(-1, 1);
+      }
+      ctx.drawImage(video, startX, startY, minDim, minDim, 0, 0, max_size, max_size);
+      const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+      setCapturedPhotoUrl(dataUrl);
+    }
+  };
+
+  const handleConfirmProductPhoto = () => {
+    if (!capturedPhotoUrl) return;
+
+    if (targetProductForPhoto) {
+      const updatedProducts = db.products.map(p =>
+        p.id === targetProductForPhoto.id ? { ...p, image: capturedPhotoUrl } : p
+      );
+      onUpdateDb({ ...db, products: updatedProducts });
+      showToast(
+        language === 'ar'
+          ? `📸 تم التقاط وحفظ صورة المنتج (${targetProductForPhoto.name}) بنجاح!`
+          : `📸 Photo enregistrée pour le produit "${targetProductForPhoto.name}" !`,
+        'success'
+      );
+    } else {
+      setImage(capturedPhotoUrl);
+      showToast(
+        language === 'ar' ? '📸 تم ربط الصورة المصورة باستمارة المنتج!' : '📸 Photo capturée pour la fiche produit !',
+        'success'
+      );
+    }
+
+    handleClosePhotoCamera();
+  };
   
   const html5QrCodeRef = useRef<Html5Qrcode | null>(null);
 
-  const playScanBeep = () => {
+  const playScanBeep = (type: 'success' | 'error' = 'success') => {
     if (!isBeepEnabled) return;
     try {
-      const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+      const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+      if (!AudioCtx) return;
+      const audioCtx = new AudioCtx();
+      if (audioCtx.state === 'suspended') {
+        audioCtx.resume();
+      }
+
       const oscillator = audioCtx.createOscillator();
       const gainNode = audioCtx.createGain();
-      
-      oscillator.type = 'sine';
-      oscillator.frequency.setValueAtTime(800, audioCtx.currentTime);
-      gainNode.gain.setValueAtTime(0.06, audioCtx.currentTime);
-      gainNode.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.12);
-      
-      oscillator.connect(gainNode);
-      gainNode.connect(audioCtx.destination);
-      
-      oscillator.start();
-      oscillator.stop(audioCtx.currentTime + 0.12);
+
+      if (type === 'error') {
+        oscillator.type = 'sawtooth';
+        oscillator.frequency.setValueAtTime(320, audioCtx.currentTime);
+        oscillator.frequency.exponentialRampToValueAtTime(160, audioCtx.currentTime + 0.18);
+        gainNode.gain.setValueAtTime(0.08, audioCtx.currentTime);
+        gainNode.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.18);
+        oscillator.connect(gainNode);
+        gainNode.connect(audioCtx.destination);
+        oscillator.start();
+        oscillator.stop(audioCtx.currentTime + 0.18);
+      } else {
+        oscillator.type = 'sine';
+        oscillator.frequency.setValueAtTime(1200, audioCtx.currentTime);
+        gainNode.gain.setValueAtTime(0.09, audioCtx.currentTime);
+        gainNode.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.10);
+        oscillator.connect(gainNode);
+        gainNode.connect(audioCtx.destination);
+        oscillator.start();
+        oscillator.stop(audioCtx.currentTime + 0.10);
+      }
     } catch (err) {
       console.warn('AudioContext scanner beep failed:', err);
     }
@@ -215,10 +440,10 @@ export default function Products({ db, onUpdateDb }: ProductsProps) {
         const scannerElement = document.getElementById('product-form-camera-scanner-view');
         if (!scannerElement) {
           attempts++;
-          if (attempts < 10) {
+          if (attempts < 35) {
             startTimer = setTimeout(initScanner, 100);
           } else {
-            console.error('Html5Qrcode instance creation exception: Element #product-form-camera-scanner-view not found after 10 attempts');
+            console.warn('Html5Qrcode scanner view element #product-form-camera-scanner-view not ready after 35 attempts');
             setCameraError(
               language === 'ar'
                 ? '❌ جهاز الكاميرا غير مهيأ أو غير مدعوم في متصفحك.'
@@ -1758,7 +1983,11 @@ export default function Products({ db, onUpdateDb }: ProductsProps) {
                       <td className="p-4">
                         <div className="flex items-center gap-3 min-w-[200px]">
                           {/* Aesthetic product visual representation */}
-                          <div className="w-9 h-9 text-slate-700 rounded bg-slate-50 border border-slate-150 flex items-center justify-center overflow-hidden shrink-0 shadow-3xs">
+                          <div
+                            onClick={() => handleOpenPhotoCamera(prod)}
+                            className="w-9 h-9 text-slate-700 rounded bg-slate-50 border border-slate-150 flex items-center justify-center overflow-hidden shrink-0 shadow-3xs cursor-pointer relative group/img"
+                            title={language === 'ar' ? 'انقر لالتقاط صورة للمنتج بالكاميرا' : 'Cliquer pour capturer une photo via la caméra'}
+                          >
                             {visual.type === 'image' ? (
                               <img 
                                 src={visual.value} 
@@ -1769,6 +1998,9 @@ export default function Products({ db, onUpdateDb }: ProductsProps) {
                             ) : (
                               <span className="text-xl select-none">{visual.value}</span>
                             )}
+                            <div className="absolute inset-0 bg-black/50 text-white flex items-center justify-center opacity-0 group-hover/img:opacity-100 transition-opacity">
+                              <Camera className="w-3.5 h-3.5 text-white" />
+                            </div>
                           </div>
                           <div>
                             <p className="font-bold text-slate-800 text-xs sm:text-[13px] leading-snug">{prod.name}</p>
@@ -1979,6 +2211,13 @@ export default function Products({ db, onUpdateDb }: ProductsProps) {
                             title={language === 'ar' ? 'تعديل سريع للأسعار والكمية وتاريخ الصلاحية' : 'Modifier rapidement prix, stock & péremption'}
                           >
                             <DollarSign className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            onClick={() => handleOpenPhotoCamera(prod)}
+                            className="p-1.5 bg-slate-100 hover:bg-indigo-50 hover:text-indigo-600 rounded text-slate-500 transition-colors cursor-pointer flex items-center justify-center"
+                            title={language === 'ar' ? 'التقاط صورة المنتج بالكاميرا' : 'Prendre/Mettre à jour la photo du produit via la caméra'}
+                          >
+                            <Camera className="w-3.5 h-3.5 text-indigo-600" />
                           </button>
                           <button
                             onClick={() => handleOpenEdit(prod)}
@@ -2547,8 +2786,18 @@ export default function Products({ db, onUpdateDb }: ProductsProps) {
                         className="w-full bg-white border border-slate-200 rounded py-1.5 px-2.5 text-xs text-slate-800 transition-colors focus:border-blue-400 focus:outline-hidden font-medium"
                       />
                       
-                      <label className="bg-white border border-slate-200 text-slate-600 hover:text-blue-700 hover:border-blue-300 py-1.5 px-3 rounded text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 shadow-3xs select-none shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => handleOpenPhotoCamera(null)}
+                        className="bg-indigo-600 hover:bg-indigo-700 text-white py-1.5 px-3 rounded text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 shadow-3xs select-none shrink-0 border-b-2 border-indigo-800"
+                        title={language === 'ar' ? 'التقاط صورة مباشرة بالكاميرا' : 'Prendre une photo via la caméra'}
+                      >
                         <Camera className="w-3.5 h-3.5" />
+                        <span>{language === 'ar' ? 'كاميرا' : 'Caméra 📷'}</span>
+                      </button>
+
+                      <label className="bg-white border border-slate-200 text-slate-600 hover:text-blue-700 hover:border-blue-300 py-1.5 px-3 rounded text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 shadow-3xs select-none shrink-0">
+                        <ImageIcon className="w-3.5 h-3.5" />
                         <span>{language === 'ar' ? 'رفع صور' : 'Importer'}</span>
                         <input
                           type="file"
@@ -2766,103 +3015,68 @@ export default function Products({ db, onUpdateDb }: ProductsProps) {
                 </button>
               </div>
 
-              <div className="p-3 bg-slate-50 border border-slate-100 rounded-lg text-xs space-y-1">
-                <div className="flex justify-between items-center gap-2">
-                  <span className="text-slate-500">{language === 'ar' ? 'اسم المنتج:' : 'Désignation :'}</span>
-                  <span className="font-bold text-slate-900 truncate max-w-[180px]">{product.name}</span>
+              <div className="space-y-3">
+                <div>
+                  <p className="text-xs font-bold text-slate-800">{product.name}</p>
+                  <p className="text-[11px] font-mono text-slate-500">{product.code}</p>
                 </div>
-                {product.code && (
-                  <div className="flex justify-between items-center gap-2">
-                    <span className="text-slate-500">{language === 'ar' ? 'رمز الباركود:' : 'Code-barres :'}</span>
-                    <span className="font-mono text-slate-800 font-semibold">{product.code}</span>
-                  </div>
-                )}
+
+                <div>
+                  <label className="text-xs font-bold text-slate-700 block mb-1">
+                    {language === 'ar' ? 'سعر البيع' : 'Prix de vente'}
+                  </label>
+                  <input
+                    type="number"
+                    step="0.001"
+                    defaultValue={product.sellingPrice}
+                    id="rapid-selling-price"
+                    className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2 text-sm font-mono font-bold text-slate-900"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-xs font-bold text-slate-700 block mb-1">
+                    {language === 'ar' ? 'سعر الشراء' : 'Prix d\'achat'}
+                  </label>
+                  <input
+                    type="number"
+                    step="0.001"
+                    defaultValue={product.buyingPrice}
+                    id="rapid-buying-price"
+                    className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2 text-sm font-mono font-bold text-slate-900"
+                  />
+                </div>
               </div>
 
-              <form onSubmit={handleQuickPriceUpdate} className="space-y-4 font-sans text-xs">
-                {/* Price block */}
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-1">
-                    <label className="text-xs font-bold text-slate-700 block">
-                      {language === 'ar' ? 'سعر الشراء (د.ت)' : "Prix d'Achat (DT)"}
-                    </label>
-                    <input
-                      type="number"
-                      step="any"
-                      min="0"
-                      required
-                      value={editPurchasePrice}
-                      onChange={(e) => setEditPurchasePrice(Number(e.target.value))}
-                      className="w-full bg-slate-50 border border-slate-200 rounded py-2 px-3 focus:outline-hidden text-slate-800 font-semibold text-center font-mono"
-                    />
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-xs font-bold text-slate-700 block">
-                      {language === 'ar' ? 'سعر البيع (د.ت)' : 'Prix de Vente (DT)'}
-                    </label>
-                    <input
-                      type="number"
-                      step="any"
-                      min="0"
-                      required
-                      value={editSellingPrice}
-                      onChange={(e) => setEditSellingPrice(Number(e.target.value))}
-                      className="w-full bg-slate-50 border border-slate-200 rounded py-2 px-3 focus:outline-hidden text-slate-800 font-semibold text-center font-mono"
-                    />
-                  </div>
-                </div>
-
-                {/* Stock & Expiration Date block */}
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-1">
-                    <label className="text-xs font-bold text-slate-700 block">
-                      {language === 'ar' ? 'الكمية في المخزون' : 'Quantité en Stock'}
-                    </label>
-                    <input
-                      type="number"
-                      step="any"
-                      min="0"
-                      required
-                      value={editStockQty}
-                      onChange={(e) => setEditStockQty(Number(e.target.value))}
-                      className="w-full bg-slate-50 border border-slate-200 rounded py-2 px-3 focus:outline-hidden text-slate-800 font-semibold text-center font-mono"
-                    />
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-xs font-bold text-slate-700 block">
-                      {language === 'ar' ? 'تاريخ انتهاء الصلاحية' : "Date d'Expiration"}
-                    </label>
-                    <input
-                      type="date"
-                      value={editExpiryDate}
-                      onChange={(e) => setEditExpiryDate(e.target.value)}
-                      className="w-full bg-slate-50 border border-slate-200 rounded py-2 px-3 focus:outline-hidden text-slate-800 font-semibold text-center font-mono"
-                    />
-                  </div>
-                </div>
-
-                <div className="flex justify-end space-x-3 pt-3 border-t border-slate-100">
-                  <button
-                    type="button"
-                    onClick={() => setEditPriceProductId(null)}
-                    className="px-4 py-2 bg-slate-50 border border-slate-200 text-slate-600 rounded text-xs font-bold cursor-pointer hover:bg-slate-100 font-sans"
-                  >
-                    {language === 'ar' ? 'إلغاء' : 'Annuler'}
-                  </button>
-                  <button
-                    type="submit"
-                    className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded text-xs font-bold cursor-pointer transition-all shadow-xs font-sans"
-                  >
-                    {language === 'ar' ? 'حفظ التعديلات' : 'Enregistrer'}
-                  </button>
-                </div>
-              </form>
+              <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setEditPriceProductId(null)}
+                  className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-bold cursor-pointer"
+                >
+                  {language === 'ar' ? 'إلغاء' : 'Annuler'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const sp = parseFloat((document.getElementById('rapid-selling-price') as HTMLInputElement)?.value || '0');
+                    const bp = parseFloat((document.getElementById('rapid-buying-price') as HTMLInputElement)?.value || '0');
+                    if (db.products) {
+                      const updated = db.products.map(p => p.id === product.id ? { ...p, sellingPrice: sp, buyingPrice: bp } : p);
+                      saveProducts(updated);
+                    }
+                    setEditPriceProductId(null);
+                  }}
+                  className="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-xs font-bold cursor-pointer"
+                >
+                  {language === 'ar' ? 'حفظ' : 'Enregistrer'}
+                </button>
+              </div>
             </div>
           </div>
         );
       })()}
 
-      {/* DETAILED DELETE CONFIRMATION MODAL */}
       <AnimatePresence>
         {deleteProductId && (() => {
           const product = db.products.find(p => p.id === deleteProductId);
@@ -2877,9 +3091,6 @@ export default function Products({ db, onUpdateDb }: ProductsProps) {
                 transition={{ duration: 0.15 }}
                 className="bg-white rounded-2xl max-w-md w-full p-5 md:p-6 shadow-2xl space-y-4 border border-rose-100 text-start my-auto relative font-sans"
               >
-                {/* Visual warning background pattern */}
-                <div className="absolute top-0 right-0 w-32 h-32 bg-rose-50/40 rounded-full blur-3xl pointer-events-none"></div>
-                
                 <div className="flex items-start gap-3 relative">
                   <div className="p-2.5 bg-rose-50 rounded-full text-rose-600 shrink-0">
                     <AlertTriangle className="w-5 h-5 animate-pulse" />
@@ -2917,17 +3128,6 @@ export default function Products({ db, onUpdateDb }: ProductsProps) {
                   </div>
                 </div>
 
-                <div className="bg-rose-50 border border-rose-150 rounded-lg p-3 text-[10.5px] text-rose-950 leading-relaxed space-y-1 font-sans">
-                  <strong className="block font-black uppercase text-[10px] tracking-wide text-rose-900">
-                    📢 {language === 'ar' ? 'تبعات الحذف :' : 'IMPACT DE LA DELETION :'}
-                  </strong>
-                  <p>
-                    {language === 'ar'
-                      ? 'سيؤدي حذف هذا المنتج إلى إزالته كلياً من القوائم النشطة ونقاط البيع. السجلات المالية والمبيعات السابقة قد تفقد دقتها.'
-                      : 'La suppression déréférence cet article des rayons de vente. Les statistiques de ventes passées et l\'historique comptable des factures n\'afficheront plus son libellé.'}
-                  </p>
-                </div>
-
                 <div className="flex justify-end space-x-3 pt-3 border-t border-slate-100 font-sans">
                   <button
                     type="button"
@@ -2956,24 +3156,109 @@ export default function Products({ db, onUpdateDb }: ProductsProps) {
         const prod = selectedBarcodeProduct;
         const storeName = db.settings?.storeName || 'INNOVA POS';
         
-        // Generate pseudo-barcodes dynamically to prevent any heavy image or canvas dependencies
-        const renderStickerBarcodes = (codeValue: string, isCompact: boolean) => {
+        // Render EAN-13 SVG with guard bars
+        const renderEAN13BarcodeSVG = (codeValue: string, isCompact: boolean) => {
+          const { binary, digits } = getEAN13Binary(codeValue);
+          const barHeight = isCompact ? 26 : 38;
+          const guardHeight = isCompact ? 30 : 44;
+          const moduleWidth = isCompact ? 1.3 : 1.7;
+          const totalWidth = binary.length * moduleWidth;
+
+          return (
+            <div className="flex flex-col items-center justify-center w-full select-none">
+              <svg
+                width={totalWidth}
+                height={guardHeight + 12}
+                viewBox={`0 0 ${totalWidth} ${guardHeight + 12}`}
+                className="max-w-full"
+              >
+                {binary.split('').map((bit, idx) => {
+                  if (bit === '0') return null;
+                  const isGuardBar =
+                    (idx >= 0 && idx <= 2) ||
+                    (idx >= 45 && idx <= 49) ||
+                    (idx >= 92 && idx <= 94);
+                  const h = isGuardBar ? guardHeight : barHeight;
+                  return (
+                    <rect
+                      key={idx}
+                      x={idx * moduleWidth}
+                      y={0}
+                      width={moduleWidth}
+                      height={h}
+                      fill="#000000"
+                    />
+                  );
+                })}
+                <text
+                  x={0}
+                  y={guardHeight + 9}
+                  fontSize="8"
+                  fontFamily="monospace"
+                  fontWeight="bold"
+                  fill="#111827"
+                >
+                  {digits[0]}
+                </text>
+                <text
+                  x={3 * moduleWidth + 2}
+                  y={guardHeight + 9}
+                  fontSize="8"
+                  fontFamily="monospace"
+                  fontWeight="bold"
+                  fill="#111827"
+                >
+                  {digits.slice(1, 7)}
+                </text>
+                <text
+                  x={50 * moduleWidth + 2}
+                  y={guardHeight + 9}
+                  fontSize="8"
+                  fontFamily="monospace"
+                  fontWeight="bold"
+                  fill="#111827"
+                >
+                  {digits.slice(7, 13)}
+                </text>
+              </svg>
+            </div>
+          );
+        };
+
+        // Render QR Code image
+        const renderQRCodeDisplay = (isCompact: boolean) => {
+          if (!qrCodeDataUrl) {
+            return (
+              <div className="w-14 h-14 bg-slate-100 animate-pulse rounded border border-slate-300 flex items-center justify-center mx-auto">
+                <QrCodeIcon className="w-6 h-6 text-slate-400" />
+              </div>
+            );
+          }
+          const size = isCompact ? 52 : 72;
+          return (
+            <img
+              src={qrCodeDataUrl}
+              alt="QR Code Produit"
+              style={{ width: `${size}px`, height: `${size}px` }}
+              className="mx-auto border border-slate-200 rounded p-1 bg-white shadow-2xs"
+            />
+          );
+        };
+
+        // Render CODE128 barcode
+        const renderCode128Barcode = (codeValue: string, isCompact: boolean) => {
           const barcodeStr = codeValue || '000000000000';
           const seed = barcodeStr.split('').reduce((sum, ch) => sum + ch.charCodeAt(0), 0);
           
           return (
-            <div className="flex items-stretch justify-center w-full select-none" style={{ height: isCompact ? '28px' : '44px' }}>
-              {/* Left boundary */}
+            <div className="flex items-stretch justify-center w-full select-none" style={{ height: isCompact ? '26px' : '40px' }}>
               <div className="w-[1.5px] bg-black shrink-0" />
               <div className="w-[1px] bg-white shrink-0" />
               <div className="w-[1px] bg-black shrink-0" />
-              
-              {/* Dynamic width stripes */}
               {barcodeStr.split('').map((char, index) => {
                 const asciiVal = char.charCodeAt(0);
-                const width = ((asciiVal + index + seed) % 3) + 1; // 1px to 3px
+                const width = ((asciiVal + index + seed) % 3) + 1;
                 const isBlack = (asciiVal + index + seed) % 2 === 0;
-                
                 return (
                   <div
                     key={index}
@@ -2985,8 +3270,6 @@ export default function Products({ db, onUpdateDb }: ProductsProps) {
                   />
                 );
               })}
-              
-              {/* Layout padding stripes */}
               {[4, 2, 3, 1, 2, 4, 1, 2, 3, 1, 2, 1, 4].slice(0, Math.max(5, 20 - barcodeStr.length)).map((val, idx) => {
                 const isBlack = (idx + seed) % 2 === 0;
                 return (
@@ -3000,13 +3283,21 @@ export default function Products({ db, onUpdateDb }: ProductsProps) {
                   />
                 );
               })}
-              
-              {/* Right boundary */}
               <div className="w-[1px] bg-black shrink-0" />
               <div className="w-[1px] bg-white shrink-0" />
               <div className="w-[1.5px] bg-black shrink-0" />
             </div>
           );
+        };
+
+        const renderStickerBarcodes = (codeValue: string, isCompact: boolean) => {
+          if (barcodeType === 'qrcode') {
+            return renderQRCodeDisplay(isCompact);
+          }
+          if (barcodeType === 'ean13') {
+            return renderEAN13BarcodeSVG(codeValue, isCompact);
+          }
+          return renderCode128Barcode(codeValue, isCompact);
         };
 
         const handleDirectPrintInitiation = () => {
@@ -3069,7 +3360,6 @@ export default function Products({ db, onUpdateDb }: ProductsProps) {
                   padding: 0 !important;
                   margin: 0 !important;
                 }
-                /* Anti-pagebreak margin protection for precise sticker alignments */
                 .page-break-avoid {
                   page-break-inside: avoid !important;
                   break-inside: avoid !important;
@@ -3086,10 +3376,10 @@ export default function Products({ db, onUpdateDb }: ProductsProps) {
                   </div>
                   <div>
                     <h3 className="text-base font-bold text-slate-800">
-                      {language === 'ar' ? 'طباعة وتوليد باركود المنتجات' : 'Impression de Codes-barres'}
+                      {language === 'ar' ? 'طباعة وتوليد باركود و كود QR للمنتجات' : 'Générateur d\'Étiquettes Code-Barres & QR'}
                     </h3>
                     <p className="text-[11px] text-slate-500 font-medium">
-                      {language === 'ar' ? 'أنشئ ملصقات متوافقة مع الطابعات الحرارية وورق الأوراق A4 المستمر' : 'Prêt pour rouleaux thermiques et planches adhésives A4'}
+                      {language === 'ar' ? 'إنشاء ملصقات أسعار احترافية بتنسيق EAN-13 أو Code128 أو QR Code' : 'Étiquettes de prix imprimables au format EAN-13, CODE128 ou QR Code'}
                     </p>
                   </div>
                 </div>
@@ -3109,10 +3399,51 @@ export default function Products({ db, onUpdateDb }: ProductsProps) {
                   >
                     {db.products.map(p => (
                       <option key={p.id} value={p.id}>
-                        {p.name} ({p.code})
+                        {p.name} ({p.code}) - {formatCurrency(p.sellingPrice)}
                       </option>
                     ))}
                   </select>
+                </div>
+
+                {/* Barcode Type / Format selector */}
+                <div className="space-y-1">
+                  <label className="text-[10.5px] font-bold text-slate-500 uppercase">
+                    {language === 'ar' ? 'نوع ونمط التشفير (Format)' : 'Type de Code-Barres / QR'}
+                  </label>
+                  <div className="flex bg-slate-100 p-1 rounded-xl border border-slate-200 gap-1">
+                    <button
+                      type="button"
+                      onClick={() => setBarcodeType('ean13')}
+                      className={`flex-1 py-1.5 px-2 rounded-lg text-[11px] font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
+                        barcodeType === 'ean13' ? 'bg-white text-emerald-700 shadow-xs border border-emerald-200 font-extrabold' : 'text-slate-600 hover:text-slate-900'
+                      }`}
+                    >
+                      <Barcode className="w-3.5 h-3.5 text-emerald-600" />
+                      <span>EAN-13</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setBarcodeType('code128')}
+                      className={`flex-1 py-1.5 px-2 rounded-lg text-[11px] font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
+                        barcodeType === 'code128' ? 'bg-white text-indigo-700 shadow-xs border border-indigo-200 font-extrabold' : 'text-slate-600 hover:text-slate-900'
+                      }`}
+                    >
+                      <Barcode className="w-3.5 h-3.5 text-indigo-600" />
+                      <span>CODE128</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setBarcodeType('qrcode')}
+                      className={`flex-1 py-1.5 px-2 rounded-lg text-[11px] font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
+                        barcodeType === 'qrcode' ? 'bg-white text-purple-700 shadow-xs border border-purple-200 font-extrabold' : 'text-slate-600 hover:text-slate-900'
+                      }`}
+                    >
+                      <QrCodeIcon className="w-3.5 h-3.5 text-purple-600" />
+                      <span>QR Code</span>
+                    </button>
+                  </div>
                 </div>
 
                 {/* Layout Grid properties */}
@@ -3139,25 +3470,32 @@ export default function Products({ db, onUpdateDb }: ProductsProps) {
                       <button
                         type="button"
                         onClick={() => setBarcodeLabelSize('standard')}
-                        className={`flex-1 rounded text-[10.5px] font-bold transition-all cursor-pointer ${barcodeLabelSize === 'standard' ? 'bg-white text-slate-800 shadow-3xs' : 'text-slate-500'}`}
+                        className={`flex-1 rounded text-[10px] font-bold transition-all cursor-pointer ${barcodeLabelSize === 'standard' ? 'bg-white text-slate-800 shadow-3xs' : 'text-slate-500'}`}
                       >
-                        {language === 'ar' ? 'قياسي (38x25)' : 'Std 38x25mm'}
+                        {language === 'ar' ? 'قياسي (38x25)' : 'Std 38x25'}
                       </button>
                       <button
                         type="button"
                         onClick={() => setBarcodeLabelSize('mini')}
-                        className={`flex-1 rounded text-[10.5px] font-bold transition-all cursor-pointer ${barcodeLabelSize === 'mini' ? 'bg-white text-slate-800 shadow-3xs' : 'text-slate-500'}`}
+                        className={`flex-1 rounded text-[10px] font-bold transition-all cursor-pointer ${barcodeLabelSize === 'mini' ? 'bg-white text-slate-800 shadow-3xs' : 'text-slate-500'}`}
                       >
                         {language === 'ar' ? 'صغير (25x15)' : 'Mini 25x15'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setBarcodeLabelSize('large')}
+                        className={`flex-1 rounded text-[10px] font-bold transition-all cursor-pointer ${barcodeLabelSize === 'large' ? 'bg-white text-slate-800 shadow-3xs' : 'text-slate-500'}`}
+                      >
+                        {language === 'ar' ? 'كبير (50x30)' : 'Rayon 50x30'}
                       </button>
                     </div>
                   </div>
                 </div>
 
                 {/* Switchable Display properties */}
-                <div className="bg-slate-55 border border-slate-150 p-3 rounded-lg space-y-2.5">
-                  <span className="text-[10px] font-black uppercase text-slate-450 block tracking-wider">
-                    {language === 'ar' ? 'محتويات وهوية كرت الملصق :' : 'Informations à imprimer :'}
+                <div className="bg-slate-50 border border-slate-200 p-3 rounded-lg space-y-2">
+                  <span className="text-[10px] font-black uppercase text-slate-500 block tracking-wider">
+                    {language === 'ar' ? 'محتويات وهوية كرت الملصق :' : 'Informations sur l\'étiquette :'}
                   </span>
 
                   <label className="flex items-center gap-2 text-xs font-bold text-slate-700 cursor-pointer">
@@ -3167,7 +3505,7 @@ export default function Products({ db, onUpdateDb }: ProductsProps) {
                       onChange={(e) => setShowStoreNameOnLabel(e.target.checked)}
                       className="rounded text-emerald-600 focus:ring-emerald-500 w-4 h-4 cursor-pointer"
                     />
-                    <span>{language === 'ar' ? 'إظهار اسم المحل التجاري' : 'Afficher le nom de votre commerce'}</span>
+                    <span>{language === 'ar' ? 'إظهار اسم المحل التجاري' : 'Afficher le nom du magasin'}</span>
                   </label>
 
                   <label className="flex items-center gap-2 text-xs font-bold text-slate-700 cursor-pointer">
@@ -3192,10 +3530,10 @@ export default function Products({ db, onUpdateDb }: ProductsProps) {
                 </div>
 
                 {/* Helpful tip overlay */}
-                <div className="bg-amber-50 border border-amber-200 text-amber-850 p-2.5 rounded-lg text-[10.5px] font-medium leading-relaxed">
+                <div className="bg-amber-50 border border-amber-200 text-amber-900 p-2.5 rounded-lg text-[10.5px] font-medium leading-relaxed">
                   💡 {language === 'ar' 
-                    ? 'نصيحة: عند فتح نافذة الطباعة الافتراضية، يرجى ضبط حجم الورق الملائم واختيار "بدون الهوامش" (Margins: None) للحصول على أفضل محاذاة تلقائية.'
-                    : 'Astuce : En ouvrant l’aperçu d’impression, choisissez "Marges : Aucune" et définissez la taille de papier au format de votre rouleau adhésif.'}
+                    ? 'نصيحة: يمكنك مسح الرمز المطبوع مباشرة في الكاشير بماسح الباركود أو كاميرا الهاتف.'
+                    : 'Astuce : L\'étiquette générée est directement scannable en caisse avec une douchette ou la caméra POS.'}
                 </div>
 
                 {/* Action CTA triggers */}
@@ -3213,28 +3551,31 @@ export default function Products({ db, onUpdateDb }: ProductsProps) {
                     className="flex-1 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold cursor-pointer transition-colors shadow-xs flex items-center justify-center gap-1.5"
                   >
                     <Printer className="w-4 h-4" />
-                    <span>{language === 'ar' ? 'بدء سحب الطباعة' : 'Lancer l\'Impression'}</span>
+                    <span>{language === 'ar' ? 'بدء سحب الطباعة' : 'Imprimer les Étiquettes'}</span>
                   </button>
                 </div>
               </div>
 
               {/* Graphic Mock live Preview (Right side) */}
-              <div className="w-full md:w-[280px] bg-slate-900 rounded-xl p-4 flex flex-col justify-center items-center text-center select-none shadow-inner border border-slate-800">
-                <span className="text-[10px] text-slate-400 font-bold mb-3 uppercase tracking-wider">
-                  🎯 {language === 'ar' ? 'معاينة الملصق على الطابعة' : 'Aperçu Virtuel de l\'Étiquette'}
+              <div className="w-full md:w-[290px] bg-slate-900 rounded-xl p-4 flex flex-col justify-center items-center text-center select-none shadow-inner border border-slate-800">
+                <span className="text-[10px] text-slate-400 font-bold mb-3 uppercase tracking-wider flex items-center gap-1.5">
+                  <span>🎯</span>
+                  <span>{language === 'ar' ? 'معاينة ملصق السعر' : 'Aperçu Virtuel Étiquette'}</span>
                 </span>
 
                 {/* Mock physical sticker representation */}
                 <div 
-                  className={`bg-white text-black p-3 rounded-lg flex flex-col items-center justify-center border-2 border-dashed border-emerald-400/40 shadow-xl select-none text-center ${barcodeLabelSize === 'mini' ? 'w-[200px] h-[130px]' : 'w-[240px] h-[160px]'}`}
+                  className={`bg-white text-black p-3 rounded-xl flex flex-col items-center justify-center border-2 border-dashed border-emerald-400/50 shadow-2xl select-none text-center ${
+                    barcodeLabelSize === 'mini' ? 'w-[210px] min-h-[130px]' : barcodeLabelSize === 'large' ? 'w-[260px] min-h-[185px]' : 'w-[240px] min-h-[160px]'
+                  }`}
                 >
                   {showStoreNameOnLabel && (
-                    <span className="text-[11px] font-black uppercase tracking-tight text-slate-800 border-b border-black/10 pb-0.5 leading-none w-full max-w-[180px] truncate block">
+                    <span className="text-[10px] font-black uppercase tracking-tight text-slate-800 border-b border-black/10 pb-0.5 leading-none w-full max-w-[190px] truncate block">
                       🏰 {storeName}
                     </span>
                   )}
                   
-                  <span className="font-extrabold text-slate-900 truncate max-w-[200px] block mt-1.5 leading-tight" style={{ fontSize: barcodeLabelSize === 'mini' ? '11px' : '13px' }}>
+                  <span className="font-extrabold text-slate-900 truncate max-w-[210px] block mt-1 leading-tight" style={{ fontSize: barcodeLabelSize === 'mini' ? '10px' : '12px' }}>
                     {prod.name}
                   </span>
 
@@ -3242,21 +3583,21 @@ export default function Products({ db, onUpdateDb }: ProductsProps) {
                     {renderStickerBarcodes(prod.code, barcodeLabelSize === 'mini')}
                   </div>
 
-                  {showBarcodeTextOnLabel && (
-                    <span className="font-mono tracking-[4px] text-[10px] font-bold text-slate-600 block leading-none">
+                  {showBarcodeTextOnLabel && barcodeType !== 'ean13' && (
+                    <span className="font-mono tracking-[2px] text-[10px] font-bold text-slate-600 block leading-none">
                       {prod.code}
                     </span>
                   )}
 
                   {showPriceOnLabel && (
-                    <span className="text-sm font-black font-mono text-black border border-black/80 px-2 py-0.5 rounded-sm mt-1 mb-0.5 inline-block bg-slate-50">
+                    <span className="text-sm font-black font-mono text-slate-950 border-2 border-slate-900 px-2 py-0.5 rounded-md mt-1 mb-0.5 inline-block bg-emerald-50 text-emerald-950 shadow-2xs">
                       {formatCurrency(prod.sellingPrice)}
                     </span>
                   )}
                 </div>
 
                 <span className="text-[10px] text-emerald-400 font-bold block mt-3 font-mono">
-                  📊 Plan : {barcodeCount} x {barcodeLabelSize === 'standard' ? '38x25mm' : '25x15mm'}
+                  📊 Plan : {barcodeCount} x {barcodeLabelSize === 'standard' ? '38x25mm' : barcodeLabelSize === 'large' ? '50x30mm' : '25x15mm'} ({barcodeType.toUpperCase()})
                 </span>
               </div>
             </div>
@@ -3266,7 +3607,11 @@ export default function Products({ db, onUpdateDb }: ProductsProps) {
               <div 
                 style={{
                   display: 'grid',
-                  gridTemplateColumns: barcodeLabelSize === 'mini' ? 'repeat(auto-fill, minmax(140px, 1fr))' : 'repeat(auto-fill, minmax(180px, 1fr))',
+                  gridTemplateColumns: barcodeLabelSize === 'mini' 
+                    ? 'repeat(auto-fill, minmax(130px, 1fr))' 
+                    : barcodeLabelSize === 'large'
+                    ? 'repeat(auto-fill, minmax(220px, 1fr))'
+                    : 'repeat(auto-fill, minmax(170px, 1fr))',
                   gap: '8px',
                   padding: '12px',
                   backgroundColor: 'white',
@@ -3278,8 +3623,8 @@ export default function Products({ db, onUpdateDb }: ProductsProps) {
                   <div
                     key={idx}
                     style={{
-                      border: '1px solid #e1e1e1',
-                      padding: barcodeLabelSize === 'mini' ? '6px' : '10px',
+                      border: '1px solid #d1d5db',
+                      padding: barcodeLabelSize === 'mini' ? '5px' : '8px',
                       display: 'flex',
                       flexDirection: 'column',
                       alignItems: 'center',
@@ -3288,8 +3633,8 @@ export default function Products({ db, onUpdateDb }: ProductsProps) {
                       pageBreakInside: 'avoid',
                       breakInside: 'avoid',
                       boxSizing: 'border-box',
-                      minHeight: barcodeLabelSize === 'mini' ? '100px' : '140px',
-                      borderRadius: '4px',
+                      minHeight: barcodeLabelSize === 'mini' ? '95px' : barcodeLabelSize === 'large' ? '150px' : '130px',
+                      borderRadius: '6px',
                       textAlign: 'center'
                     }}
                     className="page-break-avoid"
@@ -3300,22 +3645,22 @@ export default function Products({ db, onUpdateDb }: ProductsProps) {
                       </span>
                     )}
 
-                    <span style={{ fontSize: barcodeLabelSize === 'mini' ? '10px' : '12px', fontWeight: 'bold', margin: '4px 0', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap', width: '100%', display: 'block' }}>
+                    <span style={{ fontSize: barcodeLabelSize === 'mini' ? '10px' : '11px', fontWeight: 'bold', margin: '3px 0', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap', width: '100%', display: 'block' }}>
                       {prod.name}
                     </span>
 
-                    <div style={{ margin: '4px 0', width: '100%', display: 'flex', justifyContent: 'center' }}>
+                    <div style={{ margin: '3px 0', width: '100%', display: 'flex', justifyContent: 'center' }}>
                       {renderStickerBarcodes(prod.code, barcodeLabelSize === 'mini')}
                     </div>
 
-                    {showBarcodeTextOnLabel && (
-                      <span style={{ fontFamily: 'monospace', fontSize: '9px', letterSpacing: '2px', fontWeight: 'bold', color: '#555' }}>
+                    {showBarcodeTextOnLabel && barcodeType !== 'ean13' && (
+                      <span style={{ fontFamily: 'monospace', fontSize: '9px', letterSpacing: '1px', fontWeight: 'bold', color: '#4b5563' }}>
                         {prod.code}
                       </span>
                     )}
 
                     {showPriceOnLabel && (
-                      <span style={{ fontSize: '11px', fontWeight: '900', border: '1px solid #000', padding: '1px 5px', marginTop: '4px', borderRadius: '2px', display: 'inline-block' }}>
+                      <span style={{ fontSize: '12px', fontWeight: '900', border: '1.5px solid #000', padding: '1px 6px', marginTop: '3px', borderRadius: '4px', display: 'inline-block', backgroundColor: '#f0fdf4' }}>
                         {formatCurrency(prod.sellingPrice)}
                       </span>
                     )}
@@ -3323,7 +3668,6 @@ export default function Products({ db, onUpdateDb }: ProductsProps) {
                 ))}
               </div>
             </div>
-
           </div>
         );
       })()}
@@ -3482,6 +3826,140 @@ export default function Products({ db, onUpdateDb }: ProductsProps) {
         db={db}
         onUpdateDb={onUpdateDb}
       />
+
+      {/* 📸 Live Product Photo Capture Camera Modal */}
+      <AnimatePresence>
+        {showPhotoCameraModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-slate-950/80 backdrop-blur-md no-print">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 10 }}
+              transition={{ duration: 0.2 }}
+              className="bg-white border border-slate-200 rounded-2xl shadow-2xl w-full max-w-md flex flex-col overflow-hidden text-slate-800"
+            >
+              {/* Header */}
+              <div className="bg-gradient-to-r from-indigo-700 via-indigo-600 to-indigo-700 p-4 text-white flex items-center justify-between shrink-0 shadow-md">
+                <div className="flex items-center gap-2.5">
+                  <div className="p-2 bg-white/20 rounded-xl backdrop-blur-sm">
+                    <Camera className="w-5 h-5 text-white" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm sm:text-base font-black tracking-tight uppercase">
+                      {language === 'ar' ? 'التقاط صورة المنتج بالكاميرا' : 'Capturer la Photo du Produit'}
+                    </h3>
+                    {targetProductForPhoto && (
+                      <p className="text-[11px] text-indigo-100 font-semibold truncate max-w-[240px]">
+                        {targetProductForPhoto.name}
+                      </p>
+                    )}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleClosePhotoCamera}
+                  className="p-1.5 hover:bg-white/20 rounded-xl transition-colors cursor-pointer text-white"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* Camera Viewport & Capture Preview */}
+              <div className="p-4 bg-slate-900 flex flex-col items-center justify-center relative min-h-[300px]">
+                {capturedPhotoUrl ? (
+                  /* Snapshot Preview Mode */
+                  <div className="relative w-64 h-64 rounded-2xl overflow-hidden border-4 border-emerald-500 shadow-2xl bg-black flex items-center justify-center">
+                    <img
+                      src={capturedPhotoUrl}
+                      alt="Captured product"
+                      className="w-full h-full object-cover"
+                    />
+                    <div className="absolute top-2 right-2 bg-emerald-600 text-white text-[10px] font-black px-2.5 py-0.5 rounded-full shadow-md">
+                      ✓ {language === 'ar' ? 'معاينة الصورة' : 'Aperçu photo'}
+                    </div>
+                  </div>
+                ) : (
+                  /* Live Stream Mode */
+                  <div className="relative w-64 h-64 rounded-2xl overflow-hidden border-4 border-indigo-500/80 shadow-2xl bg-black flex items-center justify-center group">
+                    <video
+                      ref={photoVideoRef}
+                      autoPlay
+                      playsInline
+                      muted
+                      className={`w-full h-full object-cover ${photoFacingMode === 'user' ? 'scale-x-[-1]' : ''}`}
+                    />
+
+                    {/* Camera Framing Overlay Guide */}
+                    <div className="absolute inset-4 border-2 border-dashed border-white/60 rounded-xl pointer-events-none flex items-center justify-center">
+                      <div className="w-12 h-12 border-2 border-indigo-400 rounded-full opacity-60"></div>
+                    </div>
+
+                    {/* Switch Facing Camera Toggle button */}
+                    <button
+                      type="button"
+                      onClick={handleToggleCameraFacing}
+                      className="absolute top-2 right-2 p-2 bg-black/60 hover:bg-black/80 text-white rounded-xl backdrop-blur-md transition-all cursor-pointer border border-white/20"
+                      title={language === 'ar' ? 'تبديل الكاميرا (الأمامية / الخلفية)' : 'Basculer la caméra (Avant / Arrière)'}
+                    >
+                      <RotateCcw className="w-4 h-4" />
+                    </button>
+                  </div>
+                )}
+
+                <p className="text-[11px] text-slate-300 mt-3 font-medium text-center">
+                  {capturedPhotoUrl
+                    ? (language === 'ar' ? 'هل الصورة واضحة وتريد حفظها بالمنتج؟' : 'La photo est-elle nette et conforme ?')
+                    : (language === 'ar' ? 'ضع المنتج في منتصف الإطار ثم اضغط على زر التقاط' : 'Cadrez bien le produit au centre puis cliquez sur le bouton déclencheur')}
+                </p>
+              </div>
+
+              {/* Footer Actions */}
+              <div className="p-4 bg-slate-50 border-t border-slate-200 flex items-center justify-between gap-3">
+                {capturedPhotoUrl ? (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => setCapturedPhotoUrl(null)}
+                      className="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-800 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5"
+                    >
+                      <RotateCcw className="w-4 h-4" />
+                      <span>{language === 'ar' ? 'إعادة التقاط' : 'Reprendre'}</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={handleConfirmProductPhoto}
+                      className="flex-1 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-black uppercase tracking-wider transition-all shadow-md cursor-pointer flex items-center justify-center gap-1.5 border-b-2 border-emerald-800"
+                    >
+                      <span>✓</span>
+                      <span>{language === 'ar' ? 'تأكيد وحفظ الصورة' : 'Valider & Appliquer'}</span>
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <button
+                      type="button"
+                      onClick={handleClosePhotoCamera}
+                      className="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-xl text-xs font-bold transition-all cursor-pointer"
+                    >
+                      {language === 'ar' ? 'إلغاء' : 'Annuler'}
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={handleSnapProductPhoto}
+                      className="flex-1 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-black uppercase tracking-wider transition-all shadow-lg cursor-pointer flex items-center justify-center gap-2 border-b-2 border-indigo-900"
+                    >
+                      <Camera className="w-4 h-4" />
+                      <span>{language === 'ar' ? 'التقاط الصورة 📸' : 'Capturer la Photo 📸'}</span>
+                    </button>
+                  </>
+                )}
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
 
     </div>
   );
