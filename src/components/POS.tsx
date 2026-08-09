@@ -95,10 +95,8 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
   // Stand-alone cart full view option is now always enabled (Panier Uniquement)
   const [isCartOnlyMode] = useState<boolean>(true);
 
-  // Special Tictaac-style Industrial Tactile cash register layout toggle
-  const [posLayoutTheme, setPosLayoutTheme] = useState<'modern' | 'classic-tactile'>(() => {
-    return (safeLocalStorage.getItem('pos_layout_theme') as 'modern' | 'classic-tactile') || 'classic-tactile';
-  });
+  // Special Tictaac-style Industrial Tactile cash register layout toggle (default classic-tactile)
+  const [posLayoutTheme, setPosLayoutTheme] = useState<'modern' | 'classic-tactile'>('classic-tactile');
 
   const [rightPaneView, setRightPaneView] = useState<'cartTable' | 'productGrid'>('cartTable');
   
@@ -858,10 +856,18 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
     });
 
     if (!result.success) {
-      // Unrecognized barcode feedback or logs, skip or display feedback to help identify new product code
+      showToast(
+        language === 'ar' ? `⚠️ لم يتم العثور على منتج برمز: ${cleaned}` : `⚠️ Aucun produit trouvé pour le code : ${cleaned}`,
+        'info'
+      );
       console.log(`Scanned unknown barcode: ${cleaned}`);
       return;
     }
+
+    showToast(
+      language === 'ar' ? `🛒 تم إضافة "${result.productName}" إلى السلة` : `🛒 "${result.productName}" ajouté au panier !`,
+      'success'
+    );
 
     setLastScannedText(cleaned);
     setScanToast({
@@ -1028,6 +1034,16 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
       }
     }
   }, [isCameraActive, cameraFacingMode]);
+
+  const scannerPanelRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (isCameraActive) {
+      setTimeout(() => {
+        scannerPanelRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }, 100);
+    }
+  }, [isCameraActive]);
 
   // Always show ticket preview modal first so the user can see it before printing.
   // There is no automatic, silent printing or immediate popup closing, honoring the user's workflow.
@@ -1925,6 +1941,145 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
   return (
     <div className={`relative ${isFullscreen ? 'h-full w-full flex flex-col p-3 overflow-hidden space-y-2 bg-slate-50' : 'space-y-6'}`}>
 
+      {/* Continuous Global Camera Barcode & QR Code Scanner Panel */}
+      <AnimatePresence>
+        {isCameraActive && (
+          <motion.div
+            ref={scannerPanelRef}
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            className="mb-4 overflow-hidden border-2 border-indigo-500/40 bg-slate-900 text-white rounded-2xl p-4 space-y-3 shadow-xl relative no-print"
+          >
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 pb-2.5">
+              <div className="flex items-center gap-2">
+                <span className="relative flex h-2.5 w-2.5">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
+                </span>
+                <h4 className="text-xs font-extrabold text-cyan-400 uppercase tracking-widest font-mono flex items-center gap-2">
+                  <Camera className="w-4 h-4 text-cyan-400" />
+                  <span>{language === 'ar' ? 'قارئ الباركود و QR Code بالكاميرا (مسح مباشر تلقائي)' : 'Lecteur Code-barres & QR Code par Caméra (Scanner Direct)'}</span>
+                </h4>
+              </div>
+              
+              {/* Scanner mobile toolbar: Flip camera, Gallery picker, sound toggle, close */}
+              <div className="flex items-center gap-2">
+                {/* Hidden input for gallery image QR scanner */}
+                <input
+                  ref={galleryInputRef}
+                  type="file"
+                  accept="image/*"
+                  onChange={handleScanFromGallery}
+                  className="hidden"
+                />
+
+                <button
+                  type="button"
+                  onClick={() => galleryInputRef.current?.click()}
+                  className="px-2.5 py-1 rounded-lg text-xs font-bold bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 flex items-center gap-1.5 transition-all cursor-pointer shadow-3xs"
+                  title={language === 'ar' ? 'مسح رمز QR من صورة بالمعرض' : 'Scanner une image QR depuis la galerie'}
+                >
+                  <ImageIcon className="w-3.5 h-3.5 text-sky-400" />
+                  <span>{language === 'ar' ? 'من المعرض' : 'Galerie'}</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setCameraFacingMode(prev => prev === 'environment' ? 'user' : 'environment')}
+                  className="px-2.5 py-1 rounded-lg text-xs font-bold bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 flex items-center gap-1.5 transition-all cursor-pointer shadow-3xs"
+                  title={language === 'ar' ? 'قلب الكاميرا (أمامية / خلفية)' : 'Changer de caméra (Avant / Arrière)'}
+                >
+                  <RotateCcw className="w-3.5 h-3.5 text-indigo-400" />
+                  <span>{cameraFacingMode === 'environment' ? (language === 'ar' ? 'خلفية' : 'Arrière') : (language === 'ar' ? 'أمامية' : 'Avant')}</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    const nextVal = !isBeepEnabled;
+                    setIsBeepEnabled(nextVal);
+                    safeLocalStorage.setItem('pos_scan_beep', String(nextVal));
+                  }}
+                  className={`p-1.5 rounded-lg transition-colors cursor-pointer border ${
+                    isBeepEnabled 
+                      ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/30' 
+                      : 'bg-slate-800 text-slate-400 border-slate-700 hover:bg-slate-700'
+                  }`}
+                  title={isBeepEnabled ? 'Désactiver le bip' : 'Activer le bip'}
+                >
+                  {isBeepEnabled ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
+                </button>
+                
+                <button
+                  type="button"
+                  onClick={() => setIsCameraActive(false)}
+                  className="p-1.5 bg-rose-500/20 hover:bg-rose-500/30 text-rose-400 border border-rose-500/30 rounded-lg transition-colors cursor-pointer"
+                  title={language === 'ar' ? 'إغلاق الكاميرا' : 'Fermer la caméra'}
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+
+            {/* Video camera canvas container aspect ratios */}
+            <div className="relative w-full aspect-video sm:max-h-64 bg-slate-950 rounded-xl overflow-hidden border border-slate-800 shadow-inner flex flex-col items-center justify-center">
+              
+              {/* html5-qrcode renderer element Target ID */}
+              <div id="pos-camera-scanner-view" className="w-full h-full object-cover [&>video]:object-cover [&>video]:w-full [&>video]:h-full" />
+
+              {/* Camera scan flash overlay pulse */}
+              {isFlashActive && (
+                <div className="absolute inset-0 bg-white pointer-events-none z-30 transition-opacity duration-100" />
+              )}
+
+              {/* Laser aiming guides layer overlay */}
+              <div className="absolute inset-x-0 inset-y-0 flex flex-col justify-between pointer-events-none p-5 sm:p-8">
+                <div className="w-full flex justify-between">
+                  <div className="w-5 h-5 border-t-2 border-l-2 border-emerald-400"></div>
+                  <div className="w-5 h-5 border-t-2 border-r-2 border-emerald-400"></div>
+                </div>
+                
+                {/* Glowing active barcode & QR laser tracker */}
+                <div className="w-full border-t border-rose-500 shadow-[0_0_12px_rgba(239,68,68,0.9)] animate-pulse relative"></div>
+                
+                <div className="w-full flex justify-between">
+                  <div className="w-5 h-5 border-b-2 border-l-2 border-emerald-400"></div>
+                  <div className="w-5 h-5 border-b-2 border-r-2 border-emerald-400"></div>
+                </div>
+              </div>
+
+              {/* Visual helpful subtitles overlay */}
+              <div className="absolute bottom-2 left-2 right-2 bg-slate-950/85 px-3 py-1.5 rounded-lg text-center text-[10px] text-slate-300 font-mono tracking-wide max-w-[90%] mx-auto border border-slate-800">
+                {language === 'ar' 
+                  ? 'وجه الكاميرا نحو باركود 1D أو رمز QR Code 2D للإضافة التلقائية المباشرة إلى السلة 🚀' 
+                  : 'Pointez la caméra vers un Code-Barres ou un QR Code pour l\'ajout automatique au panier 🚀'}
+              </div>
+            </div>
+
+            {/* Display scanning status / errors */}
+            {cameraError ? (
+              <p className="text-xs font-bold text-rose-400 font-mono bg-rose-950/50 p-2.5 rounded-lg border border-rose-800 text-center">
+                {cameraError}
+              </p>
+            ) : (
+              <div className="flex flex-wrap items-center justify-between text-xs text-slate-400 font-mono gap-1 border-t border-slate-800 pt-2">
+                <span className="flex items-center gap-1.5 font-bold text-emerald-400">
+                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                  {language === 'ar' ? 'الكاميرا نشطة وقيد الاستماع للباركود...' : 'Caméra active & écoute continue...'}
+                </span>
+
+                {lastScannedText && (
+                  <span className="bg-slate-800 text-cyan-300 px-2 py-0.5 rounded-md font-bold border border-slate-700">
+                    {language === 'ar' ? 'آخر رمز:' : 'Dernier code:'} {lastScannedText}
+                  </span>
+                )}
+              </div>
+            )}
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* POS Screen Header */}
       <div className={`bg-white border border-slate-200 rounded-xl flex flex-col lg:flex-row items-center justify-between gap-4 no-print shadow-3xs shrink-0 ${isFullscreen ? 'p-2.5' : 'p-4'}`}>
         <div className="flex items-center gap-3 w-full lg:w-auto">
@@ -1988,68 +2143,29 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
             onClick={() => setIsCameraActive(!isCameraActive)}
             className={`px-3 py-1.5 rounded text-xs font-black transition-all shadow-3xs flex items-center gap-2 cursor-pointer border ${
               isCameraActive
-                ? 'bg-rose-600 hover:bg-rose-700 text-white border-rose-700 animate-pulse'
+                ? 'bg-rose-600 hover:bg-rose-700 text-white border-rose-700 shadow-md ring-2 ring-rose-400/50'
                 : 'bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border-indigo-200'
             }`}
             title={language === 'ar' ? 'تشغيل / إيقاف الكاميرا لقراءة الباركود فوراً' : 'Déclencher instantanément le scanner de code-barres'}
           >
-            <Camera className="w-3.5 h-3.5" />
-            <span>{language === 'ar' ? 'مسح الكاميرا 📷' : 'Scanner Caméra 📷'}</span>
+            {isCameraActive ? (
+              <>
+                <span className="relative flex h-2.5 w-2.5">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-400"></span>
+                </span>
+                <RefreshCw className="w-3.5 h-3.5 animate-spin text-white" />
+                <span>{language === 'ar' ? 'الكاميرا تعمل... 📷' : 'Caméra Active... 📷'}</span>
+              </>
+            ) : (
+              <>
+                <Camera className="w-3.5 h-3.5" />
+                <span>{language === 'ar' ? 'مسح الكاميرا 📷' : 'Scanner Caméra 📷'}</span>
+              </>
+            )}
           </button>
 
-          {/* Toggle Scan History Button */}
-          <button
-            type="button"
-            onClick={() => setIsScanHistoryOpen(!isScanHistoryOpen)}
-            className={`px-3 py-1.5 rounded text-xs font-bold transition-all shadow-3xs flex items-center gap-2 cursor-pointer border ${
-              isScanHistoryOpen
-                ? 'bg-slate-800 text-white border-slate-850'
-                : 'bg-white hover:bg-slate-50 text-slate-700 border-slate-250'
-            }`}
-          >
-            <span className="relative flex h-2 w-2">
-              <span className={`animate-ping absolute inline-flex h-full w-full rounded-full bg-indigo-400 opacity-75 ${scanHistory.length > 0 ? '' : 'hidden'}`}></span>
-              <span className={`relative inline-flex rounded-full h-2 w-2 ${scanHistory.length > 0 ? 'bg-indigo-500' : 'bg-slate-400'}`}></span>
-            </span>
-            <span>{language === 'ar' ? 'سجل المسح' : 'Log de Scan'}</span>
-            <span className="bg-slate-100 text-slate-800 font-mono text-[9px] px-1.5 py-0.2 rounded font-black border border-slate-200">
-              {scanHistory.length}
-            </span>
-          </button>
 
-          {/* Layout Mode Selector (Modern vs Classic Tactile Tictaac) */}
-          <div className="flex bg-slate-100 p-0.5 rounded-lg border border-slate-200 select-none">
-            <button
-              type="button"
-              onClick={() => {
-                setPosLayoutTheme('modern');
-                safeLocalStorage.setItem('pos_layout_theme', 'modern');
-                showToast(language === 'ar' ? 'المظهر العصري مفعل' : 'Mode Moderne Activé', 'info');
-              }}
-              className={`px-2 py-1 rounded-md text-[10px] font-black tracking-tight transition-all cursor-pointer flex items-center gap-1 ${
-                posLayoutTheme === 'modern'
-                  ? 'bg-indigo-650 text-white font-bold shadow-3xs'
-                  : 'text-slate-650 hover:bg-slate-50'
-              }`}
-            >
-              📊 {language === 'ar' ? 'عصري' : 'Moderne'}
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setPosLayoutTheme('classic-tactile');
-                safeLocalStorage.setItem('pos_layout_theme', 'classic-tactile');
-                showToast(language === 'ar' ? 'المظهر التكتيلي الكلاسيكي مفعل' : 'Mode Caisse Tactile Activé', 'info');
-              }}
-              className={`px-2 py-1 rounded-md text-[10px] font-black tracking-tight transition-all cursor-pointer flex items-center gap-1 ${
-                posLayoutTheme === 'classic-tactile'
-                  ? 'bg-rose-600 text-white font-bold shadow-3xs'
-                  : 'text-slate-650 hover:bg-slate-50'
-              }`}
-            >
-              🖥️ {language === 'ar' ? 'تكتيلي' : 'Tactile'}
-            </button>
-          </div>
 
           {/* Toggle Fullscreen Button */}
           <button
@@ -2402,14 +2518,27 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
                 type="button"
                 onClick={() => setIsCameraActive(!isCameraActive)}
                 title={language === 'ar' ? 'تشغيل الكاميرا للمسح التلقائي المستمر' : 'Scanner continu via Caméra'}
-                className={`absolute right-1.5 top-1.5 h-[26px] px-2 rounded-md text-[9px] font-black uppercase tracking-wider flex items-center gap-1 transition-all select-none hover:scale-102 cursor-pointer ${
+                className={`absolute right-1.5 top-1.5 h-[26px] px-2 rounded-md text-[9px] font-black uppercase tracking-wider flex items-center gap-1.5 transition-all select-none hover:scale-102 cursor-pointer ${
                   isCameraActive
-                    ? 'bg-rose-600 text-white animate-pulse'
+                    ? 'bg-rose-600 text-white shadow-xs ring-1 ring-rose-400'
                     : 'bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200'
                 }`}
               >
-                <Camera className="w-3 h-3" />
-                <span>{language === 'ar' ? 'قارئ الكاميرا' : 'Cam Scanner'}</span>
+                {isCameraActive ? (
+                  <>
+                    <span className="relative flex h-2 w-2">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-300 opacity-75"></span>
+                      <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-400"></span>
+                    </span>
+                    <RefreshCw className="w-3 h-3 animate-spin text-white" />
+                    <span>{language === 'ar' ? 'الكاميرا نشطة...' : 'Scanner Actif...'}</span>
+                  </>
+                ) : (
+                  <>
+                    <Camera className="w-3 h-3" />
+                    <span>{language === 'ar' ? 'قارئ الكاميرا' : 'Cam Scanner'}</span>
+                  </>
+                )}
               </button>
             </div>
             
@@ -2505,159 +2634,6 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
               ))}
             </div>
           </form>
-
-          {/* Continuous Camera Barcode & QR Code Scanner Panel */}
-          <AnimatePresence>
-            {isCameraActive && (
-              <motion.div
-                initial={{ opacity: 0, height: 0 }}
-                animate={{ opacity: 1, height: 'auto' }}
-                exit={{ opacity: 0, height: 0 }}
-                className="overflow-hidden border border-slate-200 bg-slate-50/70 rounded-xl p-4 space-y-3 shadow-3xs relative mr-0.5"
-              >
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div className="flex items-center gap-2">
-                    <span className="relative flex h-2 w-2">
-                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                      <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
-                    </span>
-                    <h4 className="text-xs font-bold text-slate-800 uppercase tracking-widest font-mono flex items-center gap-1.5">
-                      <QrCode className="w-3.5 h-3.5 text-indigo-600" />
-                      <span>{language === 'ar' ? 'قارئ الباركود و QR Code بالكاميرا' : 'Lecteur Code-barres & QR Code (Caméra)'}</span>
-                    </h4>
-                  </div>
-                  
-                  {/* Scanner mobile toolbar: Flip camera, Gallery picker, sound toggle, close */}
-                  <div className="flex items-center gap-1.5">
-                    {/* Hidden input for gallery image QR scanner */}
-                    <input
-                      ref={galleryInputRef}
-                      type="file"
-                      accept="image/*"
-                      onChange={handleScanFromGallery}
-                      className="hidden"
-                    />
-
-                    <button
-                      type="button"
-                      onClick={() => galleryInputRef.current?.click()}
-                      className="px-2 py-1 rounded text-[10px] font-bold bg-white hover:bg-slate-100 border border-slate-250 text-slate-700 flex items-center gap-1 transition-all cursor-pointer shadow-3xs"
-                      title={language === 'ar' ? 'مسح رمز QR من صورة بالمجلس / المعرض' : 'Scanner une image QR depuis la galerie'}
-                    >
-                      <ImageIcon className="w-3.5 h-3.5 text-sky-600" />
-                      <span>{language === 'ar' ? 'من المعرض' : 'Galerie'}</span>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => setCameraFacingMode(prev => prev === 'environment' ? 'user' : 'environment')}
-                      className="px-2 py-1 rounded text-[10px] font-bold bg-white hover:bg-slate-100 border border-slate-250 text-slate-700 flex items-center gap-1 transition-all cursor-pointer shadow-3xs"
-                      title={language === 'ar' ? 'قلب الكاميرا (أمامية / خلفية)' : 'Changer de caméra (Avant / Arrière)'}
-                    >
-                      <RotateCcw className="w-3.5 h-3.5 text-indigo-600" />
-                      <span>{cameraFacingMode === 'environment' ? (language === 'ar' ? 'خلفية' : 'Arrière') : (language === 'ar' ? 'أمامية' : 'Avant')}</span>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const nextVal = !isBeepEnabled;
-                        setIsBeepEnabled(nextVal);
-                        safeLocalStorage.setItem('pos_scan_beep', String(nextVal));
-                      }}
-                      className={`p-1.5 rounded transition-colors cursor-pointer border ${
-                        isBeepEnabled 
-                          ? 'bg-emerald-50 text-emerald-600 hover:bg-emerald-100 border-emerald-100' 
-                          : 'bg-slate-200 text-slate-500 hover:bg-slate-300 border-slate-300'
-                      }`}
-                      title={isBeepEnabled ? 'Désactiver le bip' : 'Activer le bip'}
-                    >
-                      {isBeepEnabled ? <Volume2 className="w-3.5 h-3.5" /> : <VolumeX className="w-3.5 h-3.5" />}
-                    </button>
-                    
-                    <button
-                      type="button"
-                      onClick={() => setIsCameraActive(false)}
-                      className="p-1.5 bg-slate-200 hover:bg-rose-100 border border-slate-300 hover:border-rose-200 text-slate-600 hover:text-rose-600 rounded transition-colors cursor-pointer"
-                    >
-                      <X className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                </div>
-
-                {/* Video camera canvas container aspect ratios */}
-                <div className="relative w-full aspect-video sm:max-h-60 bg-slate-950 rounded-lg overflow-hidden border border-slate-950 shadow-inner flex flex-col items-center justify-center">
-                  
-                  {/* html5-qrcode renderer element Target ID */}
-                  <div id="pos-camera-scanner-view" className="w-full h-full object-cover [&>video]:object-cover [&>video]:w-full [&>video]:h-full" />
-
-                  {/* Camera scan flash overlay pulse */}
-                  {isFlashActive && (
-                    <div className="absolute inset-0 bg-white pointer-events-none z-30 transition-opacity duration-100" />
-                  )}
-
-                  {/* Laser aiming guides layer overlay */}
-                  <div className="absolute inset-x-0 inset-y-0 flex flex-col justify-between pointer-events-none p-5 sm:p-8">
-                    <div className="w-full flex justify-between">
-                      <div className="w-4 h-4 border-t-2 border-l-2 border-emerald-400"></div>
-                      <div className="w-4 h-4 border-t-2 border-r-2 border-emerald-400"></div>
-                    </div>
-                    
-                    {/* Glowing active barcode & QR laser tracker */}
-                    <div className="w-full border-t border-rose-500 shadow-[0_0_8px_rgba(239,68,68,0.9)] animate-pulse relative"></div>
-                    
-                    <div className="w-full flex justify-between">
-                      <div className="w-4 h-4 border-b-2 border-l-2 border-emerald-400"></div>
-                      <div className="w-4 h-4 border-b-2 border-r-2 border-emerald-400"></div>
-                    </div>
-                  </div>
-
-                  {/* Visual helpful subtitles overlay */}
-                  <div className="absolute bottom-2 left-2 right-2 bg-slate-950/80 px-2.5 py-1.5 rounded text-center text-[9px] text-slate-300 font-mono tracking-wide max-w-[90%] mx-auto">
-                    {language === 'ar' 
-                      ? 'وجه الكاميرا نحو باركود 1D أو رمز QR Code 2D للإضافة التلقائية المباشرة 🚀' 
-                      : 'Pointez la caméra vers un Code-Barres ou un QR Code pour l\'ajout automatique 🚀'}
-                  </div>
-                </div>
-
-                {/* Display scanning status / errors */}
-                {cameraError ? (
-                  <p className="text-[10px] font-bold text-rose-600 font-mono bg-rose-50/50 p-2 rounded border border-rose-150 text-center">
-                    {cameraError}
-                  </p>
-                ) : (
-                  <div className="flex flex-wrap items-center justify-between text-[10px] text-slate-500 font-mono gap-1 border-t border-slate-100 pt-2 shadow-inner">
-                    <span className="flex items-center gap-1.5 font-bold">
-                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-                      {language === 'ar' ? 'الملتقط: نشط وبانتظار الرموز' : 'Objectif: Actif & Écoute active'}
-                    </span>
-                    
-                    <label className="flex items-center gap-1.5 cursor-pointer text-[10px] text-slate-600 hover:text-slate-850 font-bold select-none">
-                      <input
-                        type="checkbox"
-                        checked={isBeepEnabled}
-                        onChange={(e) => {
-                          const nextVal = e.target.checked;
-                          setIsBeepEnabled(nextVal);
-                          safeLocalStorage.setItem('pos_scan_beep', String(nextVal));
-                        }}
-                        className="rounded-sm border-slate-300 text-indigo-600 focus:ring-indigo-500 w-3.5 h-3.5 cursor-pointer transition-all"
-                      />
-                      <span className="flex items-center gap-1">
-                        🔊 {language === 'ar' ? 'صوت الرنين' : 'Bip sonore'}
-                      </span>
-                    </label>
-
-                    {lastScannedText && (
-                      <span className="bg-slate-100 text-slate-700 px-1.5 py-0.5 rounded font-bold border border-slate-200">
-                        {language === 'ar' ? 'آخر رمز:' : 'Dernier code:'} {lastScannedText}
-                      </span>
-                    )}
-                  </div>
-                )}
-              </motion.div>
-            )}
-          </AnimatePresence>
 
           {/* Grid display products */}
           {filteredProducts.length === 0 ? (

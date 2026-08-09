@@ -3041,7 +3041,7 @@ export default function Products({ db, onUpdateDb }: ProductsProps) {
                   <input
                     type="number"
                     step="0.001"
-                    defaultValue={product.buyingPrice}
+                    defaultValue={product.purchasePrice}
                     id="rapid-buying-price"
                     className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2 text-sm font-mono font-bold text-slate-900"
                   />
@@ -3062,8 +3062,8 @@ export default function Products({ db, onUpdateDb }: ProductsProps) {
                     const sp = parseFloat((document.getElementById('rapid-selling-price') as HTMLInputElement)?.value || '0');
                     const bp = parseFloat((document.getElementById('rapid-buying-price') as HTMLInputElement)?.value || '0');
                     if (db.products) {
-                      const updated = db.products.map(p => p.id === product.id ? { ...p, sellingPrice: sp, buyingPrice: bp } : p);
-                      saveProducts(updated);
+                      const updated = db.products.map(p => p.id === product.id ? { ...p, sellingPrice: sp, purchasePrice: bp } : p);
+                      onUpdateDb({ ...db, products: updated });
                     }
                     setEditPriceProductId(null);
                   }}
