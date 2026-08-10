@@ -623,15 +623,30 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
       const gainNode = audioCtx.createGain();
 
       if (type === 'error') {
-        oscillator.type = 'sawtooth';
-        oscillator.frequency.setValueAtTime(320, audioCtx.currentTime);
-        oscillator.frequency.exponentialRampToValueAtTime(160, audioCtx.currentTime + 0.18);
-        gainNode.gain.setValueAtTime(0.08, audioCtx.currentTime);
-        gainNode.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.18);
-        oscillator.connect(gainNode);
-        gainNode.connect(audioCtx.destination);
-        oscillator.start();
-        oscillator.stop(audioCtx.currentTime + 0.18);
+        // Distinct low-pitch double buzz for error/unrecognized barcode (280Hz -> 180Hz)
+        const osc1 = audioCtx.createOscillator();
+        const osc2 = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+
+        osc1.type = 'sawtooth';
+        osc1.frequency.setValueAtTime(280, audioCtx.currentTime);
+        osc1.frequency.linearRampToValueAtTime(180, audioCtx.currentTime + 0.12);
+
+        osc2.type = 'sawtooth';
+        osc2.frequency.setValueAtTime(280, audioCtx.currentTime + 0.15);
+        osc2.frequency.linearRampToValueAtTime(180, audioCtx.currentTime + 0.27);
+
+        gain.gain.setValueAtTime(0.12, audioCtx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.30);
+
+        osc1.connect(gain);
+        osc2.connect(gain);
+        gain.connect(audioCtx.destination);
+
+        osc1.start(audioCtx.currentTime);
+        osc1.stop(audioCtx.currentTime + 0.12);
+        osc2.start(audioCtx.currentTime + 0.15);
+        osc2.stop(audioCtx.currentTime + 0.27);
       } else {
         // High-pitched, crisp retail scanner beep tone (1200Hz)
         oscillator.type = 'sine';
@@ -841,9 +856,6 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
       setIsFlashActive(false);
     }, 200);
 
-    // Play successful scan beep
-    playScanBeep();
-
     // Capture to recent scan history log (capped to last 5 entries)
     setScanHistory(prev => {
       const newEntry = {
@@ -856,6 +868,9 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
     });
 
     if (!result.success) {
+      // Play error beep sound for unrecognized barcode
+      playScanBeep('error');
+
       showToast(
         language === 'ar' ? `⚠️ لم يتم العثور على منتج برمز: ${cleaned}` : `⚠️ Aucun produit trouvé pour le code : ${cleaned}`,
         'info'
@@ -863,6 +878,9 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
       console.log(`Scanned unknown barcode: ${cleaned}`);
       return;
     }
+
+    // Play successful scan beep
+    playScanBeep('success');
 
     showToast(
       language === 'ar' ? `🛒 تم إضافة "${result.productName}" إلى السلة` : `🛒 "${result.productName}" ajouté au panier !`,
@@ -1365,6 +1383,9 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
 
     } else {
       // Not registered in system
+      // Play error beep
+      playScanBeep('error');
+
       // Log failed scan to audit trail
       setScanHistory(prev => {
         const newEntry = {
