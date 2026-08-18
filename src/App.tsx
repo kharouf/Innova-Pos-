@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 const defaultPosLogo = "/innova_pos_logo.jpg";
-import { DatabaseState, SystemUpdate, Product, StoreSettings, AppUser } from './types';
+import { DatabaseState, SystemUpdate, SystemUpdateSettings, Product, StoreSettings, AppUser } from './types';
 import { getDatabase, saveDatabase, DEFAULT_SETTINGS, getSuperetteDatabase, saveSuperetteDatabase, SAMPLE_PRODUCTS, isCustomLogo } from './utils/db';
 import { LanguageProvider, useLanguage } from './utils/LanguageContext';
 import { safeLocalStorage } from './utils/storage';
@@ -12,6 +12,8 @@ import {
   syncDatabaseDiff, 
   loadUserLicense, 
   loadSystemUpdates,
+  loadSystemUpdateSettings,
+  subscribeToSystemUpdates,
   loadUserSuperettesList,
   saveUserSuperetteMeta,
   deleteUserSuperetteMeta,
@@ -406,9 +408,13 @@ function AppContent() {
   // System updates states
   const [showUpdateHistoryModal, setShowUpdateHistoryModal] = useState(false);
   const [systemUpdates, setSystemUpdates] = useState<SystemUpdate[]>([]);
+  const [updateSettings, setUpdateSettings] = useState<SystemUpdateSettings | null>(null);
   const [isPerformingUpdate, setIsPerformingUpdate] = useState(false);
   const [updateStepMessage, setUpdateStepMessage] = useState('');
-  const [isSystemFullyUpdated, setIsSystemFullyUpdated] = useState(() => safeLocalStorage.getItem('last_acknowledged_update') === '24/05/2026 - 15:40');
+  const [isSystemFullyUpdated, setIsSystemFullyUpdated] = useState(() => {
+    const saved = safeLocalStorage.getItem('last_acknowledged_update');
+    return saved === 'v1.3.0' || saved === '24/05/2026 - 15:40';
+  });
   const [isUpdateSuccess, setIsUpdateSuccess] = useState(false);
 
   // 👥 Multi-Role User state variables
@@ -578,7 +584,8 @@ function AppContent() {
 
       await new Promise(resolve => setTimeout(resolve, 600));
       
-      safeLocalStorage.setItem('last_acknowledged_update', '24/05/2026 - 15:40');
+      const targetVersion = updateSettings?.latestAppVersion || (systemUpdates.length > 0 ? systemUpdates[0].id : 'v1.3.0');
+      safeLocalStorage.setItem('last_acknowledged_update', targetVersion);
       
       const freshUpdates = await loadSystemUpdates();
       if (freshUpdates && freshUpdates.length > 0) {
@@ -595,15 +602,53 @@ function AppContent() {
   };
 
   useEffect(() => {
-    const fetchSystemUpdatesData = async () => {
-      try {
-        const data = await loadSystemUpdates();
-        setSystemUpdates(data);
-      } catch (err) {
-        console.log("[INNOVA POS UPDATES] Error loading system updates list in App main, using cached client defaults:", err);
+    // ⚡ Real-time listener for system updates and SaaS automated release configurations
+    const unsubscribeUpdates = subscribeToSystemUpdates(
+      (updates) => {
+        setSystemUpdates(updates);
+      },
+      (settings) => {
+        setUpdateSettings(settings);
+
+        const targetVersion = settings.latestAppVersion || 'v1.3.0';
+        const acknowledged = safeLocalStorage.getItem('last_acknowledged_update');
+
+        if (settings.autoApplyUpdates) {
+          if (acknowledged !== targetVersion) {
+            safeLocalStorage.setItem('last_acknowledged_update', targetVersion);
+            setIsSystemFullyUpdated(true);
+            setIsUpdateSuccess(true);
+
+            const autoMsg = language === 'ar'
+              ? `⚡ تم تطبيق التحديث التلقائي للنظام بنجاح (${targetVersion})`
+              : `⚡ Mise à jour automatique appliquée avec succès : ${targetVersion}`;
+            try {
+              window.dispatchEvent(new CustomEvent('show-toast', {
+                detail: { message: autoMsg, type: 'success' }
+              }));
+            } catch (_) {}
+          } else {
+            setIsSystemFullyUpdated(true);
+          }
+
+          if (settings.forceNotificationModal) {
+            setShowUpdateHistoryModal(true);
+          }
+        } else {
+          const isUpToDate = acknowledged === targetVersion;
+          setIsSystemFullyUpdated(isUpToDate);
+          if (settings.forceNotificationModal && !isUpToDate) {
+            setShowUpdateHistoryModal(true);
+          }
+        }
+      }
+    );
+
+    return () => {
+      if (typeof unsubscribeUpdates === 'function') {
+        unsubscribeUpdates();
       }
     };
-    fetchSystemUpdatesData();
   }, [language]);
 
   const handleToggleWorkerMode = () => {
@@ -2172,7 +2217,7 @@ function AppContent() {
                   <span>{language === 'ar' ? 'نظام محدث' : 'Système à jour'}</span>
                 </div>
                 <div className="text-[10px] font-mono font-bold text-slate-600 mt-0.5">
-                  V.24/05/2026
+                  {updateSettings?.latestAppVersion || (systemUpdates.length > 0 ? systemUpdates[0].id : 'v1.3.0')}
                 </div>
               </button>
             ) : (
@@ -2191,7 +2236,9 @@ function AppContent() {
                 </div>
                 <div className="text-xs font-mono font-bold text-slate-800 flex items-center gap-1 mt-0.5">
                   <CloudLightning className="w-3.5 h-3.5 text-rose-500 animate-bounce" />
-                  <span className="group-hover:text-rose-600 transition-colors">24/05/2026 - 15:40</span>
+                  <span className="group-hover:text-rose-600 transition-colors">
+                    {updateSettings?.latestAppVersion || (systemUpdates.length > 0 ? systemUpdates[0].id : 'v1.3.0')}
+                  </span>
                 </div>
               </button>
             )}
@@ -2376,6 +2423,32 @@ function AppContent() {
                       ×
                     </button>
                   </div>
+                </div>
+              )}
+
+              {/* 📢 Global SaaS Broadcast Announcement Banner */}
+              {updateSettings?.globalAnnouncement && updateSettings.globalAnnouncement.trim() && (
+                <div className="bg-gradient-to-r from-indigo-900 via-blue-900 to-slate-900 text-white p-3 px-4 rounded-xl border border-indigo-700 shadow-md flex items-center justify-between gap-3 text-xs shrink-0 no-print">
+                  <div className="flex items-center gap-2.5">
+                    <span className="p-1 bg-indigo-500/30 rounded-md text-cyan-300 text-base">📢</span>
+                    <div>
+                      <span className="font-mono text-[9px] uppercase font-bold text-cyan-300 tracking-wider block">
+                        {language === 'ar' ? 'إعلان من مطوري النظام السحابي' : 'Annonce de l\'Administration Système'}
+                      </span>
+                      <span className="font-semibold text-slate-100 leading-snug">
+                        {updateSettings.globalAnnouncement}
+                      </span>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowUpdateHistoryModal(true);
+                    }}
+                    className="px-2.5 py-1 bg-white/10 hover:bg-white/20 text-white font-bold text-[10px] uppercase rounded transition-colors whitespace-nowrap cursor-pointer"
+                  >
+                    {language === 'ar' ? 'التفاصيل' : 'Détails'}
+                  </button>
                 </div>
               )}
 

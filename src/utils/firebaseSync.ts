@@ -5,10 +5,11 @@ import {
   getDoc,
   setDoc, 
   deleteDoc, 
-  writeBatch 
+  writeBatch,
+  onSnapshot 
 } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from './firebase';
-import { DatabaseState, Product, Partner, Invoice, PaymentTransaction, Traite, DailyExpense, SystemUpdate, SuperetteMeta, BranchMeta } from '../types';
+import { DatabaseState, Product, Partner, Invoice, PaymentTransaction, Traite, DailyExpense, SystemUpdate, SystemUpdateSettings, SuperetteMeta, BranchMeta } from '../types';
 import { UserLicenseData, generateLicenseKey } from './licensing';
 import { safeLocalStorage } from './storage';
 
@@ -753,6 +754,55 @@ export async function saveSystemUpdate(update: SystemUpdate): Promise<void> {
 }
 
 /**
+ * Default global system update configuration.
+ */
+export const DEFAULT_UPDATE_SETTINGS: SystemUpdateSettings = {
+  latestAppVersion: 'v1.3.0',
+  minSupportedVersion: 'v1.0.0',
+  autoApplyUpdates: true,
+  forceNotificationModal: true,
+  maintenanceMode: false,
+  maintenanceMessageFr: 'Maintenance programmée en cours. Veuillez patienter quelques instants.',
+  maintenanceMessageAr: 'صيانة دورية مبرمجة جارية للنظام. يرجى الانتظار بضع دقائق.',
+  globalAnnouncement: '',
+  lastUpdatedTimestamp: new Date().toISOString()
+};
+
+/**
+ * Loads global System Update Settings from Firestore.
+ */
+export async function loadSystemUpdateSettings(): Promise<SystemUpdateSettings> {
+  const docRef = doc(db, 'system_settings', 'updates');
+  try {
+    const snap = await getDoc(docRef);
+    if (snap.exists()) {
+      return {
+        ...DEFAULT_UPDATE_SETTINGS,
+        ...(snap.data() as SystemUpdateSettings)
+      };
+    }
+  } catch (error) {
+    console.warn("Could not load system_settings/updates from Firestore, using defaults", error);
+  }
+  return DEFAULT_UPDATE_SETTINGS;
+}
+
+/**
+ * Saves global System Update Settings to Firestore.
+ */
+export async function saveSystemUpdateSettings(settings: SystemUpdateSettings): Promise<void> {
+  const docRef = doc(db, 'system_settings', 'updates');
+  try {
+    await setDoc(docRef, cleanUndefined({
+      ...settings,
+      lastUpdatedTimestamp: new Date().toISOString()
+    }), { merge: true });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, 'system_settings/updates');
+  }
+}
+
+/**
  * Deletes a SystemUpdate from Firestore.
  */
 export async function deleteSystemUpdate(id: string): Promise<void> {
@@ -762,6 +812,56 @@ export async function deleteSystemUpdate(id: string): Promise<void> {
   } catch (error) {
     handleFirestoreError(error, OperationType.DELETE, `updates/${id}`);
   }
+}
+
+/**
+ * Sets up a real-time listener for system updates and global update configuration.
+ * Returns an unsubscribe callback.
+ */
+export function subscribeToSystemUpdates(
+  onUpdates: (updates: SystemUpdate[]) => void,
+  onSettings?: (settings: SystemUpdateSettings) => void
+): () => void {
+  const unsubscribers: (() => void)[] = [];
+
+  try {
+    // 1. Listen to updates collection
+    const updatesCol = collection(db, 'updates');
+    const unsubUpdates = onSnapshot(updatesCol, (snap) => {
+      const list: SystemUpdate[] = [];
+      snap.forEach((docSnap) => {
+        list.push(docSnap.data() as SystemUpdate);
+      });
+      if (list.length > 0) {
+        onUpdates(list.sort((a, b) => b.id.localeCompare(a.id)));
+      }
+    }, (error) => {
+      console.warn("[FIRESTORE UPDATES LISTENER] Real-time updates subscription fallback:", error);
+    });
+    unsubscribers.push(unsubUpdates);
+
+    // 2. Listen to system_settings/updates document
+    if (onSettings) {
+      const settingsDoc = doc(db, 'system_settings', 'updates');
+      const unsubSettings = onSnapshot(settingsDoc, (snap) => {
+        if (snap.exists()) {
+          onSettings({
+            ...DEFAULT_UPDATE_SETTINGS,
+            ...(snap.data() as SystemUpdateSettings)
+          });
+        }
+      }, (error) => {
+        console.warn("[FIRESTORE UPDATE SETTINGS LISTENER] Real-time settings subscription fallback:", error);
+      });
+      unsubscribers.push(unsubSettings);
+    }
+  } catch (err) {
+    console.warn("[FIRESTORE SYNC] Error establishing update listener:", err);
+  }
+
+  return () => {
+    unsubscribers.forEach(fn => fn());
+  };
 }
 
 

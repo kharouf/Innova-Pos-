@@ -251,6 +251,19 @@ export interface SystemUpdate {
   descriptionAr: string[];
   descriptionFr: string[];
   type: 'major' | 'feature' | 'patch';
+  isMandatory?: boolean;
+}
+
+export interface SystemUpdateSettings {
+  latestAppVersion: string; // e.g. 'v1.3.0'
+  minSupportedVersion?: string; // e.g. 'v1.0.0'
+  autoApplyUpdates: boolean; // Automatically apply update when released
+  forceNotificationModal: boolean; // Pop up the modal on all client screens
+  maintenanceMode?: boolean;
+  maintenanceMessageAr?: string;
+  maintenanceMessageFr?: string;
+  globalAnnouncement?: string;
+  lastUpdatedTimestamp?: string;
 }
 
 export interface HeldTicket {

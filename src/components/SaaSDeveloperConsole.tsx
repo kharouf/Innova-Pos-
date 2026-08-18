@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { UserLicenseData, generateLicenseKey } from '../utils/licensing';
-import { SystemUpdate } from '../types';
+import { SystemUpdate, SystemUpdateSettings } from '../types';
 import { 
   loadAllTenantLicenses, 
   saveUserLicense, 
@@ -8,7 +8,10 @@ import {
   wipeAllSaaSTenantsAndDatabases,
   loadSystemUpdates,
   saveSystemUpdate,
-  deleteSystemUpdate
+  deleteSystemUpdate,
+  loadSystemUpdateSettings,
+  saveSystemUpdateSettings,
+  DEFAULT_UPDATE_SETTINGS
 } from '../utils/firebaseSync';
 import { useLanguage } from '../utils/LanguageContext';
 import { 
@@ -35,12 +38,23 @@ import {
   X,
   PlusCircle,
   Phone,
-  Mail
+  Mail,
+  Bell,
+  Sparkles,
+  Sliders,
+  Settings,
+  Radio,
+  DownloadCloud,
+  Send,
+  Eye
 } from 'lucide-react';
 
 export default function SaaSDeveloperConsole() {
   const { language, formatCurrency } = useLanguage();
   
+  // Console Tab: 'tenants' (Abonnés & Licences) vs 'updates' (Paramètres & Mises à Jour)
+  const [consoleTab, setConsoleTab] = useState<'tenants' | 'updates'>('tenants');
+
   // Tenants (Clients) States
   const [tenants, setTenants] = useState<UserLicenseData[]>([]);
   const [loading, setLoading] = useState(true);
@@ -48,6 +62,29 @@ export default function SaaSDeveloperConsole() {
   const [searchQuery, setSearchQuery] = useState('');
   const [filterStatus, setFilterStatus] = useState<string>('all');
   const [actionLoading, setActionLoading] = useState<string | null>(null);
+
+  // System Updates & Automation Settings States
+  const [updatesList, setUpdatesList] = useState<SystemUpdate[]>([]);
+  const [updateSettings, setUpdateSettings] = useState<SystemUpdateSettings>(DEFAULT_UPDATE_SETTINGS);
+  const [loadingUpdates, setLoadingUpdates] = useState<boolean>(false);
+  const [savingUpdateSettings, setSavingUpdateSettings] = useState<boolean>(false);
+
+  // Modal for adding / editing a system update
+  const [showUpdateModal, setShowUpdateModal] = useState<boolean>(false);
+  const [editingUpdateId, setEditingUpdateId] = useState<string | null>(null);
+  const [modalVersion, setModalVersion] = useState<string>('v1.3.0');
+  const [modalDate, setModalDate] = useState<string>('');
+  const [modalType, setModalType] = useState<'major' | 'feature' | 'patch'>('feature');
+  const [modalIsMandatory, setModalIsMandatory] = useState<boolean>(false);
+  const [modalTitleFr, setModalTitleFr] = useState<string>('');
+  const [modalTitleAr, setModalTitleAr] = useState<string>('');
+  const [modalDescFr, setModalDescFr] = useState<string[]>([]);
+  const [modalDescAr, setModalDescAr] = useState<string[]>([]);
+  const [newDescItemFr, setNewDescItemFr] = useState<string>('');
+  const [newDescItemAr, setNewDescItemAr] = useState<string>('');
+
+  // Preview Modal for testing notification look
+  const [previewUpdate, setPreviewUpdate] = useState<SystemUpdate | null>(null);
 
   // Editing tenant row inline state
   const [editingTenantId, setEditingTenantId] = useState<string | null>(null);
@@ -104,13 +141,192 @@ export default function SaaSDeveloperConsole() {
     }
   };
 
+  const fetchUpdatesAndConfig = async () => {
+    setLoadingUpdates(true);
+    try {
+      const [updates, config] = await Promise.all([
+        loadSystemUpdates(),
+        loadSystemUpdateSettings()
+      ]);
+      setUpdatesList(updates);
+      setUpdateSettings(config);
+    } catch (err) {
+      console.warn("Could not fetch updates or settings:", err);
+    } finally {
+      setLoadingUpdates(false);
+    }
+  };
+
   useEffect(() => {
     fetchTenants();
+    fetchUpdatesAndConfig();
   }, []);
 
   const handleRefreshAll = () => {
     fetchTenants();
+    fetchUpdatesAndConfig();
     showToast(language === 'ar' ? '🔄 تم تحديث السيرفر السحابي وقاعدة البيانات!' : '🔄 Données SaaS actualisées depuis Firestore !');
+  };
+
+  // ----- SYSTEM UPDATE SETTINGS ACTIONS -----
+  const handleSaveGlobalUpdateSettings = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    setSavingUpdateSettings(true);
+    try {
+      await saveSystemUpdateSettings(updateSettings);
+      showToast(language === 'ar' ? '✅ تم حفظ ونشر إعدادات التحديث التلقائي لكافة المشتركين!' : '✅ Paramètres de mise à jour synchronisés et diffusés à tous les clients !');
+    } catch (err) {
+      console.error(err);
+      showToast(language === 'ar' ? '❌ خطأ أثناء حفظ إعدادات التحديث' : '❌ Erreur lors de la sauvegarde des paramètres');
+    } finally {
+      setSavingUpdateSettings(false);
+    }
+  };
+
+  const formatCurrentDateTime = () => {
+    const now = new Date();
+    const day = String(now.getDate()).padStart(2, '0');
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const year = now.getFullYear();
+    const hours = String(now.getHours()).padStart(2, '0');
+    const mins = String(now.getMinutes()).padStart(2, '0');
+    return `${day}/${month}/${year} - ${hours}:${mins}`;
+  };
+
+  const handleOpenAddUpdateModal = () => {
+    setEditingUpdateId(null);
+    setModalVersion(`v1.${updatesList.length + 3}.0`);
+    setModalDate(formatCurrentDateTime());
+    setModalType('feature');
+    setModalIsMandatory(false);
+    setModalTitleFr('');
+    setModalTitleAr('');
+    setModalDescFr(['', '']);
+    setModalDescAr(['', '']);
+    setNewDescItemFr('');
+    setNewDescItemAr('');
+    setShowUpdateModal(true);
+  };
+
+  const handleOpenEditUpdateModal = (up: SystemUpdate) => {
+    setEditingUpdateId(up.id);
+    setModalVersion(up.id);
+    setModalDate(up.date || formatCurrentDateTime());
+    setModalType(up.type || 'feature');
+    setModalIsMandatory(!!up.isMandatory);
+    setModalTitleFr(up.titleFr || '');
+    setModalTitleAr(up.titleAr || '');
+    setModalDescFr([...up.descriptionFr]);
+    setModalDescAr([...up.descriptionAr]);
+    setNewDescItemFr('');
+    setNewDescItemAr('');
+    setShowUpdateModal(true);
+  };
+
+  const handleAddDescPointFr = () => {
+    if (!newDescItemFr.trim()) return;
+    setModalDescFr([...modalDescFr, newDescItemFr.trim()]);
+    setNewDescItemFr('');
+  };
+
+  const handleRemoveDescPointFr = (index: number) => {
+    setModalDescFr(modalDescFr.filter((_, i) => i !== index));
+  };
+
+  const handleAddDescPointAr = () => {
+    if (!newDescItemAr.trim()) return;
+    setModalDescAr([...modalDescAr, newDescItemAr.trim()]);
+    setNewDescItemAr('');
+  };
+
+  const handleRemoveDescPointAr = (index: number) => {
+    setModalDescAr(modalDescAr.filter((_, i) => i !== index));
+  };
+
+  const handleSaveUpdateSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!modalVersion.trim() || !modalTitleFr.trim() || !modalTitleAr.trim()) {
+      showToast(language === 'ar' ? '⚠️ يرجى كتابة رقم الإصدار والعناوين بالفرنسية والعربية' : '⚠️ Veuillez renseigner le numéro de version et les titres');
+      return;
+    }
+
+    const cleanDescFr = modalDescFr.filter(d => d.trim().length > 0);
+    const cleanDescAr = modalDescAr.filter(d => d.trim().length > 0);
+
+    if (cleanDescFr.length === 0) {
+      cleanDescFr.push(modalTitleFr.trim());
+    }
+    if (cleanDescAr.length === 0) {
+      cleanDescAr.push(modalTitleAr.trim());
+    }
+
+    const newUpdateDoc: SystemUpdate = {
+      id: modalVersion.trim(),
+      date: modalDate.trim() || formatCurrentDateTime(),
+      type: modalType,
+      isMandatory: modalIsMandatory,
+      titleFr: modalTitleFr.trim(),
+      titleAr: modalTitleAr.trim(),
+      descriptionFr: cleanDescFr,
+      descriptionAr: cleanDescAr
+    };
+
+    setActionLoading('save_update');
+    try {
+      await saveSystemUpdate(newUpdateDoc);
+      
+      // Also update latestAppVersion in settings if this update is newer
+      const updatedSettings = {
+        ...updateSettings,
+        latestAppVersion: newUpdateDoc.id,
+        lastUpdatedTimestamp: new Date().toISOString()
+      };
+      await saveSystemUpdateSettings(updatedSettings);
+      setUpdateSettings(updatedSettings);
+
+      showToast(language === 'ar' 
+        ? `🚀 تم نشر التحديث ${newUpdateDoc.id} وإشعار كافة زبائن ومحلات النظام فورياً!` 
+        : `🚀 Version ${newUpdateDoc.id} publiée et diffusée aux terminaux clients avec succès !`);
+
+      setShowUpdateModal(false);
+      await fetchUpdatesAndConfig();
+    } catch (err) {
+      console.error(err);
+      showToast('❌ Erreur lors de la publication de la mise à jour');
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const handleDeleteUpdateConfirm = async (id: string) => {
+    setActionLoading(`delete_update_${id}`);
+    try {
+      await deleteSystemUpdate(id);
+      showToast(language === 'ar' ? '🗑️ تم حذف سجل التحديث بنجاح' : '🗑️ Journal de version supprimé avec succès');
+      await fetchUpdatesAndConfig();
+    } catch (err) {
+      console.error(err);
+      showToast('❌ Erreur lors de la suppression');
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const handlePushBroadcastNotification = async () => {
+    try {
+      const updatedSettings = {
+        ...updateSettings,
+        forceNotificationModal: true,
+        lastUpdatedTimestamp: new Date().toISOString()
+      };
+      await saveSystemUpdateSettings(updatedSettings);
+      setUpdateSettings(updatedSettings);
+      showToast(language === 'ar' 
+        ? '📢 تم إرسال إشعار فوري وتنبيه منبثق لجميع المشتركين المتصلين!' 
+        : '📢 Signal de mise à jour et notification immédiate envoyés à tous les postes clients !');
+    } catch (err) {
+      console.error(err);
+    }
   };
 
   // ----- TENANT ACTIONS -----
@@ -322,14 +538,48 @@ export default function SaaSDeveloperConsole() {
 
         <button
           onClick={handleRefreshAll}
-          disabled={loading}
-          className="self-start sm:self-auto flex items-center justify-center gap-1.5 py-2 px-4 rounded-lg border border-slate-700 bg-slate-800 hover:bg-slate-75 * bg-linear-to-b text-xs font-bold text-white transition-all cursor-pointer shadow-3xs hover:shadow-2xs active:scale-95 text-center"
+          disabled={loading || loadingUpdates}
+          className="self-start sm:self-auto flex items-center justify-center gap-1.5 py-2 px-4 rounded-lg border border-slate-700 bg-slate-800 hover:bg-slate-750 text-xs font-bold text-white transition-all cursor-pointer shadow-3xs hover:shadow-2xs active:scale-95 text-center"
         >
-          <RefreshCw className={`w-3.5 h-3.5 text-rose-400 ${loading ? 'animate-spin' : ''}`} />
+          <RefreshCw className={`w-3.5 h-3.5 text-rose-400 ${(loading || loadingUpdates) ? 'animate-spin' : ''}`} />
           <span>{language === 'ar' ? 'تحديث وتزامن السيرفر' : 'Actualiser Firebase'}</span>
         </button>
       </div>
 
+      {/* Navigation Sub-Tabs: Abonnés vs Mises à Jour & Paramètres */}
+      <div className="flex items-center gap-2 border-b border-slate-200 pb-1">
+        <button
+          type="button"
+          onClick={() => setConsoleTab('tenants')}
+          className={`flex items-center gap-2 py-2.5 px-4 rounded-t-lg text-xs font-black uppercase tracking-wider transition-all cursor-pointer border-b-2 ${
+            consoleTab === 'tenants'
+              ? 'bg-white text-rose-600 border-rose-600 shadow-3xs'
+              : 'text-slate-500 hover:text-slate-800 hover:bg-slate-100 border-transparent'
+          }`}
+        >
+          <Users className="w-4 h-4" />
+          <span>{language === 'ar' ? `👥 المشتركون والتراخيص (${totalCount})` : `👥 Abonnés & Licences (${totalCount})`}</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setConsoleTab('updates')}
+          className={`flex items-center gap-2 py-2.5 px-4 rounded-t-lg text-xs font-black uppercase tracking-wider transition-all cursor-pointer border-b-2 ${
+            consoleTab === 'updates'
+              ? 'bg-white text-rose-600 border-rose-600 shadow-3xs'
+              : 'text-slate-500 hover:text-slate-800 hover:bg-slate-100 border-transparent'
+          }`}
+        >
+          <Rocket className="w-4 h-4" />
+          <span>{language === 'ar' ? `🚀 إعدادات وتحديثات النظام (${updatesList.length})` : `🚀 Paramètres & Mises à Jour (${updatesList.length})`}</span>
+          {updateSettings.autoApplyUpdates && (
+            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" title="Auto-Update Actif" />
+          )}
+        </button>
+      </div>
+
+      {/* TAB 1: TENANTS & LICENSES */}
+      {consoleTab === 'tenants' && (
       <div className="space-y-6 animate-fade-in animate-duration-300">
           
           {/* KPI Dashboard Grid */}
@@ -824,8 +1074,851 @@ export default function SaaSDeveloperConsole() {
             )}
           </div>
         </div>
+      )}
 
-        {/* ➕ Modal: Add Subscriber */}
+      {/* TAB 2: SYSTEM UPDATES & AUTOMATION SETTINGS */}
+      {consoleTab === 'updates' && (
+        <div className="space-y-6 animate-fade-in animate-duration-300">
+          
+          {/* Quick Metrics for Updates */}
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="bg-white border border-slate-200 p-4 rounded-lg text-start shadow-3xs">
+              <div className="text-[9px] font-black uppercase text-indigo-600 tracking-wider flex items-center gap-1">
+                <Rocket className="w-3.5 h-3.5 text-indigo-500" />
+                <span>{language === 'ar' ? 'الإصدار النشط حالياً' : 'VERSION DE PRODUCTION'}</span>
+              </div>
+              <div className="text-xl font-mono font-black text-slate-900 mt-1 flex items-center gap-1.5">
+                <span className="p-1 px-2 bg-indigo-50 text-indigo-700 border border-indigo-200 rounded">
+                  {updateSettings.latestAppVersion || 'v1.3.0'}
+                </span>
+              </div>
+              <div className="text-[10px] text-slate-400 font-bold mt-1">
+                {language === 'ar' ? 'النسخة المفروضة على كافة نقاط البيع' : 'Déployée sur tous les terminaux'}
+              </div>
+            </div>
+
+            <div className="bg-white border border-slate-200 p-4 rounded-lg text-start shadow-3xs">
+              <div className="text-[9px] font-black uppercase text-emerald-600 tracking-wider flex items-center gap-1">
+                <DownloadCloud className="w-3.5 h-3.5 text-emerald-500" />
+                <span>{language === 'ar' ? 'التحديث التلقائي للزبائن' : 'AUTO-UPDATE CLIENTS'}</span>
+              </div>
+              <div className="text-xl font-mono font-black mt-1">
+                {updateSettings.autoApplyUpdates ? (
+                  <span className="text-emerald-600 flex items-center gap-1 text-sm font-bold">
+                    <CheckCircle className="w-4 h-4" /> {language === 'ar' ? 'مفعّل تلقائياً ⚡' : 'Automatique ⚡'}
+                  </span>
+                ) : (
+                  <span className="text-amber-600 flex items-center gap-1 text-sm font-bold">
+                    <Clock className="w-4 h-4" /> {language === 'ar' ? 'يدوي فقط ✋' : 'Manuel ✋'}
+                  </span>
+                )}
+              </div>
+              <div className="text-[10px] text-slate-400 font-bold mt-1">
+                {updateSettings.autoApplyUpdates 
+                  ? (language === 'ar' ? 'تحديث التطبيق فورياً دون إزعاج المستخدم' : 'Mise à jour en tâche de fond') 
+                  : (language === 'ar' ? 'يتطلب نقرة من المستخدم للتحديث' : 'Mise à jour manuelle requise')}
+              </div>
+            </div>
+
+            <div className="bg-white border border-slate-200 p-4 rounded-lg text-start shadow-3xs">
+              <div className="text-[9px] font-black uppercase text-blue-600 tracking-wider flex items-center gap-1">
+                <Bell className="w-3.5 h-3.5 text-blue-500" />
+                <span>{language === 'ar' ? 'إشعار منبثق للمستخدم' : 'POP-UP NOTIFICATION'}</span>
+              </div>
+              <div className="text-xl font-mono font-black mt-1">
+                {updateSettings.forceNotificationModal ? (
+                  <span className="text-blue-600 flex items-center gap-1 text-sm font-bold">
+                    <Radio className="w-4 h-4 animate-pulse" /> {language === 'ar' ? 'إشعار فوري 📢' : 'Immédiat 📢'}
+                  </span>
+                ) : (
+                  <span className="text-slate-500 flex items-center gap-1 text-sm font-bold">
+                    <Info className="w-4 h-4" /> {language === 'ar' ? 'هادئ ومكتوم 🔕' : 'Discret 🔕'}
+                  </span>
+                )}
+              </div>
+              <div className="text-[10px] text-slate-400 font-bold mt-1">
+                {language === 'ar' ? 'عرض نافذة الميزات الجديدة فور الإطلاق' : 'Modal changelog affiché aux caisses'}
+              </div>
+            </div>
+
+            <div className="bg-white border border-slate-200 p-4 rounded-lg text-start shadow-3xs">
+              <div className="text-[9px] font-black uppercase text-rose-600 tracking-wider flex items-center gap-1">
+                <ShieldAlert className="w-3.5 h-3.5 text-rose-500" />
+                <span>{language === 'ar' ? 'وضع الصيانة العام' : 'MODE MAINTENANCE'}</span>
+              </div>
+              <div className="text-xl font-mono font-black mt-1">
+                {updateSettings.maintenanceMode ? (
+                  <span className="text-rose-600 flex items-center gap-1 text-sm font-bold">
+                    <AlertTriangle className="w-4 h-4 animate-bounce" /> {language === 'ar' ? 'صيانة نشطة ⚠️' : 'Maintenance ⚠️'}
+                  </span>
+                ) : (
+                  <span className="text-emerald-600 flex items-center gap-1 text-sm font-bold">
+                    <Check className="w-4 h-4" /> {language === 'ar' ? 'سيرفر نشط 🟢' : 'Opérationnel 🟢'}
+                  </span>
+                )}
+              </div>
+              <div className="text-[10px] text-slate-400 font-bold mt-1">
+                {updateSettings.maintenanceMode ? (language === 'ar' ? 'الوصول محجوب مؤقتاً للصيانة' : 'Accès bloqué aux caisses') : (language === 'ar' ? 'كافة الخدمات تعمل بامتياز' : 'Services actifs')}
+              </div>
+            </div>
+          </div>
+
+          {/* Section 1: Global System Update & Automated Settings Form */}
+          <div className="bg-white border border-slate-200 rounded-lg overflow-hidden shadow-3xs text-start">
+            <div className="p-4 bg-slate-900 border-b border-rose-500/10 flex flex-col sm:flex-row items-stretch sm:items-center justify-between text-white gap-3">
+              <div className="flex items-center gap-2">
+                <Sliders className="w-5 h-5 text-rose-500 shrink-0" />
+                <div>
+                  <h2 className="text-xs font-black uppercase tracking-wider font-mono text-slate-100">
+                    {language === 'ar' ? '⚙️ إعدادات التحديث التلقائي وقواعد النشر للأجهزة والزبائن' : '⚙️ CONFIGURATION DES MISES À JOUR AUTOMATIQUES & NOTIFICATIONS'}
+                  </h2>
+                  <p className="text-[10px] text-slate-400 font-medium mt-0.5">
+                    {language === 'ar' 
+                      ? 'التحكم بطريقة تطبيق التحديثات وإرسال الإشعارات المنبثقة لكل حسابات ومحلات النظام فورياً' 
+                      : 'Contrôler la diffusion en temps réel, l\'auto-update silencieux et les alertes auprès des clients'}
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handlePushBroadcastNotification}
+                  className="flex items-center gap-1.5 py-1.5 px-3 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold transition-all cursor-pointer shadow-3xs active:scale-95"
+                  title="Envoyer une notification push immédiate"
+                >
+                  <Send className="w-3.5 h-3.5" />
+                  <span>{language === 'ar' ? 'إرسال إشعار فوري للكل 📢' : 'Diffuser Notification 📢'}</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => handleSaveGlobalUpdateSettings()}
+                  disabled={savingUpdateSettings}
+                  className="flex items-center gap-1.5 py-1.5 px-4 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition-all cursor-pointer shadow-3xs active:scale-95 disabled:opacity-50"
+                >
+                  <Check className="w-4 h-4" />
+                  <span>{savingUpdateSettings ? '...' : (language === 'ar' ? 'حفظ ونشر الإعدادات 💾' : 'Enregistrer les Réglages 💾')}</span>
+                </button>
+              </div>
+            </div>
+
+            <form onSubmit={handleSaveGlobalUpdateSettings} className="p-6 space-y-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                
+                {/* Latest Target Version */}
+                <div className="space-y-1.5">
+                  <label className="text-xs font-black uppercase text-slate-700 block flex items-center justify-between">
+                    <span>{language === 'ar' ? 'الإصدار العام المستهدف (Production Version)' : 'Version Cible de Production'}</span>
+                    <span className="text-[10px] text-slate-400 font-mono font-normal">Ex: v1.3.0</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={updateSettings.latestAppVersion}
+                    onChange={(e) => setUpdateSettings({ ...updateSettings, latestAppVersion: e.target.value })}
+                    className="w-full text-xs font-mono font-bold border border-slate-250 p-2.5 rounded-lg bg-slate-50 focus:bg-white text-slate-900 focus:outline-hidden focus:border-rose-500 transition-colors"
+                    placeholder="v1.3.0"
+                    required
+                  />
+                  <p className="text-[10px] text-slate-400 font-medium">
+                    {language === 'ar' ? 'الرقم المرجعي الذي تقارن به أجهزة الزبائن لمعرفة توفر تحديث جديد.' : 'Identifiant de version comparé par les terminaux pour détecter les nouveautés.'}
+                  </p>
+                </div>
+
+                {/* Min Supported Version */}
+                <div className="space-y-1.5">
+                  <label className="text-xs font-black uppercase text-slate-700 block flex items-center justify-between">
+                    <span>{language === 'ar' ? 'الحد الأدنى المدعوم (Min Supported Version)' : 'Version Minimale Compatible'}</span>
+                    <span className="text-[10px] text-slate-400 font-mono font-normal">Ex: v1.0.0</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={updateSettings.minSupportedVersion}
+                    onChange={(e) => setUpdateSettings({ ...updateSettings, minSupportedVersion: e.target.value })}
+                    className="w-full text-xs font-mono font-bold border border-slate-250 p-2.5 rounded-lg bg-slate-50 focus:bg-white text-slate-900 focus:outline-hidden focus:border-rose-500 transition-colors"
+                    placeholder="v1.0.0"
+                    required
+                  />
+                  <p className="text-[10px] text-slate-400 font-medium">
+                    {language === 'ar' ? 'الإصدارات الأقدم من هذا الحد ستلزم بتحديث فوري إجباري.' : 'Les versions antérieures seront obligées de se mettre à niveau immédiatement.'}
+                  </p>
+                </div>
+
+              </div>
+
+              {/* Toggles Panel */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-2 border-t border-slate-100">
+                
+                {/* Auto Apply Toggle */}
+                <div className={`p-4 rounded-xl border transition-all ${
+                  updateSettings.autoApplyUpdates 
+                    ? 'bg-emerald-50/70 border-emerald-200 text-emerald-950' 
+                    : 'bg-slate-50 border-slate-200 text-slate-700'
+                }`}>
+                  <label className="flex items-start gap-3 cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={updateSettings.autoApplyUpdates}
+                      onChange={(e) => setUpdateSettings({ ...updateSettings, autoApplyUpdates: e.target.checked })}
+                      className="w-4 h-4 text-emerald-600 rounded mt-0.5 cursor-pointer accent-emerald-600"
+                    />
+                    <div className="space-y-1">
+                      <span className="text-xs font-black uppercase block leading-tight">
+                        {language === 'ar' ? '⚡ تحديث تلقائي بدون إزعاج' : '⚡ Mise à Jour Automatique'}
+                      </span>
+                      <p className="text-[10.5px] text-slate-500 font-medium leading-relaxed">
+                        {language === 'ar' 
+                          ? 'يقوم النظام بتثبيت وتحديث الكاشير وقاعدة البيانات تلقائياً وفورياً عند تشغيل التطبيق.' 
+                          : 'Applique automatiquement les correctifs côté client sans bloquer le caissier.'}
+                      </p>
+                    </div>
+                  </label>
+                </div>
+
+                {/* Force Notification Modal */}
+                <div className={`p-4 rounded-xl border transition-all ${
+                  updateSettings.forceNotificationModal 
+                    ? 'bg-blue-50/70 border-blue-200 text-blue-950' 
+                    : 'bg-slate-50 border-slate-200 text-slate-700'
+                }`}>
+                  <label className="flex items-start gap-3 cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={updateSettings.forceNotificationModal}
+                      onChange={(e) => setUpdateSettings({ ...updateSettings, forceNotificationModal: e.target.checked })}
+                      className="w-4 h-4 text-blue-600 rounded mt-0.5 cursor-pointer accent-blue-600"
+                    />
+                    <div className="space-y-1">
+                      <span className="text-xs font-black uppercase block leading-tight">
+                        {language === 'ar' ? '📢 نافذة منبثقة للمستجدات' : '📢 Pop-up Changelog Client'}
+                      </span>
+                      <p className="text-[10.5px] text-slate-500 font-medium leading-relaxed">
+                        {language === 'ar' 
+                          ? 'إظهار نافذة تفاعلية تشرح مميزات التحديث والتعديلات الجديدة في أول فتح للنظام.' 
+                          : 'Affiche la boîte de dialogue avec les nouveautés détaillées dès l\'ouverture de la caisse.'}
+                      </p>
+                    </div>
+                  </label>
+                </div>
+
+                {/* Maintenance Mode Toggle */}
+                <div className={`p-4 rounded-xl border transition-all ${
+                  updateSettings.maintenanceMode 
+                    ? 'bg-rose-50 border-rose-300 text-rose-950 shadow-xs' 
+                    : 'bg-slate-50 border-slate-200 text-slate-700'
+                }`}>
+                  <label className="flex items-start gap-3 cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={updateSettings.maintenanceMode}
+                      onChange={(e) => setUpdateSettings({ ...updateSettings, maintenanceMode: e.target.checked })}
+                      className="w-4 h-4 text-rose-600 rounded mt-0.5 cursor-pointer accent-rose-600"
+                    />
+                    <div className="space-y-1">
+                      <span className="text-xs font-black uppercase block leading-tight text-rose-700">
+                        {language === 'ar' ? '🛑 وضع الصيانة المؤقت' : '🛑 Mode Maintenance Serveur'}
+                      </span>
+                      <p className="text-[10.5px] text-slate-500 font-medium leading-relaxed">
+                        {language === 'ar' 
+                          ? 'تعليق الوصول وإظهار شاشة صيانة لكافة المحلات أثناء تحديث البنية السحابية.' 
+                          : 'Bloque l\'accès temporairement avec un écran de maintenance lors des gros déploiements.'}
+                      </p>
+                    </div>
+                  </label>
+                </div>
+
+              </div>
+
+              {/* Broadcast Announcement Banner Text */}
+              <div className="space-y-1.5 pt-2 border-t border-slate-100">
+                <label className="text-xs font-black uppercase text-slate-700 block flex items-center justify-between">
+                  <span className="flex items-center gap-1.5">
+                    <Radio className="w-3.5 h-3.5 text-indigo-600" />
+                    <span>{language === 'ar' ? 'شريط التنبيه الإداري العام (Broadcast Announcement Banner)' : 'Bandeau d\'Annonce Flash Général'}</span>
+                  </span>
+                  <span className="text-[10px] text-slate-400 font-normal">
+                    {language === 'ar' ? 'يظهر أعلى لوحة كافة المشتركين' : 'S\'affiche en haut chez tous les abonnés'}
+                  </span>
+                </label>
+                <input
+                  type="text"
+                  value={updateSettings.globalAnnouncement || ''}
+                  onChange={(e) => setUpdateSettings({ ...updateSettings, globalAnnouncement: e.target.value })}
+                  className="w-full text-xs font-medium border border-slate-250 p-2.5 rounded-lg bg-slate-50 focus:bg-white text-slate-900 focus:outline-hidden focus:border-indigo-500 transition-colors"
+                  placeholder={language === 'ar' ? 'مثال: تم إطلاق تحديث جديد لنظام نقاط البيع مع دعم أجهزة الباركود اللاسلكية...' : 'Ex: Nouvelle mise à jour déployée : découvrez les nouvelles options de tickets et synchronisation...'}
+                />
+              </div>
+
+              {/* Maintenance Messages (if active) */}
+              {updateSettings.maintenanceMode && (
+                <div className="p-4 bg-rose-50 border border-rose-200 rounded-xl space-y-3">
+                  <span className="text-xs font-black text-rose-800 uppercase block">
+                    {language === 'ar' ? 'رسالة الصيانة المخصصة للمستخدمين' : 'Messages de Maintenance Personnalisés'}
+                  </span>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-[10px] font-bold text-slate-600 block mb-1">Français :</label>
+                      <input
+                        type="text"
+                        value={updateSettings.maintenanceMessageFr || ''}
+                        onChange={(e) => setUpdateSettings({ ...updateSettings, maintenanceMessageFr: e.target.value })}
+                        className="w-full text-xs border border-rose-200 p-2 rounded-lg bg-white text-slate-800"
+                        placeholder="Maintenance programmée..."
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-bold text-slate-600 block mb-1">العربية :</label>
+                      <input
+                        type="text"
+                        value={updateSettings.maintenanceMessageAr || ''}
+                        onChange={(e) => setUpdateSettings({ ...updateSettings, maintenanceMessageAr: e.target.value })}
+                        className="w-full text-xs border border-rose-200 p-2 rounded-lg bg-white text-slate-800 text-right"
+                        placeholder="صيانة دورية جارية..."
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Submit Button Bar */}
+              <div className="flex items-center justify-end gap-3 pt-2">
+                <button
+                  type="submit"
+                  disabled={savingUpdateSettings}
+                  className="py-2.5 px-6 rounded-lg bg-slate-900 hover:bg-slate-800 text-white text-xs font-black uppercase tracking-wider transition-all cursor-pointer shadow-md active:scale-95 flex items-center gap-2"
+                >
+                  <CheckCircle className="w-4 h-4 text-emerald-400" />
+                  <span>{savingUpdateSettings ? 'Sauvegarde...' : (language === 'ar' ? 'حفظ وتطبيق التغييرات 💾' : 'Appliquer et Sauvegarder 💾')}</span>
+                </button>
+              </div>
+
+            </form>
+          </div>
+
+          {/* Section 2: Releases History & Publishing (Versions & Changelogs) */}
+          <div className="bg-white border border-slate-200 rounded-lg overflow-hidden shadow-3xs text-start">
+            <div className="p-4 bg-slate-900 border-b border-rose-500/10 flex flex-col sm:flex-row items-stretch sm:items-center justify-between text-white gap-3">
+              <div>
+                <h2 className="text-xs font-black uppercase tracking-wider font-mono text-slate-100 flex items-center gap-1.5">
+                  <Rocket className="w-4 h-4 text-rose-500" />
+                  <span>{language === 'ar' ? '🚀 سجل وإدارة تحديثات النظام وملاحظات الإصدار' : '🚀 JOURNAL DES VERSIONS & PUBLICATIONS DE MISES À JOUR'}</span>
+                </h2>
+                <p className="text-[10px] text-slate-400 font-medium mt-0.5">
+                  {language === 'ar' 
+                    ? 'نشر إصدارات جديدة، كتابة ملخص التحسينات باللغتين ومتابعة التحديثات المنشورة' 
+                    : 'Publier de nouvelles releases, rédiger les changelogs bilingues et gérer l\'historique'}
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={handleOpenAddUpdateModal}
+                className="flex items-center justify-center gap-1.5 py-1.5 px-4 rounded-lg bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold transition-all cursor-pointer shadow-sm active:scale-95 shrink-0"
+              >
+                <Plus className="w-4 h-4" />
+                <span>{language === 'ar' ? 'نشر تحديث جديد 🚀' : 'Publier une Mise à Jour 🚀'}</span>
+              </button>
+            </div>
+
+            {/* Releases list */}
+            {loadingUpdates ? (
+              <div className="py-16 text-center space-y-3">
+                <div className="w-8 h-8 border-3 border-rose-500 border-t-transparent rounded-full animate-spin mx-auto"></div>
+                <p className="text-xs text-slate-400 font-bold uppercase">{language === 'ar' ? 'جاري قراءة سجل التحديثات...' : 'Chargement des versions...'}</p>
+              </div>
+            ) : updatesList.length === 0 ? (
+              <div className="p-12 text-center space-y-3 text-slate-400">
+                <Rocket className="w-10 h-10 mx-auto text-slate-300" />
+                <p className="text-xs font-bold">{language === 'ar' ? 'لم يتم العثور على تحديثات منشورة.' : 'Aucune version publiée.'}</p>
+                <button
+                  type="button"
+                  onClick={handleOpenAddUpdateModal}
+                  className="px-4 py-2 bg-slate-900 text-white rounded-lg text-xs font-bold cursor-pointer"
+                >
+                  {language === 'ar' ? 'إنشاء أول تحديث للنظام' : 'Créer la première mise à jour'}
+                </button>
+              </div>
+            ) : (
+              <div className="divide-y divide-slate-100 p-4 space-y-4">
+                {updatesList.map((up, idx) => {
+                  const isCurrentTarget = up.id === updateSettings.latestAppVersion;
+                  return (
+                    <div key={up.id} className="bg-slate-50/70 border border-slate-200 rounded-xl p-5 hover:bg-white hover:shadow-xs transition-all space-y-4 text-start">
+                      
+                      {/* Release header row */}
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-slate-200/80">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="font-mono text-xs font-black px-2.5 py-1 bg-slate-900 text-white rounded-md">
+                            {up.id}
+                          </span>
+
+                          <span className={`text-[9px] uppercase font-mono font-black px-2 py-0.5 rounded ${
+                            up.type === 'major' 
+                              ? 'bg-rose-100 text-rose-800 border border-rose-200' 
+                              : up.type === 'feature' 
+                              ? 'bg-blue-100 text-blue-800 border border-blue-200' 
+                              : 'bg-slate-200 text-slate-800 border border-slate-300'
+                          }`}>
+                            {up.type === 'major' ? (language === 'ar' ? 'تحديث جذري 🚀' : 'Majeure 🚀') : up.type === 'feature' ? (language === 'ar' ? 'ميزة جديدة ✨' : 'Feature ✨') : (language === 'ar' ? 'تصحيح أخطاء 🛠️' : 'Patch 🛠️')}
+                          </span>
+
+                          {up.isMandatory && (
+                            <span className="text-[9px] uppercase font-black px-2 py-0.5 rounded bg-amber-100 text-amber-800 border border-amber-300">
+                              {language === 'ar' ? 'إجباري ⚠️' : 'Obligatoire ⚠️'}
+                            </span>
+                          )}
+
+                          {isCurrentTarget && (
+                            <span className="text-[9px] uppercase font-black px-2 py-0.5 rounded bg-emerald-500 text-white shadow-3xs">
+                              {language === 'ar' ? 'النسخة النشطة ⚡' : 'Active sur les clients ⚡'}
+                            </span>
+                          )}
+                        </div>
+
+                        <div className="flex items-center gap-3">
+                          <span className="text-xs font-mono text-slate-400" dir="ltr">
+                            📅 {up.date}
+                          </span>
+
+                          <div className="flex items-center gap-1">
+                            {/* Preview Pop-up */}
+                            <button
+                              type="button"
+                              onClick={() => setPreviewUpdate(up)}
+                              className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors cursor-pointer"
+                              title="Aperçu du pop-up client"
+                            >
+                              <Eye className="w-4 h-4" />
+                            </button>
+
+                            {/* Edit */}
+                            <button
+                              type="button"
+                              onClick={() => handleOpenEditUpdateModal(up)}
+                              className="p-1.5 text-slate-600 hover:bg-slate-200 rounded-lg transition-colors cursor-pointer"
+                              title="Modifier ce journal"
+                            >
+                              <Edit className="w-4 h-4" />
+                            </button>
+
+                            {/* Delete */}
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (window.confirm(language === 'ar' ? `هل أنت متأكد من حذف التحديث ${up.id}؟` : `Supprimer la mise à jour ${up.id} ?`)) {
+                                  handleDeleteUpdateConfirm(up.id);
+                                }
+                              }}
+                              disabled={actionLoading === `delete_update_${up.id}`}
+                              className="p-1.5 text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer disabled:opacity-50"
+                              title="Supprimer"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Titles & descriptions grid */}
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+                        {/* French Column */}
+                        <div className="bg-white p-3.5 rounded-lg border border-slate-200 space-y-2">
+                          <div className="flex items-center justify-between border-b border-slate-100 pb-1.5">
+                            <span className="text-[10px] font-black uppercase text-blue-600 font-mono">Français :</span>
+                            <span className="font-bold text-slate-900">{up.titleFr}</span>
+                          </div>
+                          <ul className="space-y-1 text-slate-600 font-medium text-[11px] list-disc list-inside">
+                            {up.descriptionFr.map((item, i) => (
+                              <li key={i} className="leading-relaxed">{item}</li>
+                            ))}
+                          </ul>
+                        </div>
+
+                        {/* Arabic Column */}
+                        <div className="bg-white p-3.5 rounded-lg border border-slate-200 space-y-2" dir="rtl">
+                          <div className="flex items-center justify-between border-b border-slate-100 pb-1.5">
+                            <span className="text-[10px] font-black uppercase text-emerald-600 font-mono">العربية :</span>
+                            <span className="font-bold text-slate-900">{up.titleAr}</span>
+                          </div>
+                          <ul className="space-y-1 text-slate-600 font-medium text-[11px] list-disc list-inside">
+                            {up.descriptionAr.map((item, i) => (
+                              <li key={i} className="leading-relaxed">{item}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      </div>
+
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+        </div>
+      )}
+
+      {/* 🚀 MODAL: ADD / EDIT SYSTEM UPDATE */}
+      {showUpdateModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-fade-in">
+          <div className="bg-white rounded-xl shadow-2xl border border-slate-200 max-w-2xl w-full overflow-hidden text-start animate-scale-up max-h-[90vh] flex flex-col" dir={language === 'ar' ? 'rtl' : 'ltr'}>
+            
+            {/* Modal Header */}
+            <div className="p-5 bg-slate-900 text-white flex items-center justify-between border-b border-rose-500/10 shrink-0">
+              <div className="flex items-center gap-2">
+                <Rocket className="w-5 h-5 text-rose-500" />
+                <div>
+                  <h3 className="font-display font-black text-sm">
+                    {editingUpdateId 
+                      ? (language === 'ar' ? `تعديل سجل التحديث: ${editingUpdateId}` : `Modifier le journal de version : ${editingUpdateId}`) 
+                      : (language === 'ar' ? 'نشر إصدار وتحديث جديد للنظام' : 'Publier une nouvelle version du système')}
+                  </h3>
+                  <p className="text-[10px] text-slate-400">
+                    {language === 'ar' ? 'سيتم بث التحديث وإشعار كافة المشتركين تلقائياً عبر السحابة' : 'Diffusé en direct sur Firestore à l\'ensemble des points de vente'}
+                  </p>
+                </div>
+              </div>
+              <button 
+                type="button"
+                onClick={() => setShowUpdateModal(false)}
+                className="text-slate-400 hover:text-white transition-colors cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Modal Form Content */}
+            <form onSubmit={handleSaveUpdateSubmit} className="p-6 space-y-5 overflow-y-auto flex-1 custom-scrollbar">
+              
+              {/* Row 1: Version, Date, Type */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                
+                {/* Version ID */}
+                <div className="space-y-1">
+                  <label className="text-[11px] font-black uppercase text-slate-600 block">
+                    {language === 'ar' ? 'رقم الإصدار (Version Tag)' : 'Numéro de Version'}
+                  </label>
+                  <input
+                    type="text"
+                    value={modalVersion}
+                    onChange={(e) => setModalVersion(e.target.value)}
+                    className="w-full text-xs font-mono font-bold border border-slate-250 p-2.5 rounded-lg bg-slate-50 focus:bg-white text-slate-900"
+                    placeholder="v1.3.0"
+                    required
+                  />
+                </div>
+
+                {/* Date */}
+                <div className="space-y-1">
+                  <label className="text-[11px] font-black uppercase text-slate-600 block">
+                    {language === 'ar' ? 'تاريخ وساعة النشر' : 'Date de Publication'}
+                  </label>
+                  <input
+                    type="text"
+                    value={modalDate}
+                    onChange={(e) => setModalDate(e.target.value)}
+                    className="w-full text-xs font-mono font-bold border border-slate-250 p-2.5 rounded-lg bg-slate-50 focus:bg-white text-slate-900"
+                    placeholder="26/05/2026 - 16:30"
+                    required
+                  />
+                </div>
+
+                {/* Update Type */}
+                <div className="space-y-1">
+                  <label className="text-[11px] font-black uppercase text-slate-600 block">
+                    {language === 'ar' ? 'نوع التحديث' : 'Type de Release'}
+                  </label>
+                  <select
+                    value={modalType}
+                    onChange={(e) => setModalType(e.target.value as any)}
+                    className="w-full text-xs font-bold border border-slate-250 p-2.5 rounded-lg bg-slate-50 focus:bg-white text-slate-900"
+                  >
+                    <option value="feature">{language === 'ar' ? 'ميزة جديدة ✨ (Feature)' : 'Nouvelle Fonctionnalité ✨'}</option>
+                    <option value="major">{language === 'ar' ? 'تحديث جذري 🚀 (Major)' : 'Mise à Jour Majeure 🚀'}</option>
+                    <option value="patch">{language === 'ar' ? 'تصحيح وسرعة 🛠️ (Patch)' : 'Correctif & Optimisation 🛠️'}</option>
+                  </select>
+                </div>
+
+              </div>
+
+              {/* Mandatory Checkbox */}
+              <div className="p-3 bg-amber-50/60 border border-amber-200 rounded-lg">
+                <label className="flex items-center gap-2 cursor-pointer select-none text-xs font-bold text-amber-900">
+                  <input
+                    type="checkbox"
+                    checked={modalIsMandatory}
+                    onChange={(e) => setModalIsMandatory(e.target.checked)}
+                    className="w-4 h-4 text-amber-600 rounded cursor-pointer accent-amber-600"
+                  />
+                  <span>{language === 'ar' ? '⚠️ تحديد كتحديث حرج وإجباري لكافة المشتركين' : '⚠️ Définir comme mise à jour critique et obligatoire'}</span>
+                </label>
+              </div>
+
+              {/* French Content Box */}
+              <div className="p-4 bg-slate-50 rounded-xl border border-slate-200 space-y-3">
+                <span className="text-xs font-black uppercase text-blue-600 block font-mono">
+                  🇫🇷 Section Française (Titre & Changelog) :
+                </span>
+                
+                <div className="space-y-1">
+                  <label className="text-[10px] font-bold text-slate-600 block">Titre de la mise à jour (FR) :</label>
+                  <input
+                    type="text"
+                    value={modalTitleFr}
+                    onChange={(e) => setModalTitleFr(e.target.value)}
+                    className="w-full text-xs font-bold border border-slate-200 p-2 rounded-lg bg-white text-slate-900"
+                    placeholder="Ex: Refonte du module caisse et impression thermique..."
+                    required
+                  />
+                </div>
+
+                {/* Points list FR */}
+                <div className="space-y-2">
+                  <label className="text-[10px] font-bold text-slate-600 block">Détails des points & nouveautés (FR) :</label>
+                  <div className="space-y-1.5">
+                    {modalDescFr.map((item, idx) => (
+                      <div key={idx} className="flex items-center gap-2">
+                        <span className="text-[10px] text-slate-400 font-mono">•</span>
+                        <input
+                          type="text"
+                          value={item}
+                          onChange={(e) => {
+                            const copy = [...modalDescFr];
+                            copy[idx] = e.target.value;
+                            setModalDescFr(copy);
+                          }}
+                          className="flex-1 text-xs border border-slate-200 p-1.5 rounded-md bg-white text-slate-800"
+                          placeholder={`Point n°${idx + 1}...`}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveDescPointFr(idx)}
+                          className="p-1.5 text-rose-500 hover:bg-rose-50 rounded cursor-pointer"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Add point input FR */}
+                  <div className="flex items-center gap-2 pt-1">
+                    <input
+                      type="text"
+                      value={newDescItemFr}
+                      onChange={(e) => setNewDescItemFr(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          handleAddDescPointFr();
+                        }
+                      }}
+                      className="flex-1 text-xs border border-slate-200 p-1.5 rounded-md bg-white text-slate-800"
+                      placeholder="Ajouter un point (FR)..."
+                    />
+                    <button
+                      type="button"
+                      onClick={handleAddDescPointFr}
+                      className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded text-xs font-bold cursor-pointer"
+                    >
+                      + Ajouter
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Arabic Content Box */}
+              <div className="p-4 bg-slate-50 rounded-xl border border-slate-200 space-y-3" dir="rtl">
+                <span className="text-xs font-black uppercase text-emerald-600 block font-mono">
+                  🇸🇦 القسم العربي (العنوان وقائمة التحسينات) :
+                </span>
+                
+                <div className="space-y-1">
+                  <label className="text-[10px] font-bold text-slate-600 block">عنوان التحديث بالعربية :</label>
+                  <input
+                    type="text"
+                    value={modalTitleAr}
+                    onChange={(e) => setModalTitleAr(e.target.value)}
+                    className="w-full text-xs font-bold border border-slate-200 p-2 rounded-lg bg-white text-slate-900"
+                    placeholder="مثال: تطوير وحدة الكاشير والطباعة الحرارية المباشرة..."
+                    required
+                  />
+                </div>
+
+                {/* Points list AR */}
+                <div className="space-y-2">
+                  <label className="text-[10px] font-bold text-slate-600 block">تفاصيل التحسينات الجديدة (العربية) :</label>
+                  <div className="space-y-1.5">
+                    {modalDescAr.map((item, idx) => (
+                      <div key={idx} className="flex items-center gap-2">
+                        <span className="text-[10px] text-slate-400 font-mono">•</span>
+                        <input
+                          type="text"
+                          value={item}
+                          onChange={(e) => {
+                            const copy = [...modalDescAr];
+                            copy[idx] = e.target.value;
+                            setModalDescAr(copy);
+                          }}
+                          className="flex-1 text-xs border border-slate-200 p-1.5 rounded-md bg-white text-slate-800 text-right"
+                          placeholder={`نقطة رقم ${idx + 1}...`}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveDescPointAr(idx)}
+                          className="p-1.5 text-rose-500 hover:bg-rose-50 rounded cursor-pointer"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Add point input AR */}
+                  <div className="flex items-center gap-2 pt-1">
+                    <input
+                      type="text"
+                      value={newDescItemAr}
+                      onChange={(e) => setNewDescItemAr(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          handleAddDescPointAr();
+                        }
+                      }}
+                      className="flex-1 text-xs border border-slate-200 p-1.5 rounded-md bg-white text-slate-800 text-right"
+                      placeholder="إضافة نقطة تفصيلية (بالعربية)..."
+                    />
+                    <button
+                      type="button"
+                      onClick={handleAddDescPointAr}
+                      className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded text-xs font-bold cursor-pointer"
+                    >
+                      + إضافة
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Modal Footer Buttons */}
+              <div className="flex items-center justify-end gap-3 pt-4 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setShowUpdateModal(false)}
+                  className="py-2 px-4 text-xs font-bold rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 cursor-pointer"
+                >
+                  {language === 'ar' ? 'إلغاء' : 'Annuler'}
+                </button>
+                <button
+                  type="submit"
+                  disabled={actionLoading === 'save_update'}
+                  className="py-2 px-6 text-xs font-bold rounded-lg bg-rose-600 hover:bg-rose-500 text-white flex items-center gap-1.5 cursor-pointer shadow-md active:scale-95 disabled:opacity-50"
+                >
+                  <Rocket className="w-4 h-4" />
+                  <span>{actionLoading === 'save_update' ? '...' : (language === 'ar' ? 'نشر وإشعار المشتركين فورياً 📢' : 'Publier et Notifier Tous les Magasins 📢')}</span>
+                </button>
+              </div>
+
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* 👁️ MODAL: PREVIEW CLIENT UPDATE POPUP */}
+      {previewUpdate && (
+        <div className="fixed inset-0 z-55 flex items-center justify-center p-4 bg-black/75 backdrop-blur-md animate-fade-in" dir={language === 'ar' ? 'rtl' : 'ltr'}>
+          <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-lg w-full overflow-hidden text-start animate-scale-up my-auto flex flex-col max-h-[90vh]">
+            
+            {/* Header Area */}
+            <div className="p-5 border-b border-slate-100 flex items-center justify-between bg-slate-900 text-white shrink-0">
+              <div className="flex items-center gap-2.5">
+                <div className="p-1.5 bg-rose-500/10 text-rose-400 border border-rose-500/20 rounded">
+                  <Rocket className="w-5 h-5 text-rose-500 animate-pulse" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-extrabold tracking-tight">
+                    {language === 'ar' ? 'مركز تحديث النظام البرمجي • INNOVA POS' : 'Centre de Mise à Jour Système • INNOVA POS'}
+                  </h3>
+                  <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mt-0.5" dir="ltr">
+                    Version: {previewUpdate.id} • {previewUpdate.date}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setPreviewUpdate(null)}
+                className="text-slate-400 hover:text-white transition-colors cursor-pointer text-lg font-bold p-1"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Simulated Live Update Notification Bar */}
+            <div className="bg-emerald-50 border-b border-emerald-100 p-4 shrink-0 flex items-center gap-3">
+              <div className="w-8 h-8 bg-emerald-100 text-emerald-600 rounded-lg flex items-center justify-center text-sm shrink-0 font-bold">
+                ✓
+              </div>
+              <div className="flex-1">
+                <h4 className="text-xs font-bold text-emerald-950">
+                  {language === 'ar' ? '🎉 تم اكتشاف الإصدار الأحدث وتطبيقه بنجاح!' : '🎉 Nouvelle version disponible et optimisée !'}
+                </h4>
+                <p className="text-[10px] text-emerald-700 mt-0.5 leading-tight">
+                  {language === 'ar' ? 'تمت مطابقة وحفظ كافة كتل البيانات والتحسينات السحابية فورياً.' : 'Toutes les fonctionnalités s’exécutent sous la dernière version stable.'}
+                </p>
+              </div>
+            </div>
+
+            {/* Changelog Content */}
+            <div className="flex-1 overflow-y-auto p-5 space-y-4 custom-scrollbar text-start bg-slate-50">
+              <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-3xs space-y-3">
+                <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+                  <div className="flex items-center gap-1.5">
+                    <span className="font-mono bg-slate-900 text-white text-[10px] font-bold px-2 py-0.5 rounded">
+                      {previewUpdate.id}
+                    </span>
+                    <span className="text-[8px] uppercase font-mono font-black px-1.5 py-0.5 rounded bg-rose-100 text-rose-800">
+                      {previewUpdate.type === 'major' ? 'Majeure 🚀' : previewUpdate.type === 'feature' ? 'Feature ✨' : 'Patch 🛠️'}
+                    </span>
+                  </div>
+                  <span className="text-[10px] font-mono text-slate-400" dir="ltr">
+                    {previewUpdate.date}
+                  </span>
+                </div>
+
+                <h4 className="text-xs font-extrabold text-slate-900">
+                  {language === 'ar' ? previewUpdate.titleAr : previewUpdate.titleFr}
+                </h4>
+
+                <div className="space-y-1.5 pt-1">
+                  {(language === 'ar' ? previewUpdate.descriptionAr : previewUpdate.descriptionFr).map((line, idx) => (
+                    <div key={idx} className="flex items-start gap-2 text-[11px] text-slate-600 leading-relaxed">
+                      <span className="text-rose-500 font-bold shrink-0 mt-0.5">✦</span>
+                      <span>{line}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="p-4 bg-white border-t border-slate-100 flex items-center justify-between">
+              <span className="text-[10px] text-slate-400 font-medium">
+                {language === 'ar' ? '🔍 معاينة حية لما يشاهده العميل' : '🔍 Aperçu en conditions réelles'}
+              </span>
+              <button
+                type="button"
+                onClick={() => setPreviewUpdate(null)}
+                className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-xs font-bold cursor-pointer"
+              >
+                {language === 'ar' ? 'إغلاق المعاينة' : 'Fermer l\'Aperçu'}
+              </button>
+            </div>
+
+          </div>
+        </div>
+      )}
+
+      {/* ➕ Modal: Add Subscriber */}
         {showAddModal && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-fade-in">
             <div className="bg-white rounded-xl shadow-2xl border border-slate-200 max-w-lg w-full overflow-hidden text-start animate-scale-up" dir={language === 'ar' ? 'rtl' : 'ltr'}>

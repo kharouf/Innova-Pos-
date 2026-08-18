@@ -13,12 +13,14 @@ service cloud.firestore {
     }
 
     function isAdmin() {
-      return isSignedIn() && 
-             'email' in request.auth.token && (
-               request.auth.token.email == "kharoufwala24@gmail.com" || 
-               request.auth.token.email == "walakharouf665@gmail.com" || 
-               request.auth.token.email == "walakharouf6665@gmail.com"
-             );
+      return isSignedIn() && (
+        request.auth.uid == "4QfqS3y3CEcCdLQfN7OMQiacbqD2" ||
+        ('email' in request.auth.token && (
+          request.auth.token.email == "kharoufwala24@gmail.com" || 
+          request.auth.token.email == "walakharouf665@gmail.com" || 
+          request.auth.token.email == "walakharouf6665@gmail.com"
+        ))
+      );
     }
 
     // Tenant Isolation match rule helper
@@ -31,8 +33,13 @@ service cloud.firestore {
       return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
     }
 
-    // System Updates
+    // System Updates & Global Update Settings
     match /updates/{updateId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /system_settings/{settingId} {
       allow read: if true;
       allow write: if isAdmin();
     }

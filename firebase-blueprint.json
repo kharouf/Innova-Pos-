@@ -126,9 +126,44 @@
         "category": { "type": "string" }
       },
       "required": ["id", "date", "description", "amount", "category"]
+    },
+    "systemUpdate": {
+      "title": "SystemUpdate",
+      "description": "Global software changelogs and version release metadata",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "date": { "type": "string" },
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "type": { "type": "string", "enum": ["major", "feature", "patch"] },
+        "details": { "type": "string" }
+      },
+      "required": ["id", "date", "title", "description", "type"]
+    },
+    "systemUpdateSettings": {
+      "title": "SystemUpdateSettings",
+      "description": "Global automated update policy and broadcast alerts",
+      "type": "object",
+      "properties": {
+        "autoApplyUpdates": { "type": "boolean" },
+        "forceNotificationModal": { "type": "boolean" },
+        "latestAppVersion": { "type": "string" },
+        "globalAnnouncement": { "type": "string" },
+        "maintenanceMode": { "type": "boolean" }
+      },
+      "required": ["autoApplyUpdates", "forceNotificationModal", "latestAppVersion"]
     }
   },
   "firestore": {
+    "updates/{updateId}": {
+      "schema": "systemUpdate",
+      "description": "Global system release logs and version notes"
+    },
+    "system_settings/{settingId}": {
+      "schema": "systemUpdateSettings",
+      "description": "Global configuration and auto-update policies"
+    },
     "users/{userId}/products/{productId}": {
       "schema": "product",
       "description": "User specific product inventory catalog"
