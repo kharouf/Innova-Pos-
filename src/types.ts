@@ -37,6 +37,8 @@ export interface Product {
     newPurchasePrice: number;
   }[];
   batches?: ProductBatch[];
+  supplierId?: string; // ID of the primary supplier (fournisseur)
+  supplierName?: string; // Name of the primary supplier
 }
 
 export interface Partner {
@@ -223,6 +225,12 @@ export interface StoreSettings {
 
   // 🏷️ Custom TVA Rates
   customTvaRates?: number[];
+
+  // 📅 Automatic Weekly Inventory & Supplier Audit Settings
+  enableAutoWeeklyInventory?: boolean; // Default true
+  weeklyInventoryDay?: 'friday' | 'saturday' | 'sunday' | 'monday' | 'tuesday' | 'wednesday' | 'thursday'; // Default 'friday' (الجمعة)
+  lastAutoWeeklyInventoryDate?: string; // Date of last automatic generation (YYYY-MM-DD)
+  weeklyInventoryReports?: WeeklyInventoryReport[]; // Stored snapshots archive
 }
 
 export interface DatabaseState {
@@ -256,5 +264,111 @@ export interface HeldTicket {
   globalDiscount?: number;
   note?: string;
 }
+
+export interface BranchMeta {
+  id: string;
+  name: string;
+  phone?: string;
+  address?: string;
+  city?: string;
+  managerName?: string;
+  isMain?: boolean;
+  createdAt: string;
+  color?: string;
+}
+
+export type SuperetteMeta = BranchMeta;
+
+export interface StockTransferRecord {
+  id: string;
+  date: string;
+  fromBranchId: string;
+  fromBranchName: string;
+  toBranchId: string;
+  toBranchName: string;
+  productId: string;
+  productName: string;
+  productCode?: string;
+  quantity: number;
+  notes?: string;
+  performedBy?: string;
+}
+
+export interface WeeklyInventoryProductSnapshot {
+  productId: string;
+  code: string;
+  name: string;
+  category: string;
+  supplierId?: string;
+  supplierName?: string;
+  stockQty: number;
+  minAlertQty: number;
+  purchasePrice: number;
+  sellingPrice: number;
+  totalPurchaseValue: number;
+  totalSellingValue: number;
+  status: 'optimal' | 'low' | 'out_of_stock';
+  weeklySoldQty?: number;
+}
+
+export interface WeeklyInventorySupplierSummary {
+  supplierId: string;
+  supplierName: string;
+  supplierPhone?: string;
+  supplierAddress?: string;
+  supplierEmail?: string;
+  productsCount: number;
+  totalStockValue: number;
+  currentBalance: number; // Balance owed or owed to us
+  pendingTraitesAmount: number;
+  weeklyPurchasesAmount: number;
+  criticalProductsCount: number;
+  criticalProductsList: {
+    id: string;
+    code: string;
+    name: string;
+    stock: number;
+    minAlertQty: number;
+    purchasePrice: number;
+    suggestedReorderQty: number;
+  }[];
+  allProducts: {
+    id: string;
+    code: string;
+    name: string;
+    stock: number;
+    minAlertQty: number;
+    purchasePrice: number;
+    sellingPrice: number;
+  }[];
+}
+
+export interface WeeklyInventoryReport {
+  id: string;
+  date: string; // ISO string YYYY-MM-DD
+  generatedAt: string; // Formatted date & time
+  weekNumber: number;
+  year: number;
+  dayOfWeek: string;
+  branchId?: string;
+  branchName?: string;
+  totalProductsCount: number;
+  totalStockUnits: number;
+  totalPurchaseValue: number;
+  totalSellingValue: number;
+  estimatedProfitMargin: number;
+  optimalCount: number;
+  lowStockCount: number;
+  outOfStockCount: number;
+  totalWeeklySalesAmount: number;
+  totalWeeklySoldUnits: number;
+  suppliersCount: number;
+  totalSupplierDebts: number;
+  suppliersSummary: WeeklyInventorySupplierSummary[];
+  productsSnapshot: WeeklyInventoryProductSnapshot[];
+  notes?: string;
+  generatedAutomatically?: boolean;
+}
+
 
 

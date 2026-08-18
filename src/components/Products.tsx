@@ -185,6 +185,8 @@ export default function Products({ db, onUpdateDb }: ProductsProps) {
   const [unit, setUnit] = useState('Pcs');
   const [image, setImage] = useState('');
   const [emailAlertsEnabled, setEmailAlertsEnabled] = useState<boolean>(true);
+  const [supplierId, setSupplierId] = useState<string>('');
+  const [supplierName, setSupplierName] = useState<string>('');
 
   // Food product specific optional states
   const [expiryDate, setExpiryDate] = useState('');
@@ -840,6 +842,8 @@ export default function Products({ db, onUpdateDb }: ProductsProps) {
     setTvaRate(customRates.includes(19) ? 19 : (customRates[0] !== undefined ? customRates[0] : 19));
     setIsNewCategory(false);
     setEmailAlertsEnabled(true);
+    setSupplierId('');
+    setSupplierName('');
     setBatches([]);
     setNewBatchExpiry('');
     setNewBatchQty('');
@@ -865,6 +869,8 @@ export default function Products({ db, onUpdateDb }: ProductsProps) {
     setTvaRate(prod.tvaRate !== undefined ? prod.tvaRate : 19);
     setIsNewCategory(false);
     setEmailAlertsEnabled(prod.emailAlertsEnabled !== false);
+    setSupplierId(prod.supplierId || '');
+    setSupplierName(prod.supplierName || '');
     setBatches(prod.batches || []);
     setNewBatchExpiry('');
     setNewBatchQty('');
@@ -1006,6 +1012,8 @@ export default function Products({ db, onUpdateDb }: ProductsProps) {
             weightVolume: isFoodProduct ? weightVolume : undefined,
             isFoodProduct: isFoodProduct,
             emailAlertsEnabled: emailAlertsEnabled,
+            supplierId: supplierId || undefined,
+            supplierName: supplierName || undefined,
             tvaRate: Number(tvaRate),
             priceHistory: currentHistory,
             batches: batches.length > 0 ? batches : undefined
@@ -1031,6 +1039,8 @@ export default function Products({ db, onUpdateDb }: ProductsProps) {
         weightVolume: isFoodProduct ? weightVolume : undefined,
         isFoodProduct: isFoodProduct,
         emailAlertsEnabled: emailAlertsEnabled,
+        supplierId: supplierId || undefined,
+        supplierName: supplierName || undefined,
         tvaRate: Number(tvaRate),
         priceHistory: [{
           id: `log-${Date.now()}`,
@@ -2503,6 +2513,37 @@ export default function Products({ db, onUpdateDb }: ProductsProps) {
                       }
                     </span>
                   </div>
+                </div>
+              </div>
+
+              {/* Supplier selector for automated inventory audits */}
+              <div className="p-3 bg-slate-50 border border-slate-200/80 rounded-lg flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                <div className="flex-1 w-full">
+                  <label className="text-xs font-bold text-slate-700 block mb-1">
+                    {language === 'ar' ? '🏢 المزود المسؤول (Fournisseur)' : '🏢 Fournisseur associé'}
+                  </label>
+                  <select
+                    value={supplierId}
+                    onChange={(e) => {
+                      const selId = e.target.value;
+                      setSupplierId(selId);
+                      const matched = (db.partners || []).find(p => p.id === selId);
+                      setSupplierName(matched ? matched.name : '');
+                    }}
+                    className="w-full bg-white border border-slate-200 rounded py-2 px-3 focus:outline-hidden text-slate-800 text-xs font-bold"
+                  >
+                    <option value="">{language === 'ar' ? '-- بدون مزود محدد (عام) --' : '-- Aucun fournisseur spécifique (Général) --'}</option>
+                    {(db.partners || []).filter(p => p.type === 'fournisseur').map(s => (
+                      <option key={s.id} value={s.id}>
+                        {s.name} {s.phone ? `(${s.phone})` : ''} {s.currentBalance ? `[رصيد: ${Math.abs(s.currentBalance)} DT]` : ''}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="text-[10px] text-slate-500 max-w-xs leading-tight">
+                  {language === 'ar' 
+                    ? '💡 يساعد ربط السلعة بالمزود في تدقيق حسابات المزودين والجرد الأسبوعي التلقائي كل جمعة.' 
+                    : '💡 Permet d\'auditer automatiquement les dettes et commandes de ce fournisseur lors de l\'inventaire hebdo.'}
                 </div>
               </div>
 

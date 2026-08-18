@@ -8,9 +8,11 @@ import {
   writeBatch 
 } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from './firebase';
-import { DatabaseState, Product, Partner, Invoice, PaymentTransaction, Traite, DailyExpense, SystemUpdate } from '../types';
+import { DatabaseState, Product, Partner, Invoice, PaymentTransaction, Traite, DailyExpense, SystemUpdate, SuperetteMeta, BranchMeta } from '../types';
 import { UserLicenseData, generateLicenseKey } from './licensing';
 import { safeLocalStorage } from './storage';
+
+export type { SuperetteMeta, BranchMeta };
 
 /**
  * Recursively removes all undefined fields from an object so that it can be safely saved to Firestore.
@@ -41,19 +43,26 @@ export function cleanUndefined<T>(obj: T): T {
 }
 
 /**
- * Loads the complete database for a given user from Firestore.
- * If Firestore is empty, it returns null (indicating we should seed it with initial data).
- */
-export interface SuperetteMeta {
-  id: string;
-  name: string;
-  createdAt: string;
-}
-
-/**
- * Loads list of all registered superettes/workspaces under a given user.
+ * Loads list of all registered superettes/workspaces under a given user with local cache fallback.
  */
 export async function loadUserSuperettesList(userId: string): Promise<SuperetteMeta[]> {
+  const localKey = `innova_branches_meta_${userId || 'demo'}`;
+  const localCached = safeLocalStorage.getItem(localKey);
+  let localList: SuperetteMeta[] = [];
+  if (localCached) {
+    try {
+      localList = JSON.parse(localCached);
+    } catch (e) {}
+  }
+
+  if (!userId || userId === 'demo' || userId === 'default') {
+    if (localList.length === 0) {
+      localList = [{ id: 'default', name: 'الفرع الرئيسي', address: 'المقر المركزي', phone: '+216 24260711', isMain: true, createdAt: new Date().toISOString().split('T')[0] }];
+      safeLocalStorage.setItem(localKey, JSON.stringify(localList));
+    }
+    return localList;
+  }
+
   const colRef = collection(db, 'users', userId, 'superettes_meta');
   try {
     const snap = await getDocs(colRef);
@@ -62,35 +71,62 @@ export async function loadUserSuperettesList(userId: string): Promise<SuperetteM
       const data = docSnap.data();
       list.push({
         id: docSnap.id,
-        name: data.name || 'Superette',
+        name: data.name || 'فرع',
+        phone: data.phone,
+        address: data.address,
+        city: data.city,
+        managerName: data.managerName,
+        isMain: data.isMain ?? (docSnap.id === 'default'),
+        color: data.color,
         createdAt: data.createdAt || new Date().toISOString().split('T')[0]
       });
     });
 
     // Automatically register and seed the default database metadata if it does not exist
     if (list.length === 0 || !list.some(s => s.id === 'default')) {
-      const defaultMeta = {
+      const defaultMeta: SuperetteMeta = {
         id: 'default',
-        name: 'Superette Principale',
+        name: 'الفرع الرئيسي',
+        phone: '+216 24260711',
+        address: 'المقر المركزي',
+        isMain: true,
         createdAt: new Date().toISOString().split('T')[0]
       };
       await setDoc(doc(db, 'users', userId, 'superettes_meta', 'default'), defaultMeta);
-      list.push(defaultMeta);
+      list.unshift(defaultMeta);
     }
+
+    safeLocalStorage.setItem(localKey, JSON.stringify(list));
     return list;
   } catch (err) {
-    console.warn("Could not load superettes list. Using fallback default local.", err);
-    return [{ id: 'default', name: 'Superette Principale', createdAt: '' }];
+    console.warn("Could not load superettes list from Firestore. Using local fallback.", err);
+    if (localList.length > 0) return localList;
+    return [{ id: 'default', name: 'الفرع الرئيسي', address: 'المقر المركزي', phone: '+216 24260711', isMain: true, createdAt: '' }];
   }
 }
 
 /**
- * Saves or updates a superette's basic metadata in Firestore.
+ * Saves or updates a superette's basic metadata in Firestore and local storage.
  */
 export async function saveUserSuperetteMeta(userId: string, meta: SuperetteMeta): Promise<void> {
+  const localKey = `innova_branches_meta_${userId || 'demo'}`;
+  try {
+    const currentCached = safeLocalStorage.getItem(localKey);
+    let list: SuperetteMeta[] = currentCached ? JSON.parse(currentCached) : [];
+    const index = list.findIndex(b => b.id === meta.id);
+    if (index >= 0) {
+      list[index] = { ...list[index], ...meta };
+    } else {
+      list.push(meta);
+    }
+    safeLocalStorage.setItem(localKey, JSON.stringify(list));
+  } catch (e) {}
+
+  if (!userId || userId === 'demo' || userId === 'default') return;
+
   const docRef = doc(db, 'users', userId, 'superettes_meta', meta.id);
   try {
-    await setDoc(docRef, meta, { merge: true });
+    await setDoc(docRef, cleanUndefined(meta), { merge: true });
   } catch (err) {
     console.error("Failed storing superette metadata", err);
   }
@@ -100,6 +136,18 @@ export async function saveUserSuperetteMeta(userId: string, meta: SuperetteMeta)
  * Deletes a superette workspace's metadata and data.
  */
 export async function deleteUserSuperetteMeta(userId: string, superetteId: string): Promise<void> {
+  const localKey = `innova_branches_meta_${userId || 'demo'}`;
+  try {
+    const currentCached = safeLocalStorage.getItem(localKey);
+    if (currentCached) {
+      let list: SuperetteMeta[] = JSON.parse(currentCached);
+      list = list.filter(b => b.id !== superetteId);
+      safeLocalStorage.setItem(localKey, JSON.stringify(list));
+    }
+  } catch (e) {}
+
+  if (!userId || userId === 'demo' || userId === 'default') return;
+
   const docRef = doc(db, 'users', userId, 'superettes_meta', superetteId);
   try {
     await deleteDoc(docRef);
@@ -107,6 +155,7 @@ export async function deleteUserSuperetteMeta(userId: string, superetteId: strin
     console.error("Failed deleting superette metadata", err);
   }
 }
+
 
 /**
  * Loads the complete database for a given user and superette from Firestore.

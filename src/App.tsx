@@ -34,6 +34,13 @@ import TelecomRecharge from './components/TelecomRecharge';
 import SaaSDeveloperConsole from './components/SaaSDeveloperConsole';
 import SaaSLicenseLockedScreen from './components/SaaSLicenseLockedScreen';
 import ToastContainer from './components/ToastContainer';
+import BranchSelector from './components/BranchSelector';
+import BranchManagerModal from './components/BranchManagerModal';
+import BranchStockTransferModal from './components/BranchStockTransferModal';
+import MultiBranchOverviewModal from './components/MultiBranchOverviewModal';
+import WeeklyInventory from './components/WeeklyInventory';
+import { checkAndRunAutoWeeklyInventory } from './utils/inventoryScheduler';
+import { BranchMeta } from './types';
 
 import { 
   LayoutDashboard, 
@@ -67,7 +74,8 @@ import {
   Moon,
   Printer,
   Store,
-  Calendar
+  Calendar,
+  ClipboardCheck
 } from 'lucide-react';
 
 function AppContent() {
@@ -92,12 +100,21 @@ function AppContent() {
   
   // Multi-store workspaces State
   const [activeSuperetteId, setActiveSuperetteId] = useState<string>('default');
-  const [superettesList, setSuperettesList] = useState<SuperetteMeta[]>([
-    { id: 'default', name: 'Superette Principale', createdAt: '' }
+  const [superettesList, setSuperettesList] = useState<BranchMeta[]>([
+    { id: 'default', name: 'الفرع الرئيسي', address: 'المقر المركزي', phone: '+216 24260711', isMain: true, createdAt: '' }
   ]);
+  const [showBranchManagerModal, setShowBranchManagerModal] = useState(false);
+  const [showStockTransferModal, setShowStockTransferModal] = useState(false);
+  const [showMultiBranchOverviewModal, setShowMultiBranchOverviewModal] = useState(false);
   const [showSuperetteModal, setShowSuperetteModal] = useState(false);
   const [newSuperetteName, setNewSuperetteName] = useState('');
   const [isCreatingSuperette, setIsCreatingSuperette] = useState(false);
+
+  const handleRefreshBranches = async () => {
+    const userId = user ? user.uid : 'default';
+    const list = await loadUserSuperettesList(userId);
+    setSuperettesList(list);
+  };
   
   // Worker-Only Restricted Mode state
   const [isBrowserOnline, setIsBrowserOnline] = useState<boolean>(() => typeof navigator !== 'undefined' ? navigator.onLine : true);
@@ -249,49 +266,55 @@ function AppContent() {
   };
 
   const switchSuperette = async (targetId: string) => {
-    if (!user) return;
     setSyncingCloud(true);
     isInitialLoginRef.current = true; // Reset alert trigger so newly loaded superette is checked
+    const userId = user ? user.uid : 'default';
     try {
       setActiveSuperetteId(targetId);
-      safeLocalStorage.setItem('active_superette_id_' + user.uid, targetId);
+      safeLocalStorage.setItem('active_superette_id_' + userId, targetId);
 
-      const cloudDb = await loadUserDatabase(user.uid, targetId);
-      let loadedDb = cloudDb;
+      let loadedDb: DatabaseState | null = null;
 
-      if (cloudDb) {
-        const localSettings: Partial<StoreSettings> = getSuperetteDatabase(user.uid, targetId).settings || {};
-        const cloudSettings: Partial<StoreSettings> = cloudDb.settings || {};
-        const mergedSettings = {
-          ...DEFAULT_SETTINGS,
-          ...localSettings,
-          ...cloudSettings
-        };
-        
-        // Prioritize custom logo if either local or cloud settings contains one
-        if (isCustomLogo(localSettings.storeLogo) && !isCustomLogo(cloudSettings.storeLogo)) {
-          mergedSettings.storeLogo = localSettings.storeLogo;
-        } else if (isCustomLogo(cloudSettings.storeLogo)) {
-          mergedSettings.storeLogo = cloudSettings.storeLogo;
+      if (user) {
+        const cloudDb = await loadUserDatabase(user.uid, targetId);
+        if (cloudDb) {
+          const localSettings: Partial<StoreSettings> = getSuperetteDatabase(user.uid, targetId).settings || {};
+          const cloudSettings: Partial<StoreSettings> = cloudDb.settings || {};
+          const mergedSettings = {
+            ...DEFAULT_SETTINGS,
+            ...localSettings,
+            ...cloudSettings
+          };
+          
+          // Prioritize custom logo if either local or cloud settings contains one
+          if (isCustomLogo(localSettings.storeLogo) && !isCustomLogo(cloudSettings.storeLogo)) {
+            mergedSettings.storeLogo = localSettings.storeLogo;
+          } else if (isCustomLogo(cloudSettings.storeLogo)) {
+            mergedSettings.storeLogo = cloudSettings.storeLogo;
+          } else {
+            mergedSettings.storeLogo = DEFAULT_SETTINGS.storeLogo;
+          }
+
+          const finalizedDb = {
+            ...cloudDb,
+            settings: mergedSettings
+          };
+          loadedDb = finalizedDb;
+          setDb(finalizedDb);
+          saveSuperetteDatabase(user.uid, targetId, finalizedDb);
         } else {
-          mergedSettings.storeLogo = DEFAULT_SETTINGS.storeLogo;
-        }
+          const localFallback = getSuperetteDatabase(user.uid, targetId);
+          loadedDb = localFallback;
+          setDb(localFallback);
 
-        const finalizedDb = {
-          ...cloudDb,
-          settings: mergedSettings
-        };
-        loadedDb = finalizedDb;
-        setDb(finalizedDb);
-        saveSuperetteDatabase(user.uid, targetId, finalizedDb);
+          seedUserDatabase(user.uid, localFallback, targetId).catch(err => {
+            console.log("[FIRESTORE SYSTEM INFO] Seeding for new superette:", err);
+          });
+        }
       } else {
-        const localFallback = getSuperetteDatabase(user.uid, targetId);
+        const localFallback = getSuperetteDatabase('default', targetId);
         loadedDb = localFallback;
         setDb(localFallback);
-
-        seedUserDatabase(user.uid, localFallback, targetId).catch(err => {
-          console.log("[FIRESTORE SYSTEM INFO] Seeding for new superette:", err);
-        });
       }
 
       const activeTheme = loadedDb?.settings?.themeMode || 'light';
@@ -1113,6 +1136,25 @@ function AppContent() {
     }
   }, [db, language, license]);
 
+  // 1.6. Automatic Weekly Inventory (كل جمعة جرد تلقائي للسلع والمزودين)
+  useEffect(() => {
+    if (!db || !db.products) return;
+    try {
+      const currentBranchName = superettesList.find(s => s.id === activeSuperetteId)?.name || 'الفرع الرئيسي';
+      const autoResult = checkAndRunAutoWeeklyInventory(db, handleUpdateDb, activeSuperetteId, currentBranchName);
+      if (autoResult.ran && autoResult.report) {
+        const toastMsg = language === 'ar'
+          ? `📅 تم حفظ الجرد الأسبوعي التلقائي للأسبوع ${autoResult.report.weekNumber} بنجاح!`
+          : `📅 Inventaire automatique de la semaine ${autoResult.report.weekNumber} archivé !`;
+        window.dispatchEvent(new CustomEvent('show-toast', {
+          detail: { message: toastMsg, type: 'success' }
+        }));
+      }
+    } catch (err) {
+      console.warn('[WEEKLY INVENTORY] Automatic inventory check skipped or errored:', err);
+    }
+  }, [db?.settings?.enableAutoWeeklyInventory, db?.settings?.weeklyInventoryDay, activeSuperetteId]);
+
   // 2. Fallback to Guest/Demo offline mode if explicitly clicked
   const handleEnterDemo = () => {
     setDemoMode(true);
@@ -1507,8 +1549,8 @@ function AppContent() {
   let NAV_ITEMS = [
     { id: 'dashboard', label: t('nav_dashboard'), subLabel: language === 'ar' ? 'لوحة القيادة والمؤشرات' : 'Statistiques', icon: LayoutDashboard },
     { id: 'pos', label: t('nav_pos'), subLabel: language === 'ar' ? 'آلة تسجيل النقد السريع' : 'Caisse de vente', icon: ShoppingCart },
-    { id: 'telecom', label: language === 'ar' ? 'تذاكر شحن الهاتف' : 'Tickets Télécom', subLabel: language === 'ar' ? 'Ooredoo، اتصالات تونس، Orange' : 'Recharges Ooredoo, TT, Orange', icon: Smartphone },
     { id: 'products', label: t('nav_products'), subLabel: language === 'ar' ? 'المخزون والسلع الغذائية' : 'Catalogue & Prix', icon: Boxes },
+    { id: 'weekly_inventory', label: language === 'ar' ? 'الجرد الأسبوعي والمزودين' : 'Inventaire & Fournisseurs', subLabel: language === 'ar' ? 'جرد السلع ومستحقات المزودين' : 'Audit hebdo & dettes', icon: ClipboardCheck },
     { id: 'invoices', label: t('nav_invoices'), subLabel: language === 'ar' ? 'أرشيف المبيعات والوصولات' : 'Journal ventes', icon: FileText },
     { id: 'partners', label: t('nav_partners'), subLabel: language === 'ar' ? 'الحسابات والديون والعملاء' : 'Comptes auxiliaires', icon: Users },
     { id: 'finance', label: t('nav_finance'), subLabel: language === 'ar' ? 'الكمبيالات والخزينة' : 'Dépenses & Traites', icon: Coins },
@@ -1525,16 +1567,15 @@ function AppContent() {
   }
 
   if (isWorkerMode) {
-    // Workers see both cash sale register (POS) and telecom recharge ticket creator!
-    NAV_ITEMS = NAV_ITEMS.filter(item => item.id === 'pos' || item.id === 'telecom');
+    NAV_ITEMS = NAV_ITEMS.filter(item => item.id === 'pos');
   }
 
   // Filter based on assigned user role
   if (activeUser) {
     if (activeUser.role === 'sales') {
-      NAV_ITEMS = NAV_ITEMS.filter(item => ['pos', 'telecom', 'invoices', 'partners'].includes(item.id));
+      NAV_ITEMS = NAV_ITEMS.filter(item => ['pos', 'invoices', 'partners'].includes(item.id));
     } else if (activeUser.role === 'inventory') {
-      NAV_ITEMS = NAV_ITEMS.filter(item => ['products'].includes(item.id));
+      NAV_ITEMS = NAV_ITEMS.filter(item => ['products', 'weekly_inventory'].includes(item.id));
     }
   }
 
@@ -1653,6 +1694,17 @@ function AppContent() {
             <Settings className="w-3.5 h-3.5 animate-spin-slow group-hover:rotate-90 transition-transform duration-500 shrink-0" />
           </button>
         </div>
+
+        {/* Multi-Branch Selector in Sidebar */}
+        <BranchSelector
+          variant="sidebar"
+          branches={superettesList}
+          currentBranchId={activeSuperetteId}
+          onSwitchBranch={switchSuperette}
+          onOpenManager={() => setShowBranchManagerModal(true)}
+          onOpenStockTransfer={() => setShowStockTransferModal(true)}
+          onOpenGlobalOverview={() => setShowMultiBranchOverviewModal(true)}
+        />
 
 
 
@@ -1923,7 +1975,30 @@ function AppContent() {
               onClick={(e) => e.stopPropagation()}
             >
               <nav className="p-4 space-y-2">
-
+                {/* Multi-Branch Selector in Mobile Drawer */}
+                <div className="mb-2">
+                  <BranchSelector
+                    variant="sidebar"
+                    branches={superettesList}
+                    currentBranchId={activeSuperetteId}
+                    onSwitchBranch={(id) => {
+                      switchSuperette(id);
+                      setMobileMenuOpen(false);
+                    }}
+                    onOpenManager={() => {
+                      setMobileMenuOpen(false);
+                      setShowBranchManagerModal(true);
+                    }}
+                    onOpenStockTransfer={() => {
+                      setMobileMenuOpen(false);
+                      setShowStockTransferModal(true);
+                    }}
+                    onOpenGlobalOverview={() => {
+                      setMobileMenuOpen(false);
+                      setShowMultiBranchOverviewModal(true);
+                    }}
+                  />
+                </div>
 
                 <div className="text-slate-500 text-[10px] uppercase font-bold tracking-widest px-2 pb-1">
                   {t('nav_principal')}
@@ -2121,22 +2196,16 @@ function AppContent() {
               </button>
             )}
             
-            {/* Active Store Accent Badge */}
-            <div className="hidden sm:flex items-center gap-2 py-1 px-2.5 bg-slate-50 border border-slate-200 rounded text-xs text-slate-700 shrink-0 select-none">
-              {resolveStoreLogo(db.settings?.storeLogo) && (
-                <div className="w-5 h-5 flex items-center justify-center rounded-sm overflow-hidden bg-white shrink-0 border border-slate-200">
-                  {((resolveStoreLogo(db.settings?.storeLogo) || '').startsWith('data:') || (resolveStoreLogo(db.settings?.storeLogo) || '').startsWith('http') || (resolveStoreLogo(db.settings?.storeLogo) || '').startsWith('/') || (resolveStoreLogo(db.settings?.storeLogo) || '').includes('.') || (resolveStoreLogo(db.settings?.storeLogo) || '').length > 15) ? (
-                    <img src={resolveStoreLogo(db.settings?.storeLogo)} alt="Logo" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
-                  ) : (
-                    <span className="text-[11px]">{resolveStoreLogo(db.settings?.storeLogo)}</span>
-                  )}
-                </div>
-              )}
-              <span className="font-bold font-display truncate max-w-[150px]">{db.settings?.storeName || 'INNOVA POS PRO'}</span>
-              <span className="inline-block px-1 bg-slate-100 rounded text-[9px] text-slate-500 font-bold font-mono">
-                {db.settings?.activitySector || 'Standard'}
-              </span>
-            </div>
+            {/* Multi-Branch Selector & Active Store Header Dropdown */}
+            <BranchSelector
+              variant="header"
+              branches={superettesList}
+              currentBranchId={activeSuperetteId}
+              onSwitchBranch={switchSuperette}
+              onOpenManager={() => setShowBranchManagerModal(true)}
+              onOpenStockTransfer={() => setShowStockTransferModal(true)}
+              onOpenGlobalOverview={() => setShowMultiBranchOverviewModal(true)}
+            />
             
             {/* Sync Status Badge */}
             <div className={`py-1 px-3 border rounded text-[10px] flex items-center gap-1.5 shrink-0 font-bold uppercase tracking-normal ${
@@ -2354,6 +2423,22 @@ function AppContent() {
                     transition={{ duration: 0.22, ease: "easeInOut" }}
                   >
                     <Products db={db} onUpdateDb={handleUpdateDb} />
+                  </motion.div>
+                )}
+                {activeTab === 'weekly_inventory' && (
+                  <motion.div
+                    key="weekly_inventory"
+                    initial={{ opacity: 0, y: 12 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -12 }}
+                    transition={{ duration: 0.22, ease: "easeInOut" }}
+                  >
+                    <WeeklyInventory 
+                      db={db} 
+                      onUpdateDb={handleUpdateDb} 
+                      branchId={activeSuperetteId}
+                      branchName={superettesList.find(s => s.id === activeSuperetteId)?.name || 'الفرع الرئيسي'}
+                    />
                   </motion.div>
                 )}
                 {activeTab === 'partners' && (
@@ -3716,6 +3801,45 @@ function AppContent() {
           </div>
         )}
       </AnimatePresence>
+
+      {/* Multi-Branch Manager Modal */}
+      {db && (
+        <BranchManagerModal
+          isOpen={showBranchManagerModal}
+          onClose={() => setShowBranchManagerModal(false)}
+          branches={superettesList}
+          currentBranchId={activeSuperetteId}
+          onSwitchBranch={switchSuperette}
+          onRefreshBranches={handleRefreshBranches}
+          onOpenStockTransfer={() => setShowStockTransferModal(true)}
+          onOpenGlobalOverview={() => setShowMultiBranchOverviewModal(true)}
+          currentDb={db}
+          user={user}
+        />
+      )}
+
+      {/* Multi-Branch Inter-Branch Stock Transfer Modal */}
+      {db && (
+        <BranchStockTransferModal
+          isOpen={showStockTransferModal}
+          onClose={() => setShowStockTransferModal(false)}
+          currentBranchId={activeSuperetteId}
+          branches={superettesList}
+          currentDb={db}
+          onUpdateCurrentDb={handleUpdateDb}
+          user={user}
+        />
+      )}
+
+      {/* Multi-Branch Consolidated Analytics Overview Modal */}
+      <MultiBranchOverviewModal
+        isOpen={showMultiBranchOverviewModal}
+        onClose={() => setShowMultiBranchOverviewModal(false)}
+        branches={superettesList}
+        currentBranchId={activeSuperetteId}
+        onSwitchBranch={switchSuperette}
+        user={user}
+      />
 
       {/* Global generic CRUD operations toast container */}
       <ToastContainer />

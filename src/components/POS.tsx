@@ -499,6 +499,82 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
   const [newClientAddress, setNewClientAddress] = useState('');
   const [newClientDiscountRate, setNewClientDiscountRate] = useState('');
 
+  // Thermal receipt printer connection status based on browser's printing API availability
+  const [printerApiAvailable, setPrinterApiAvailable] = useState<boolean>(() => {
+    return typeof window !== 'undefined' && typeof window.print === 'function';
+  });
+  const [printerStatus, setPrinterStatus] = useState<'connected' | 'printing' | 'disconnected'>(() => {
+    return (typeof window !== 'undefined' && typeof window.print === 'function') ? 'connected' : 'disconnected';
+  });
+  const [showPrinterDetailsModal, setShowPrinterDetailsModal] = useState<boolean>(false);
+
+  useEffect(() => {
+    const checkApi = () => {
+      const hasApi = typeof window !== 'undefined' && typeof window.print === 'function';
+      setPrinterApiAvailable(hasApi);
+      if (!hasApi) {
+        setPrinterStatus('disconnected');
+      } else {
+        setPrinterStatus(prev => prev === 'printing' ? 'printing' : 'connected');
+      }
+    };
+
+    checkApi();
+
+    const handleBeforePrint = () => setPrinterStatus('printing');
+    const handleAfterPrint = () => {
+      const hasApi = typeof window !== 'undefined' && typeof window.print === 'function';
+      setPrinterStatus(hasApi ? 'connected' : 'disconnected');
+    };
+
+    window.addEventListener('beforeprint', handleBeforePrint);
+    window.addEventListener('afterprint', handleAfterPrint);
+
+    return () => {
+      window.removeEventListener('beforeprint', handleBeforePrint);
+      window.removeEventListener('afterprint', handleAfterPrint);
+    };
+  }, []);
+
+  // Quick thermal test receipt generator
+  const handleTestThermalPrint = () => {
+    const testInvoice: Invoice = {
+      id: `TEST-PRINT-${Date.now()}`,
+      number: `TEST-${Math.floor(1000 + Math.random() * 9000)}`,
+      date: new Date().toISOString(),
+      type: 'bl',
+      partnerId: 'anonymous',
+      partnerName: language === 'ar' ? 'اختبار جاهزية الطابعة' : 'Test Connexion Imprimante',
+      items: [
+        {
+          productId: 'test-1',
+          productName: language === 'ar' ? 'تذكرة اختبار الاتصال الحراري (80mm)' : 'Ticket Test Impression Thermique (80mm)',
+          qty: 1,
+          purchasePrice: 0,
+          sellingPrice: 1.0,
+          total: 1.0
+        }
+      ],
+      subTotal: 1.0,
+      taxRate: 0,
+      taxAmount: 0,
+      discount: 0,
+      total: 1.0,
+      paidAmount: 1.0,
+      balance: 0
+    };
+
+    setPrintedInvoice(testInvoice);
+    setPrintFormat('ticket');
+    setShowPrinterDetailsModal(false);
+    showToast(
+      language === 'ar' 
+        ? '🖨️ جاري تشغيل تذكرة اختبار الطابعة الحرارية...' 
+        : '🖨️ Lancement du ticket test sur imprimante thermique...',
+      'info'
+    );
+  };
+
   // Active Checkout Printable Preview
   const [printedInvoice, setPrintedInvoice] = useState<Invoice | null>(null);
   const [printFormat, setPrintFormat] = useState<'a4' | 'ticket'>(() => {
@@ -2135,6 +2211,49 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
             <span className="text-slate-300">|</span>
             <span><kbd className="bg-white px-1.5 py-0.5 border border-slate-300 rounded shadow-3xs font-bold text-slate-900 select-all">F6</kbd> Attente</span>
           </div>
+
+          {/* Thermal Receipt Printer Connection Status Icon & Quick Menu */}
+          <button
+            type="button"
+            onClick={() => setShowPrinterDetailsModal(true)}
+            className={`px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all shadow-3xs flex items-center gap-1.5 cursor-pointer border select-none ${
+              printerStatus === 'connected'
+                ? 'bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border-emerald-200'
+                : printerStatus === 'printing'
+                ? 'bg-amber-50 hover:bg-amber-100 text-amber-800 border-amber-300 animate-pulse'
+                : 'bg-rose-50 hover:bg-rose-100 text-rose-800 border-rose-200'
+            }`}
+            title={
+              printerStatus === 'connected'
+                ? (language === 'ar' ? 'طابعة التذاكر الحرارية: متصلة وجاهزة (انقر للإعدادات والاختبار)' : 'Imprimante thermique: Connectée & Prête (Cliquer pour gérer)')
+                : printerStatus === 'printing'
+                ? (language === 'ar' ? 'جاري إرسال المستند للطباعة...' : 'Impression en cours...')
+                : (language === 'ar' ? 'طابعة التذاكر الحرارية: غير متصلة (واجهة الطباعة غير متوفرة)' : 'Imprimante thermique: Déconnectée (API non disponible)')
+            }
+          >
+            <div className="relative flex items-center justify-center">
+              <Printer className={`w-3.5 h-3.5 ${printerStatus === 'connected' ? 'text-emerald-700' : printerStatus === 'printing' ? 'text-amber-700 animate-bounce' : 'text-rose-700'}`} />
+              <span className="absolute -top-1 -right-1 flex h-2 w-2">
+                {printerStatus === 'connected' && (
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                )}
+                <span className={`relative inline-flex rounded-full h-2 w-2 ${
+                  printerStatus === 'connected'
+                    ? 'bg-emerald-500'
+                    : printerStatus === 'printing'
+                    ? 'bg-amber-500'
+                    : 'bg-rose-500'
+                }`}></span>
+              </span>
+            </div>
+            <span className="hidden sm:inline font-mono text-[11px] font-bold">
+              {printerStatus === 'connected'
+                ? (language === 'ar' ? 'طابعة: متصلة' : 'Imprimante: Prête')
+                : printerStatus === 'printing'
+                ? (language === 'ar' ? 'طباعة...' : 'Impression...')
+                : (language === 'ar' ? 'طابعة: غير متصلة' : 'Imprimante: Déconnectée')}
+            </span>
+          </button>
 
           {/* File d'attente / Attente client button */}
           <button
@@ -6417,6 +6536,208 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
                 </button>
               </div>
 
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* 🖨️ Thermal Receipt Printer Connection Status & Diagnostics Modal */}
+      <AnimatePresence>
+        {showPrinterDetailsModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-slate-950/75 backdrop-blur-xs no-print">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 10 }}
+              transition={{ duration: 0.2 }}
+              className="bg-white border border-slate-200 rounded-2xl shadow-2xl w-full max-w-lg flex flex-col overflow-hidden text-slate-800"
+              dir={language === 'ar' ? 'rtl' : 'ltr'}
+            >
+              {/* Modal Header */}
+              <div className={`p-4 text-white flex items-center justify-between shrink-0 shadow-md ${
+                printerStatus === 'connected'
+                  ? 'bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-700'
+                  : printerStatus === 'printing'
+                  ? 'bg-gradient-to-r from-amber-600 via-yellow-600 to-amber-700'
+                  : 'bg-gradient-to-r from-rose-600 via-red-600 to-rose-700'
+              }`}>
+                <div className="flex items-center gap-3">
+                  <div className="p-2.5 bg-white/20 rounded-xl backdrop-blur-sm">
+                    <Printer className="w-6 h-6 text-white" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <h2 className="text-base sm:text-lg font-black tracking-tight uppercase">
+                        {language === 'ar' ? 'حالة الطابعة الحرارية' : 'Statut Imprimante Thermique'}
+                      </h2>
+                      <span className="bg-white/30 text-white text-[10px] font-mono font-extrabold px-2 py-0.5 rounded-full border border-white/20">
+                        {printerStatus === 'connected'
+                          ? (language === 'ar' ? 'متصلة 🟢' : 'Connectée 🟢')
+                          : printerStatus === 'printing'
+                          ? (language === 'ar' ? 'طباعة ⏳' : 'Impression ⏳')
+                          : (language === 'ar' ? 'غير متصلة 🔴' : 'Déconnectée 🔴')}
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-white/90 font-medium">
+                      {language === 'ar'
+                        ? 'مراقبة واجهة الطباعة ومستوى الاتصال بالطابعة الحرارية للتذاكر والفواتير'
+                        : "Surveillance de l'API d'impression et du sous-système de tickets thermiques"}
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowPrinterDetailsModal(false)}
+                  className="p-2 hover:bg-white/20 rounded-xl transition-colors cursor-pointer text-white"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* Modal Body */}
+              <div className="p-5 space-y-4 overflow-y-auto max-h-[75vh]">
+                {/* Status Diagnostic Card */}
+                <div className={`p-4 rounded-xl border flex items-start gap-3.5 ${
+                  printerStatus === 'connected'
+                    ? 'bg-emerald-50/70 border-emerald-200 text-emerald-950'
+                    : printerStatus === 'printing'
+                    ? 'bg-amber-50/70 border-amber-200 text-amber-950'
+                    : 'bg-rose-50/70 border-rose-200 text-rose-950'
+                }`}>
+                  <div className={`p-2 rounded-lg shrink-0 ${
+                    printerStatus === 'connected' ? 'bg-emerald-100 text-emerald-700' : printerStatus === 'printing' ? 'bg-amber-100 text-amber-700' : 'bg-rose-100 text-rose-700'
+                  }`}>
+                    <Printer className="w-5 h-5" />
+                  </div>
+                  <div className="space-y-1 text-xs">
+                    <div className="flex items-center gap-2">
+                      <strong className="font-extrabold text-sm">
+                        {printerStatus === 'connected'
+                          ? (language === 'ar' ? 'واجهة الطباعة متاحة وجاهزة للعمل' : 'API Impression disponible & Prête')
+                          : printerStatus === 'printing'
+                          ? (language === 'ar' ? 'المستند قيد الإرسال إلى الطابعة' : 'Impression en cours de traitement...')
+                          : (language === 'ar' ? 'واجهة الطباعة غير متوفرة في هذا المتصفح' : "API d'impression non disponible")}
+                      </strong>
+                    </div>
+                    <p className="text-slate-600 leading-relaxed text-[11px]">
+                      {printerStatus === 'connected'
+                        ? (language === 'ar' 
+                            ? 'نظام الطباعة في المتصفح نشط ومتوافق مع طابعات الإيصالات الحرارية (ESC/POS 80mm / 58mm) وطابعات A4 القياسية.'
+                            : "Le sous-système d'impression du navigateur est actif et prêt pour les imprimantes de tickets de caisse thermiques (ESC/POS 80mm / 58mm) et standards.")
+                        : (language === 'ar'
+                            ? 'تعذر الوصول إلى وظيفة الطباعة بالمتصفح. يرجى التأكد من تشغيل المتصفح في بيئة تدعم الطباعة.'
+                            : "La fonction d'impression n'est pas accessible. Veuillez vérifier les permissions de votre navigateur.")}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Print Configuration Quick Controls */}
+                <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-3 text-xs">
+                  <h3 className="text-xs font-black uppercase text-slate-700 tracking-wider flex items-center gap-1.5">
+                    <span>⚙️</span>
+                    <span>{language === 'ar' ? 'إعدادات وسلوك الطباعة السريعة' : 'Paramètres d\'impression rapide'}</span>
+                  </h3>
+
+                  {/* Format Selector */}
+                  <div className="flex items-center justify-between bg-white p-2.5 rounded-lg border border-slate-200">
+                    <span className="font-bold text-slate-700">
+                      {language === 'ar' ? 'تنسيق الطباعة الافتراضي:' : 'Format par défaut :'}
+                    </span>
+                    <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-md border border-slate-200">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setPrintFormat('ticket');
+                          safeLocalStorage.setItem('pos_print_format', 'ticket');
+                        }}
+                        className={`px-2.5 py-1 rounded text-xs font-bold transition-all cursor-pointer ${
+                          printFormat === 'ticket'
+                            ? 'bg-blue-600 text-white shadow-xs'
+                            : 'text-slate-600 hover:text-slate-900'
+                        }`}
+                      >
+                        🎫 Ticket (80mm)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setPrintFormat('a4');
+                          safeLocalStorage.setItem('pos_print_format', 'a4');
+                        }}
+                        className={`px-2.5 py-1 rounded text-xs font-bold transition-all cursor-pointer ${
+                          printFormat === 'a4'
+                            ? 'bg-blue-600 text-white shadow-xs'
+                            : 'text-slate-600 hover:text-slate-900'
+                        }`}
+                      >
+                        📄 A4
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Auto Print Toggle */}
+                  <div className="flex items-center justify-between bg-white p-2.5 rounded-lg border border-slate-200">
+                    <div className="text-start">
+                      <span className="font-bold text-slate-700 block">
+                        {language === 'ar' ? 'طباعة تذكرة تلقائية عند كل عملية بيع' : 'Impression automatique à chaque vente'}
+                      </span>
+                      <span className="text-[10px] text-slate-500">
+                        {language === 'ar' ? 'إرسال أمر الطباعة مباشرة بعد إتمام القبض' : 'Déclenche le dialogue d\'impression dès l\'encaissement'}
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const next = !autoPrint;
+                        setAutoPrint(next);
+                        safeLocalStorage.setItem('pos_auto_print', String(next));
+                      }}
+                      className={`px-3 py-1.5 rounded-lg font-mono text-xs font-extrabold transition-all cursor-pointer border ${
+                        autoPrint
+                          ? 'bg-emerald-600 text-white border-emerald-700 shadow-xs'
+                          : 'bg-slate-100 text-slate-600 border-slate-300'
+                      }`}
+                    >
+                      {autoPrint 
+                        ? (language === 'ar' ? 'مفعل ✔' : 'Activé ✔') 
+                        : (language === 'ar' ? 'معطل ✕' : 'Désactivé ✕')}
+                    </button>
+                  </div>
+                </div>
+
+                {/* iFrame Notice if applicable */}
+                {checkIsIframe() && (
+                  <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-[11px] text-amber-900 flex items-start gap-2">
+                    <span className="text-sm shrink-0">💡</span>
+                    <p>
+                      {language === 'ar'
+                        ? 'تنبيه المعاينة: داخل إطار المعاينة، قد تتطلب الطباعة المباشرة فتح التطبيق في علامة تبويب جديدة أو استخدام حفظ PDF.'
+                        : "Aperçu iFrame : Pour envoyer les flux directement vers votre imprimante thermique USB/Bluetooth, ouvrez l'application dans un onglet dédié."}
+                    </p>
+                  </div>
+                )}
+
+                {/* Test Print Action */}
+                <button
+                  type="button"
+                  onClick={handleTestThermalPrint}
+                  className="w-full py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-extrabold text-xs uppercase tracking-wider rounded-xl shadow-md flex items-center justify-center gap-2 cursor-pointer transition-all active:scale-98"
+                >
+                  <Printer className="w-4 h-4" />
+                  <span>{language === 'ar' ? '🖨️ طباعة تذكرة تجريبية (Test Print 80mm)' : '🖨️ Imprimer un ticket de test (80mm)'}</span>
+                </button>
+              </div>
+
+              {/* Modal Footer */}
+              <div className="p-4 bg-slate-50 border-t border-slate-200 flex justify-end shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setShowPrinterDetailsModal(false)}
+                  className="px-4 py-2 bg-slate-900 hover:bg-black text-white font-extrabold text-xs rounded-lg transition-colors cursor-pointer"
+                >
+                  {language === 'ar' ? 'إغلاق' : 'Fermer'}
+                </button>
+              </div>
             </motion.div>
           </div>
         )}
