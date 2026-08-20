@@ -10,6 +10,7 @@ import {
   DAY_LABELS_AR,
   DAY_LABELS_FR
 } from '../utils/inventoryScheduler';
+import { normalizeCategoryName } from '../utils/categories';
 import { showToast } from '../utils/toast';
 import { 
   ClipboardCheck, 
@@ -126,13 +127,13 @@ export default function WeeklyInventory({ db, onUpdateDb, branchId = 'default', 
     showToast(isAr ? 'تم تصدير تقرير الجرد بصيغة PDF بنجاح! 📄' : 'Rapport PDF exporté avec succès ! 📄', 'success');
   };
 
-  // Categories list
+  // Categories list (deduplicated & normalized)
   const categories = useMemo(() => {
     const set = new Set<string>();
     displayedReport.productsSnapshot.forEach(p => {
-      if (p.category) set.add(p.category);
+      if (p.category) set.add(normalizeCategoryName(p.category));
     });
-    return Array.from(set);
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
   }, [displayedReport]);
 
   // Filtered Products Snapshot
@@ -143,7 +144,7 @@ export default function WeeklyInventory({ db, onUpdateDb, branchId = 'default', 
         p.code.toLowerCase().includes(productSearch.toLowerCase()) ||
         (p.supplierName && p.supplierName.toLowerCase().includes(productSearch.toLowerCase()));
       
-      const matchCategory = categoryFilter === 'ALL' || p.category === categoryFilter;
+      const matchCategory = categoryFilter === 'ALL' || normalizeCategoryName(p.category) === categoryFilter;
       const matchStatus = statusFilter === 'ALL' || p.status === statusFilter;
       const matchSupplier = supplierFilter === 'ALL' || p.supplierId === supplierFilter;
 

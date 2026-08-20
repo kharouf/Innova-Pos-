@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { DatabaseState, Product, Partner, Invoice, InvoiceItem, HeldTicket } from '../types';
 import { getProductVisual, isProductInPromo, getActiveProductPrice } from '../utils/db';
+import { normalizeCategoryName } from '../utils/categories';
 import { useLanguage } from '../utils/LanguageContext';
 import { safeLocalStorage, checkIsIframe } from '../utils/storage';
 import { Html5Qrcode } from 'html5-qrcode';
@@ -1227,9 +1228,15 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
     };
   }, [cart]);
 
-  // Extract all categories
+  // Extract all categories (deduplicated & normalized)
   const categories = useMemo(() => {
-    return ['Tous', ...Array.from(new Set((db.products || []).map(p => p.category)))];
+    const set = new Set<string>();
+    (db.products || []).forEach(p => {
+      if (p.category) {
+        set.add(normalizeCategoryName(p.category));
+      }
+    });
+    return ['Tous', ...Array.from(set).sort((a, b) => a.localeCompare(b))];
   }, [db.products]);
 
   // Filtered list of products for catalog grid
@@ -1237,7 +1244,7 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
     return (db.products || []).filter(p => {
       const matchSearch = p.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
                           p.code.includes(searchQuery);
-      const matchCategory = selectedCategory === 'Tous' || p.category === selectedCategory;
+      const matchCategory = selectedCategory === 'Tous' || normalizeCategoryName(p.category) === selectedCategory;
       return matchSearch && matchCategory;
     });
   }, [db.products, searchQuery, selectedCategory]);

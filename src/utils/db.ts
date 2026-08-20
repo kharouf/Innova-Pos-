@@ -1,23 +1,94 @@
 import { DatabaseState, Product, Partner, Invoice, PaymentTransaction, Traite, DailyExpense, StoreSettings } from '../types';
 import { safeLocalStorage } from './storage';
+import { correctAndSyncProductBarcodes } from './tunisianBarcodes';
+import { deduplicateProductsCategories, normalizeCategoryName } from './categories';
 
 // Default sample data of a Tunisian Superette (Grocery / مواد غذائية)
 const INITIAL_DATABASE: DatabaseState = {
   products: [
+    // Boissons & Eaux / مياه ومشروبات
     {
-      id: 'prod-1',
-      code: '6191002003001',
-      name: 'Couscous Fin Diari 1kg (كسكسي دياري جويد)',
-      category: 'Céréales & Pâtes',
-      purchasePrice: 0.850,
-      sellingPrice: 1.100,
-      stock: 120,
-      minAlertQty: 20,
+      id: 'prod-hayat-1.5l',
+      code: '6194039500014',
+      name: 'Eau Minérale Naturelle Hayat 1.5L (ماء معدني طبيعي حياة)',
+      category: 'Boissons / مشروبات',
+      purchasePrice: 0.600,
+      sellingPrice: 0.800,
+      stock: 180,
+      minAlertQty: 30,
       unit: 'Pcs'
     },
     {
-      id: 'prod-2',
-      code: '6192403104523',
+      id: 'prod-safia-1.5l',
+      code: '6194001900017',
+      name: 'Eau Minérale Safia Naturelle 1.5L (ماء معدني صافية)',
+      category: 'Boissons / مشروبات',
+      purchasePrice: 0.650,
+      sellingPrice: 0.850,
+      stock: 180,
+      minAlertQty: 40,
+      unit: 'Pcs'
+    },
+    {
+      id: 'prod-sabrine-1.5l',
+      code: '6194002600015',
+      name: 'Eau Minérale Sabrine 1.5L (ماء معدني صابرين)',
+      category: 'Boissons / مشروبات',
+      purchasePrice: 0.600,
+      sellingPrice: 0.800,
+      stock: 160,
+      minAlertQty: 35,
+      unit: 'Pcs'
+    },
+    {
+      id: 'prod-marwa-1.5l',
+      code: '6194007800014',
+      name: 'Eau Minérale Marwa 1.5L (ماء معدني مروى)',
+      category: 'Boissons / مشروبات',
+      purchasePrice: 0.580,
+      sellingPrice: 0.750,
+      stock: 140,
+      minAlertQty: 25,
+      unit: 'Pcs'
+    },
+    {
+      id: 'prod-coca-1.5l',
+      code: '5449000000996',
+      name: 'Soda Coca-Cola Original 1.5L (كوكاكولا)',
+      category: 'Boissons / مشروبات',
+      purchasePrice: 2.650,
+      sellingPrice: 3.100,
+      stock: 150,
+      minAlertQty: 30,
+      unit: 'Pcs'
+    },
+    {
+      id: 'prod-boga-blanche',
+      code: '6194001200056',
+      name: 'Soda Boga Blanche 1.5L (بوغا بيضاء)',
+      category: 'Boissons / مشروبات',
+      purchasePrice: 2.300,
+      sellingPrice: 2.700,
+      stock: 120,
+      minAlertQty: 25,
+      unit: 'Pcs'
+    },
+    {
+      id: 'prod-boga-cidre',
+      code: '6194001200025',
+      name: 'Soda Boga Cidre 1.5L (بوغا سيدر)',
+      category: 'Boissons / مشروبات',
+      purchasePrice: 2.300,
+      sellingPrice: 2.700,
+      stock: 100,
+      minAlertQty: 25,
+      unit: 'Pcs'
+    },
+
+    // Produits Laitiers / مشتقات الحليب
+    {
+      id: 'prod-delice-lait',
+      code: '6191501201016',
       name: 'Lait Demi-Écrémé Délice UHT 1L (حليب دليس)',
       category: 'Produits Laitiers',
       purchasePrice: 1.350,
@@ -27,85 +98,19 @@ const INITIAL_DATABASE: DatabaseState = {
       unit: 'Pcs'
     },
     {
-      id: 'prod-3',
-      code: '6194512001122',
-      name: 'Thon Entier à l\'Huile d\'Olive Sidi Daoud 160g (تن سيدي داود)',
-      category: 'Conserves',
-      purchasePrice: 4.200,
-      sellingPrice: 4.900,
-      stock: 65,
-      minAlertQty: 15,
+      id: 'prod-vitalait-lait',
+      code: '6194006100016',
+      name: 'Lait Demi-Écrémé Vitalait UHT 1L (حليب فيتالايت)',
+      category: 'Produits Laitiers',
+      purchasePrice: 1.350,
+      sellingPrice: 1.450,
+      stock: 120,
+      minAlertQty: 25,
       unit: 'Pcs'
     },
     {
-      id: 'prod-4',
-      code: '6198502214433',
-      name: 'Harissa Traditionnelle Sicam 135g (هريسة سيكام)',
-      category: 'Conserves',
-      purchasePrice: 0.950,
-      sellingPrice: 1.250,
-      stock: 80,
-      minAlertQty: 15,
-      unit: 'Pcs'
-    },
-    {
-      id: 'prod-5',
-      code: '6190015022354',
-      name: 'Eau Minérale Safia Naturelle 1.5L (ماء معدني صافية)',
-      category: 'Boissons',
-      purchasePrice: 0.650,
-      sellingPrice: 0.850,
-      stock: 180,
-      minAlertQty: 40,
-      unit: 'Pcs'
-    },
-    {
-      id: 'prod-6',
-      code: '6191501004112',
-      name: 'Double Concentré de Tomate Sicam 400g (طماطم معلبة سيكام)',
-      category: 'Conserves',
-      purchasePrice: 1.850,
-      sellingPrice: 2.150,
-      stock: 85,
-      minAlertQty: 20,
-      unit: 'Pcs'
-    },
-    {
-      id: 'prod-7',
-      code: '6191114002341',
-      name: 'Spaghetti N°2 Randa 500g (معكرونة رندة)',
-      category: 'Céréales & Pâtes',
-      purchasePrice: 0.680,
-      sellingPrice: 0.850,
-      stock: 200,
-      minAlertQty: 30,
-      unit: 'Pcs'
-    },
-    {
-      id: 'prod-8',
-      code: '6192224018872',
-      name: 'Café Moulu Ben Yedder Tradition 250g (قهوة بن يدر)',
-      category: 'Café & Thé',
-      purchasePrice: 3.100,
-      sellingPrice: 3.800,
-      stock: 40,
-      minAlertQty: 10,
-      unit: 'Pcs'
-    },
-    {
-      id: 'prod-9',
-      code: '6191002003002',
-      name: 'Couscous Moyen Warda 1kg (كسكسي وردة وسط)',
-      category: 'Céréales & Pâtes',
-      purchasePrice: 0.840,
-      sellingPrice: 1.050,
-      stock: 95,
-      minAlertQty: 20,
-      unit: 'Pcs'
-    },
-    {
-      id: 'prod-10',
-      code: '6192003004005',
+      id: 'prod-delice-yaourt',
+      code: '6194004700119',
       name: 'Yaourt Brassé Délice Fraise (ياغورت دليس فراولة)',
       category: 'Produits Laitiers',
       purchasePrice: 0.480,
@@ -115,7 +120,7 @@ const INITIAL_DATABASE: DatabaseState = {
       unit: 'Pcs'
     },
     {
-      id: 'prod-11',
+      id: 'prod-giga-cheese',
       code: '6192404001258',
       name: 'Cheese Giga Carré 24 Pcs (جبن قيقا 24 قطعة)',
       category: 'Produits Laitiers',
@@ -126,7 +131,7 @@ const INITIAL_DATABASE: DatabaseState = {
       unit: 'Pcs'
     },
     {
-      id: 'prod-12',
+      id: 'prod-president-fromage',
       code: '6193001004521',
       name: 'Fromage Râpé Président 100g (جبن مرحي بريزيدن)',
       category: 'Produits Laitiers',
@@ -137,30 +142,8 @@ const INITIAL_DATABASE: DatabaseState = {
       unit: 'Pcs'
     },
     {
-      id: 'prod-13',
-      code: '6194002005612',
-      name: 'Huile de Tournesol Safia 1L (زيت صافية)',
-      category: 'Boissons',
-      purchasePrice: 4.800,
-      sellingPrice: 5.500,
-      stock: 60,
-      minAlertQty: 15,
-      unit: 'Pcs'
-    },
-    {
-      id: 'prod-14',
-      code: '6195003006721',
-      name: 'Huile d\'Olive Extra Vierge Châal 1L (زيت زيتون شعال)',
-      category: 'Boissons',
-      purchasePrice: 22.000,
-      sellingPrice: 25.000,
-      stock: 20,
-      minAlertQty: 5,
-      unit: 'Pcs'
-    },
-    {
-      id: 'prod-15',
-      code: '6196004007832',
+      id: 'prod-goldina-250',
+      code: '6191506500013',
       name: 'Margarine Goldina 250g (مارغرين غولدينا)',
       category: 'Produits Laitiers',
       purchasePrice: 1.400,
@@ -169,11 +152,114 @@ const INITIAL_DATABASE: DatabaseState = {
       minAlertQty: 15,
       unit: 'Pcs'
     },
+
+    // Céréales & Pâtes / عجين وكسكسي
     {
-      id: 'prod-16',
-      code: '6197005008943',
+      id: 'prod-diari-fin',
+      code: '6191502500019',
+      name: 'Couscous Fin Diari 1kg (كسكسي دياري جويد)',
+      category: 'Céréales & Pâtes',
+      purchasePrice: 0.850,
+      sellingPrice: 1.100,
+      stock: 120,
+      minAlertQty: 20,
+      unit: 'Pcs'
+    },
+    {
+      id: 'prod-warda-moyen',
+      code: '6191501500010',
+      name: 'Couscous Moyen Warda 1kg (كسكسي وردة وسط)',
+      category: 'Céréales & Pâtes',
+      purchasePrice: 0.840,
+      sellingPrice: 1.050,
+      stock: 95,
+      minAlertQty: 20,
+      unit: 'Pcs'
+    },
+    {
+      id: 'prod-randa-spaghetti',
+      code: '6191503300021',
+      name: 'Spaghetti N°2 Randa 500g (معكرونة رندة)',
+      category: 'Céréales & Pâtes',
+      purchasePrice: 0.680,
+      sellingPrice: 0.850,
+      stock: 200,
+      minAlertQty: 30,
+      unit: 'Pcs'
+    },
+    {
+      id: 'prod-warda-spaghetti',
+      code: '6191501500119',
+      name: 'Spaghetti N°2 Warda 500g (معكرونة وردة)',
+      category: 'Céréales & Pâtes',
+      purchasePrice: 0.680,
+      sellingPrice: 0.850,
+      stock: 150,
+      minAlertQty: 30,
+      unit: 'Pcs'
+    },
+    {
+      id: 'prod-sucre-tunisien',
+      code: '6191509800013',
+      name: 'Sucre Blanc cristallisé Tunisien 1kg (سكر مائدة أبيض)',
+      category: 'Huiles & Épices',
+      purchasePrice: 1.200,
+      sellingPrice: 1.400,
+      stock: 300,
+      minAlertQty: 50,
+      unit: 'Pcs'
+    },
+
+    // Conserves & Épicerie / مصبرات
+    {
+      id: 'prod-sicam-tomate-400',
+      code: '6191501004112',
+      name: 'Double Concentré de Tomate Sicam 400g (طماطم معلبة سيكام)',
+      category: 'Conserves & Épicerie',
+      purchasePrice: 1.850,
+      sellingPrice: 2.150,
+      stock: 85,
+      minAlertQty: 20,
+      unit: 'Pcs'
+    },
+    {
+      id: 'prod-sicam-tomate-800',
+      code: '6191501004013',
+      name: 'Double Concentré de Tomate Sicam 800g (طماطم معلبة سيكام 800غ)',
+      category: 'Conserves & Épicerie',
+      purchasePrice: 3.600,
+      sellingPrice: 4.200,
+      stock: 75,
+      minAlertQty: 15,
+      unit: 'Pcs'
+    },
+    {
+      id: 'prod-sicam-harissa-135',
+      code: '6191501002019',
+      name: 'Harissa Traditionnelle Sicam 135g (هريسة سيكام)',
+      category: 'Conserves & Épicerie',
+      purchasePrice: 0.950,
+      sellingPrice: 1.250,
+      stock: 80,
+      minAlertQty: 15,
+      unit: 'Pcs'
+    },
+    {
+      id: 'prod-sidi-daoud-thon',
+      code: '6191504100019',
+      name: 'Thon Entier à l\'Huile d\'Olive Sidi Daoud 160g (تن سيدي داود)',
+      category: 'Conserves & Épicerie',
+      purchasePrice: 4.200,
+      sellingPrice: 4.900,
+      stock: 65,
+      minAlertQty: 15,
+      unit: 'Pcs'
+    },
+    {
+      id: 'prod-el-manar-thon',
+      code: '6191504500017',
       name: 'Thon Entier à l\'Huile El Manar 160g (تن المنار)',
-      category: 'Conserves',
+      category: 'Conserves & Épicerie',
       purchasePrice: 4.300,
       sellingPrice: 5.100,
       stock: 50,
@@ -181,21 +267,34 @@ const INITIAL_DATABASE: DatabaseState = {
       unit: 'Pcs'
     },
     {
-      id: 'prod-17',
-      code: '6198006009054',
+      id: 'prod-el-manar-sardines',
+      code: '6191504500116',
       name: 'Sardines à l\'Huile Piquante El Manar 125g (سردينة المنار حارة)',
-      category: 'Conserves',
+      category: 'Conserves & Épicerie',
       purchasePrice: 1.800,
       sellingPrice: 2.200,
       stock: 90,
       minAlertQty: 15,
       unit: 'Pcs'
     },
+
+    // Café, Thé & Biscuits / حلويات وقهوة
     {
-      id: 'prod-18',
-      code: '6199007010165',
+      id: 'prod-ben-yedder-cafe',
+      code: '6191505500016',
+      name: 'Café Moulu Ben Yedder Tradition 250g (قهوة بن يدر)',
+      category: 'Café, Thé & Biscuits',
+      purchasePrice: 3.100,
+      sellingPrice: 3.800,
+      stock: 40,
+      minAlertQty: 10,
+      unit: 'Pcs'
+    },
+    {
+      id: 'prod-ghazala-chamia',
+      code: '6191507000019',
       name: 'Chamia Ghazala Nature 350g (شامية الغزالة حلوى)',
-      category: 'Café & Thé',
+      category: 'Café, Thé & Biscuits',
       purchasePrice: 4.200,
       sellingPrice: 5.100,
       stock: 42,
@@ -203,32 +302,10 @@ const INITIAL_DATABASE: DatabaseState = {
       unit: 'Pcs'
     },
     {
-      id: 'prod-19',
-      code: '6190008011276',
-      name: 'Soda Coca-Cola Original 1.5L (كوكاكولا)',
-      category: 'Boissons',
-      purchasePrice: 2.650,
-      sellingPrice: 3.100,
-      stock: 150,
-      minAlertQty: 30,
-      unit: 'Pcs'
-    },
-    {
-      id: 'prod-20',
-      code: '6190109012387',
-      name: 'Soda Boga Blanche 1.5L (بوغا بيضاء)',
-      category: 'Boissons',
-      purchasePrice: 2.300,
-      sellingPrice: 2.700,
-      stock: 120,
-      minAlertQty: 25,
-      unit: 'Pcs'
-    },
-    {
-      id: 'prod-21',
-      code: '6190201013498',
+      id: 'prod-saida-chocolat',
+      code: '6191506000010',
       name: 'Chocolat Saida El Baka Bleue 100g (شوكولا الباقة زرقاء)',
-      category: 'Café & Thé',
+      category: 'Café, Thé & Biscuits',
       purchasePrice: 1.900,
       sellingPrice: 2.400,
       stock: 85,
@@ -236,21 +313,47 @@ const INITIAL_DATABASE: DatabaseState = {
       unit: 'Pcs'
     },
     {
-      id: 'prod-22',
-      code: '6190302014509',
+      id: 'prod-saida-major',
+      code: '6191506001119',
       name: 'Biscuits Major Chocolat Saida (بسكويت ماجور شوكولا)',
-      category: 'Café & Thé',
+      category: 'Café, Thé & Biscuits',
       purchasePrice: 0.700,
       sellingPrice: 0.850,
       stock: 240,
       minAlertQty: 40,
       unit: 'Pcs'
     },
+
+    // Huiles / زيوت
     {
-      id: 'prod-23',
-      code: '6190403015610',
+      id: 'prod-safia-huile',
+      code: '6194001900116',
+      name: 'Huile de Tournesol Safia 1L (زيت صافية)',
+      category: 'Huiles & Épices',
+      purchasePrice: 4.800,
+      sellingPrice: 5.500,
+      stock: 60,
+      minAlertQty: 15,
+      unit: 'Pcs'
+    },
+    {
+      id: 'prod-chaal-huile',
+      code: '6191508000018',
+      name: 'Huile d\'Olive Extra Vierge Châal 1L (زيت زيتون شعال)',
+      category: 'Huiles & Épices',
+      purchasePrice: 22.000,
+      sellingPrice: 25.000,
+      stock: 20,
+      minAlertQty: 5,
+      unit: 'Pcs'
+    },
+
+    // Hygiène & Entretien / تنظيف
+    {
+      id: 'prod-omo-lessive',
+      code: '8710447284958',
       name: 'Lessive Poudre Omo Machine 1.5kg (أوموو غسيل)',
-      category: 'Céréales & Pâtes',
+      category: 'Hygiène & Nettoyage',
       purchasePrice: 8.500,
       sellingPrice: 9.800,
       stock: 30,
@@ -258,10 +361,10 @@ const INITIAL_DATABASE: DatabaseState = {
       unit: 'Pcs'
     },
     {
-      id: 'prod-24',
-      code: '6190504016721',
+      id: 'prod-sica-javel',
+      code: '6191509000017',
       name: 'Eau de Javel Sany Sica 3L (جافيل سيكا)',
-      category: 'Céréales & Pâtes',
+      category: 'Hygiène & Nettoyage',
       purchasePrice: 2.400,
       sellingPrice: 2.900,
       stock: 70,
@@ -269,25 +372,14 @@ const INITIAL_DATABASE: DatabaseState = {
       unit: 'Pcs'
     },
     {
-      id: 'prod-25',
-      code: '6190605017832',
+      id: 'prod-lilas-papier',
+      code: '6191509500012',
       name: 'Papier Toilette Rose Lilas 4 Rouleaux (ورق صحي مريح ليلا)',
-      category: 'Boissons',
+      category: 'Hygiène & Nettoyage',
       purchasePrice: 2.100,
       sellingPrice: 2.650,
       stock: 65,
       minAlertQty: 10,
-      unit: 'Pcs'
-    },
-    {
-      id: 'prod-26',
-      code: '6190706018943',
-      name: 'Sucre Blanc cristallisé Tunisien 1kg (سكر مائدة أبيض)',
-      category: 'Épices & Condiments',
-      purchasePrice: 1.200,
-      sellingPrice: 1.400,
-      stock: 300,
-      minAlertQty: 50,
       unit: 'Pcs'
     }
   ],
@@ -491,57 +583,51 @@ export const DEFAULT_SETTINGS = {
 
 export const SAMPLE_PRODUCTS: Record<'superette' | 'pharmacie' | 'materiaux' | 'general', Product[]> = {
   superette: [
-    // Céréales & Pâtes
-    { id: 'sup-1', code: '6191002003001', name: 'Couscous Fin Diari 1kg (كسكسي دياري جويد)', category: 'Céréales & Pâtes', purchasePrice: 0.850, sellingPrice: 1.100, stock: 120, minAlertQty: 20, unit: 'Pcs' },
-    { id: 'sup-7', code: '6191114002341', name: 'Spaghetti N°2 Randa 500g (معكرونة رندة)', category: 'Céréales & Pâtes', purchasePrice: 0.680, sellingPrice: 0.850, stock: 200, minAlertQty: 30, unit: 'Pcs' },
-    { id: 'sup-9', code: '6191002003002', name: 'Couscous Moyen Warda 1kg (كسكسي وردة وسط)', category: 'Céréales & Pâtes', purchasePrice: 0.840, sellingPrice: 1.050, stock: 95, minAlertQty: 20, unit: 'Pcs' },
+    // Boissons & Eaux / مياه ومشروبات
+    { id: 'sup-hayat-1.5', code: '6194039500014', name: 'Eau Minérale Naturelle Hayat 1.5L (ماء معدني طبيعي حياة)', category: 'Boissons / مشروبات', purchasePrice: 0.600, sellingPrice: 0.800, stock: 180, minAlertQty: 30, unit: 'Pcs' },
+    { id: 'sup-5', code: '6194001900017', name: 'Eau Minérale Safia Naturelle 1.5L (ماء معدني صافية)', category: 'Boissons / مشروبات', purchasePrice: 0.650, sellingPrice: 0.850, stock: 180, minAlertQty: 40, unit: 'Pcs' },
+    { id: 'sup-20-s', code: '6194002600015', name: 'Eau Minérale Sabrine 1.5L (ماء معدني صابرين)', category: 'Boissons / مشروبات', purchasePrice: 0.600, sellingPrice: 0.800, stock: 160, minAlertQty: 35, unit: 'Pcs' },
+    { id: 'sup-marwa', code: '6194007800014', name: 'Eau Minérale Marwa 1.5L (ماء معدني مروى)', category: 'Boissons / مشروبات', purchasePrice: 0.580, sellingPrice: 0.750, stock: 140, minAlertQty: 25, unit: 'Pcs' },
+    { id: 'sup-19', code: '5449000000996', name: 'Soda Coca-Cola Original 1.5L (كوكاكولا)', category: 'Boissons / مشروبات', purchasePrice: 2.650, sellingPrice: 3.100, stock: 150, minAlertQty: 30, unit: 'Pcs' },
+    { id: 'sup-20', code: '6194001200056', name: 'Soda Boga Blanche 1.5L (بوغا بيضاء)', category: 'Boissons / مشروبات', purchasePrice: 2.300, sellingPrice: 2.700, stock: 120, minAlertQty: 25, unit: 'Pcs' },
+    { id: 'sup-20-f', code: '5449000011527', name: 'Soda Fanta Orange 1.5L (فانتا برتقال)', category: 'Boissons / مشروبات', purchasePrice: 2.400, sellingPrice: 2.900, stock: 100, minAlertQty: 20, unit: 'Pcs' },
 
-    // Produits Laitiers
-    { id: 'sup-2', code: '6192403104523', name: 'Lait Demi-Écrémé Délice UHT 1L (حليب دليس)', category: 'Produits Laitiers', purchasePrice: 1.350, sellingPrice: 1.450, stock: 145, minAlertQty: 30, unit: 'Pcs' },
-    { id: 'sup-10', code: '6192003004005', name: 'Yaourt Brassé Délice Fraise (ياغورت دليس فراولة)', category: 'Produits Laitiers', purchasePrice: 0.480, sellingPrice: 0.550, stock: 120, minAlertQty: 25, unit: 'Pcs' },
+    // Produits Laitiers / مشتقات الحليب
+    { id: 'sup-2', code: '6191501201016', name: 'Lait Demi-Écrémé Délice UHT 1L (حليب دليس)', category: 'Produits Laitiers', purchasePrice: 1.350, sellingPrice: 1.450, stock: 145, minAlertQty: 30, unit: 'Pcs' },
+    { id: 'sup-vitalait', code: '6194006100016', name: 'Lait Demi-Écrémé Vitalait UHT 1L (حليب فيتالايت)', category: 'Produits Laitiers', purchasePrice: 1.350, sellingPrice: 1.450, stock: 120, minAlertQty: 25, unit: 'Pcs' },
+    { id: 'sup-10', code: '6194004700119', name: 'Yaourt Brassé Délice Fraise (ياغورت دليس فراولة)', category: 'Produits Laitiers', purchasePrice: 0.480, sellingPrice: 0.550, stock: 120, minAlertQty: 25, unit: 'Pcs' },
     { id: 'sup-11', code: '6192404001258', name: 'Cheese Giga Carré 24 Pcs (جبن قيقا 24 قطعة)', category: 'Produits Laitiers', purchasePrice: 4.800, sellingPrice: 5.400, stock: 35, minAlertQty: 8, unit: 'Pcs' },
     { id: 'sup-12', code: '6193001004521', name: 'Fromage Râpé Président 100g (جبن مرحي بريزيدن)', category: 'Produits Laitiers', purchasePrice: 3.200, sellingPrice: 3.800, stock: 48, minAlertQty: 10, unit: 'Pcs' },
-    { id: 'sup-15', code: '6196004007832', name: 'Margarine Goldina 250g (مارغرين غولدينا)', category: 'Produits Laitiers', purchasePrice: 1.400, sellingPrice: 1.700, stock: 75, minAlertQty: 15, unit: 'Pcs' },
+    { id: 'sup-15', code: '6191506500013', name: 'Margarine Goldina 250g (مارغرين غولدينا)', category: 'Produits Laitiers', purchasePrice: 1.400, sellingPrice: 1.700, stock: 75, minAlertQty: 15, unit: 'Pcs' },
 
-    // Conserves
-    { id: 'sup-3', code: '6194512001122', name: 'Thon Entier à l\'Huile d\'Olive Sidi Daoud 160g (تن سيدي داود)', category: 'Conserves', purchasePrice: 4.200, sellingPrice: 4.900, stock: 65, minAlertQty: 15, unit: 'Pcs' },
-    { id: 'sup-4', code: '6198502214433', name: 'Harissa Traditionnelle Sicam 135g (هريسة سيكام)', category: 'Conserves', purchasePrice: 0.950, sellingPrice: 1.250, stock: 80, minAlertQty: 15, unit: 'Pcs' },
-    { id: 'sup-6', code: '6191501004112', name: 'Double Concentré de Tomate Sicam 400g (طماطم معلبة سيكام)', category: 'Conserves', purchasePrice: 1.850, sellingPrice: 2.150, stock: 85, minAlertQty: 20, unit: 'Pcs' },
-    { id: 'sup-16', code: '6197005008943', name: 'Thon Entier à l\'Huile El Manar 160g (تن المنار)', category: 'Conserves', purchasePrice: 4.300, sellingPrice: 5.100, stock: 50, minAlertQty: 12, unit: 'Pcs' },
-    { id: 'sup-17', code: '6198006009054', name: 'Sardines à l\'Huile Piquante El Manar 125g (سردينة المنار حارة)', category: 'Conserves', purchasePrice: 1.800, sellingPrice: 2.200, stock: 90, minAlertQty: 15, unit: 'Pcs' },
+    // Céréales & Pâtes / عجين وكسكسي
+    { id: 'sup-1', code: '6191502500019', name: 'Couscous Fin Diari 1kg (كسكسي دياري جويد)', category: 'Céréales & Pâtes', purchasePrice: 0.850, sellingPrice: 1.100, stock: 120, minAlertQty: 20, unit: 'Pcs' },
+    { id: 'sup-7', code: '6191503300021', name: 'Spaghetti N°2 Randa 500g (معكرونة رندة)', category: 'Céréales & Pâtes', purchasePrice: 0.680, sellingPrice: 0.850, stock: 200, minAlertQty: 30, unit: 'Pcs' },
+    { id: 'sup-9', code: '6191501500010', name: 'Couscous Moyen Warda 1kg (كسكسي وردة وسط)', category: 'Céréales & Pâtes', purchasePrice: 0.840, sellingPrice: 1.050, stock: 95, minAlertQty: 20, unit: 'Pcs' },
+    { id: 'sup-26', code: '6191509800013', name: 'Sucre Blanc cristallisé Tunisien 1kg (سكر مائدة أبيض)', category: 'Huiles & Épices', purchasePrice: 1.200, sellingPrice: 1.400, stock: 300, minAlertQty: 50, unit: 'Pcs' },
 
-    // Boissons / مشروبات
-    { id: 'sup-5', code: '6190015022354', name: 'Eau Minérale Safia Naturelle 1.5L (ماء معدني صافية)', category: 'Boissons / مشروبات', purchasePrice: 0.650, sellingPrice: 0.850, stock: 180, minAlertQty: 40, unit: 'Pcs' },
-    { id: 'sup-19', code: '6190008011276', name: 'Soda Coca-Cola Original 1.5L (كوكاكولا)', category: 'Boissons / مشروبات', purchasePrice: 2.650, sellingPrice: 3.100, stock: 150, minAlertQty: 30, unit: 'Pcs' },
-    { id: 'sup-20', code: '6190109012387', name: 'Soda Boga Blanche 1.5L (بوغا بيضاء)', category: 'Boissons / مشروبات', purchasePrice: 2.300, sellingPrice: 2.700, stock: 120, minAlertQty: 25, unit: 'Pcs' },
-    { id: 'sup-20-f', code: '6190109012399', name: 'Soda Fanta Orange 1.5L (فانتا برتقال)', category: 'Boissons / مشروبات', purchasePrice: 2.400, sellingPrice: 2.900, stock: 100, minAlertQty: 20, unit: 'Pcs' },
-    { id: 'sup-20-s', code: '6190109012411', name: 'Eau Minérale Sabrine 1.5L (ماء معدني صابرين)', category: 'Boissons / مشروبات', purchasePrice: 0.600, sellingPrice: 0.800, stock: 160, minAlertQty: 35, unit: 'Pcs' },
+    // Conserves & Épicerie / مصبرات
+    { id: 'sup-6', code: '6191501004112', name: 'Double Concentré de Tomate Sicam 400g (طماطم معلبة سيكام)', category: 'Conserves & Épicerie', purchasePrice: 1.850, sellingPrice: 2.150, stock: 85, minAlertQty: 20, unit: 'Pcs' },
+    { id: 'sup-sicam-800', code: '6191501004013', name: 'Double Concentré de Tomate Sicam 800g (طماطم معلبة سيكام 800غ)', category: 'Conserves & Épicerie', purchasePrice: 3.600, sellingPrice: 4.200, stock: 75, minAlertQty: 15, unit: 'Pcs' },
+    { id: 'sup-4', code: '6191501002019', name: 'Harissa Traditionnelle Sicam 135g (هريسة سيكام)', category: 'Conserves & Épicerie', purchasePrice: 0.950, sellingPrice: 1.250, stock: 80, minAlertQty: 15, unit: 'Pcs' },
+    { id: 'sup-3', code: '6191504100019', name: 'Thon Entier à l\'Huile d\'Olive Sidi Daoud 160g (تن سيدي داود)', category: 'Conserves & Épicerie', purchasePrice: 4.200, sellingPrice: 4.900, stock: 65, minAlertQty: 15, unit: 'Pcs' },
+    { id: 'sup-16', code: '6191504500017', name: 'Thon Entier à l\'Huile El Manar 160g (تن المنار)', category: 'Conserves & Épicerie', purchasePrice: 4.300, sellingPrice: 5.100, stock: 50, minAlertQty: 12, unit: 'Pcs' },
+    { id: 'sup-17', code: '6191504500116', name: 'Sardines à l\'Huile Piquante El Manar 125g (سردينة المنار حارة)', category: 'Conserves & Épicerie', purchasePrice: 1.800, sellingPrice: 2.200, stock: 90, minAlertQty: 15, unit: 'Pcs' },
 
-    // Jus / عصير
-    { id: 'sup-j1', code: '6190022013012', name: 'Jus d\'Orange Délice 1L (عصير برتقال دليس)', category: 'Jus / عصير', purchasePrice: 2.800, sellingPrice: 3.400, stock: 75, minAlertQty: 15, unit: 'Pcs' },
-    { id: 'sup-j2', code: '6190022013029', name: 'Jus Oh! Pêche 1L (عصير أوه خوخ)', category: 'Jus / عصير', purchasePrice: 2.100, sellingPrice: 2.600, stock: 90, minAlertQty: 15, unit: 'Pcs' },
-    { id: 'sup-j3', code: '6190022013036', name: 'Jus Diva Pomme 1L (عصير تفاح ديفا)', category: 'Jus / عصير', purchasePrice: 2.905, sellingPrice: 3.500, stock: 60, minAlertQty: 10, unit: 'Pcs' },
-
-    // Glaces / مثلجات
-    { id: 'sup-g1', code: '6190023014018', name: 'Glace Selja Chocolat (مثلجات سلجة شوكولا)', category: 'Glaces / مثلجات', purchasePrice: 1.100, sellingPrice: 1.500, stock: 50, minAlertQty: 10, unit: 'Pcs' },
-    { id: 'sup-g2', code: '6190023014025', name: 'Glace Cornetto Royal Vanille (مثلجات كورنيتو)', category: 'Glaces / مثلجات', purchasePrice: 2.200, sellingPrice: 2.800, stock: 40, minAlertQty: 8, unit: 'Pcs' },
-    { id: 'sup-g3', code: '6190023014032', name: 'Glace Solero Fraise (مثلجات سوليرو توت)', category: 'Glaces / مثلجات', purchasePrice: 1.800, sellingPrice: 2.300, stock: 45, minAlertQty: 8, unit: 'Pcs' },
-
-    // Café & Thé / الحلويات
-    { id: 'sup-8', code: '6192224018872', name: 'Café Moulu Ben Yedder Tradition 250g (قهوة بن يدر)', category: 'Café & Thé', purchasePrice: 3.100, sellingPrice: 3.800, stock: 40, minAlertQty: 10, unit: 'Pcs' },
-    { id: 'sup-18', code: '6199007010165', name: 'Chamia Ghazala Nature 350g (شامية الغزالة حلوى)', category: 'Café & Thé', purchasePrice: 4.200, sellingPrice: 5.100, stock: 42, minAlertQty: 8, unit: 'Pcs' },
-    { id: 'sup-21', code: '6190201013498', name: 'Chocolat Saida El Baka Bleue 100g (شوكولا الباقة زرقاء)', category: 'Café & Thé', purchasePrice: 1.900, sellingPrice: 2.400, stock: 85, minAlertQty: 15, unit: 'Pcs' },
-    { id: 'sup-22', code: '6190302014509', name: 'Biscuits Major Chocolat Saida (بسكويت ماجور شوكولا)', category: 'Café & Thé', purchasePrice: 0.700, sellingPrice: 0.850, stock: 240, minAlertQty: 40, unit: 'Pcs' },
+    // Café, Thé & Biscuits / الحلويات
+    { id: 'sup-8', code: '6191505500016', name: 'Café Moulu Ben Yedder Tradition 250g (قهوة بن يدر)', category: 'Café, Thé & Biscuits', purchasePrice: 3.100, sellingPrice: 3.800, stock: 40, minAlertQty: 10, unit: 'Pcs' },
+    { id: 'sup-18', code: '6191507000019', name: 'Chamia Ghazala Nature 350g (شامية الغزالة حلوى)', category: 'Café, Thé & Biscuits', purchasePrice: 4.200, sellingPrice: 5.100, stock: 42, minAlertQty: 8, unit: 'Pcs' },
+    { id: 'sup-21', code: '6191506000010', name: 'Chocolat Saida El Baka Bleue 100g (شوكولا الباقة زرقاء)', category: 'Café, Thé & Biscuits', purchasePrice: 1.900, sellingPrice: 2.400, stock: 85, minAlertQty: 15, unit: 'Pcs' },
+    { id: 'sup-22', code: '6191506001119', name: 'Biscuits Major Chocolat Saida (بسكويت ماجور شوكولا)', category: 'Café, Thé & Biscuits', purchasePrice: 0.700, sellingPrice: 0.850, stock: 240, minAlertQty: 40, unit: 'Pcs' },
 
     // Huiles & Épices
-    { id: 'sup-13', code: '6194002005612', name: 'Huile de Tournesol Safia 1L (زيت صافية)', category: 'Huiles & Épices', purchasePrice: 4.800, sellingPrice: 5.500, stock: 60, minAlertQty: 15, unit: 'Pcs' },
-    { id: 'sup-14', code: '6195003006721', name: 'Huile d\'Olive Extra Vierge Châal 1L (زيت زيتون شعال)', category: 'Huiles & Épices', purchasePrice: 22.000, sellingPrice: 25.000, stock: 20, minAlertQty: 5, unit: 'Pcs' },
-    { id: 'sup-26', code: '6190706018943', name: 'Sucre Blanc cristallisé Tunisien 1kg (سكر مائدة أبيض)', category: 'Huiles & Épices', purchasePrice: 1.200, sellingPrice: 1.400, stock: 300, minAlertQty: 50, unit: 'Pcs' },
+    { id: 'sup-13', code: '6194001900116', name: 'Huile de Tournesol Safia 1L (زيت صافية)', category: 'Huiles & Épices', purchasePrice: 4.800, sellingPrice: 5.500, stock: 60, minAlertQty: 15, unit: 'Pcs' },
+    { id: 'sup-14', code: '6191508000018', name: 'Huile d\'Olive Extra Vierge Châal 1L (زيت زيتون شعال)', category: 'Huiles & Épices', purchasePrice: 22.000, sellingPrice: 25.000, stock: 20, minAlertQty: 5, unit: 'Pcs' },
 
     // Hygiène & Nettoyage
-    { id: 'sup-23', code: '6190403015610', name: 'Lessive Poudre Omo Machine 1.5kg (أوموو غسيل)', category: 'Hygiène & Nettoyage', purchasePrice: 8.500, sellingPrice: 9.800, stock: 30, minAlertQty: 8, unit: 'Pcs' },
-    { id: 'sup-24', code: '6190504016721', name: 'Eau de Javel Sany Sica 3L (جافيل سيكا)', category: 'Hygiène & Nettoyage', purchasePrice: 2.400, sellingPrice: 2.900, stock: 70, minAlertQty: 15, unit: 'Pcs' },
-    { id: 'sup-25', code: '6190605017832', name: 'Papier Toilette Rose Lilas 4 Rouleaux (ورق صحي مريح ليلا)', category: 'Hygiène & Nettoyage', purchasePrice: 2.100, sellingPrice: 2.650, stock: 65, minAlertQty: 10, unit: 'Pcs' }
+    { id: 'sup-23', code: '8710447284958', name: 'Lessive Poudre Omo Machine 1.5kg (أوموو غسيل)', category: 'Hygiène & Nettoyage', purchasePrice: 8.500, sellingPrice: 9.800, stock: 30, minAlertQty: 8, unit: 'Pcs' },
+    { id: 'sup-24', code: '6191509000017', name: 'Eau de Javel Sany Sica 3L (جافيل سيكا)', category: 'Hygiène & Nettoyage', purchasePrice: 2.400, sellingPrice: 2.900, stock: 70, minAlertQty: 15, unit: 'Pcs' },
+    { id: 'sup-25', code: '6191509500012', name: 'Papier Toilette Rose Lilas 4 Rouleaux (ورق صحي مريح ليلا)', category: 'Hygiène & Nettoyage', purchasePrice: 2.100, sellingPrice: 2.650, stock: 65, minAlertQty: 10, unit: 'Pcs' }
   ],
   pharmacie: [
     { id: 'ph-1', code: '3024501112234', name: 'Amoxicilline Biogaran 1g (أموكسيسيلين مضاد حيوي)', category: 'Antibiotiques', purchasePrice: 3.200, sellingPrice: 4.500, stock: 40, minAlertQty: 10, unit: 'Boîte' },
@@ -623,8 +709,50 @@ export function getDatabase(): DatabaseState {
       settings.matriculeFiscal = settings.matriculeFiscal || DEFAULT_SETTINGS.matriculeFiscal;
     }
 
+    let loadedProducts: Product[] = parsed.products || INITIAL_DATABASE.products;
+
+    // Check if products have old placeholder barcodes and auto-harmonize to authentic Tunisian GS1 barcodes & canonical categories
+    const syncFlag = safeLocalStorage.getItem('pos_barcodes_gs1_synced_v5');
+    if (!syncFlag) {
+      const syncResult = correctAndSyncProductBarcodes(loadedProducts);
+      const catResult = deduplicateProductsCategories(syncResult.updatedProducts);
+      if (syncResult.correctedCount > 0 || syncResult.addedCount > 0 || catResult.changedCount > 0) {
+        loadedProducts = catResult.updatedProducts;
+        safeLocalStorage.setItem('pos_barcodes_gs1_synced_v5', 'true');
+        // Persist the corrected barcodes and deduplicated categories immediately
+        const updatedDb = {
+          products: loadedProducts,
+          partners: parsed.partners || INITIAL_DATABASE.partners,
+          invoices: parsed.invoices || INITIAL_DATABASE.invoices,
+          payments: parsed.payments || INITIAL_DATABASE.payments,
+          traites: parsed.traites || INITIAL_DATABASE.traites,
+          expenses: parsed.expenses || INITIAL_DATABASE.expenses,
+          settings
+        };
+        safeLocalStorage.setItem(STORAGE_KEY, JSON.stringify(updatedDb));
+      } else {
+        safeLocalStorage.setItem('pos_barcodes_gs1_synced_v5', 'true');
+      }
+    } else {
+      // Ensure all product categories remain clean and deduplicated
+      const catResult = deduplicateProductsCategories(loadedProducts);
+      if (catResult.changedCount > 0) {
+        loadedProducts = catResult.updatedProducts;
+        const updatedDb = {
+          products: loadedProducts,
+          partners: parsed.partners || INITIAL_DATABASE.partners,
+          invoices: parsed.invoices || INITIAL_DATABASE.invoices,
+          payments: parsed.payments || INITIAL_DATABASE.payments,
+          traites: parsed.traites || INITIAL_DATABASE.traites,
+          expenses: parsed.expenses || INITIAL_DATABASE.expenses,
+          settings
+        };
+        safeLocalStorage.setItem(STORAGE_KEY, JSON.stringify(updatedDb));
+      }
+    }
+
     return {
-      products: parsed.products || INITIAL_DATABASE.products,
+      products: loadedProducts,
       partners: parsed.partners || INITIAL_DATABASE.partners,
       invoices: parsed.invoices || INITIAL_DATABASE.invoices,
       payments: parsed.payments || INITIAL_DATABASE.payments,

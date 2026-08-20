@@ -3,6 +3,8 @@ import { motion, AnimatePresence } from 'motion/react';
 import QRCode from 'qrcode';
 import { DatabaseState, Product, ProductBatch } from '../types';
 import { getProductVisual, isProductInPromo, getActiveProductPrice } from '../utils/db';
+import { correctAndSyncProductBarcodes, OFFICIAL_TUNISIAN_PRODUCTS } from '../utils/tunisianBarcodes';
+import { deduplicateProductsCategories, normalizeCategoryName, CANONICAL_CATEGORIES, getCategoryMetadata } from '../utils/categories';
 import ProductPromotionsModal from './ProductPromotionsModal';
 import { useLanguage } from '../utils/LanguageContext';
 import { safeLocalStorage, checkIsIframe } from '../utils/storage';
@@ -110,15 +112,15 @@ export function getEAN13Binary(rawCode: string): { binary: string; digits: strin
 const COMMON_FOODS = [
   { name: 'Couscous Fin Diari 1kg (كسكسي دياري)', category: 'Céréales & Pâtes', code: '6191002003001', purchasePrice: 0.850, sellingPrice: 1.100, unit: 'Pcs' },
   { name: 'Lait Demi-Écrémé Délice UHT 1L (حليب دليس)', category: 'Produits Laitiers', code: '6192403104523', purchasePrice: 1.350, sellingPrice: 1.450, unit: 'Pcs' },
-  { name: 'Thon Entier Olive Sidi Daoud 160g (تن سيدي داود)', category: 'Conserves', code: '6194512001122', purchasePrice: 4.200, sellingPrice: 4.900, unit: 'Pcs' },
-  { name: 'Harissa Sicam Traditionnelle 135g (هريسة سيكام)', category: 'Conserves', code: '6198502214433', purchasePrice: 0.950, sellingPrice: 1.250, unit: 'Pcs' },
-  { name: 'Tomate Double Concentrée Sicam 800g (طماطم سيكام)', category: 'Conserves', code: '6198502214455', purchasePrice: 3.400, sellingPrice: 4.100, unit: 'Pcs' },
-  { name: 'Eau Minérale Sabrine 1.5L (ماء صبرين)', category: 'Boissons', code: '6191234567891', purchasePrice: 0.550, sellingPrice: 0.700, unit: 'Pcs' },
-  { name: 'Eau Minérale Safia 1.5L (ماء صافية)', category: 'Boissons', code: '6191234567892', purchasePrice: 0.550, sellingPrice: 0.700, unit: 'Pcs' },
+  { name: 'Thon Entier Olive Sidi Daoud 160g (تن سيدي داود)', category: 'Conserves & Épicerie', code: '6194512001122', purchasePrice: 4.200, sellingPrice: 4.900, unit: 'Pcs' },
+  { name: 'Harissa Sicam Traditionnelle 135g (هريسة سيكام)', category: 'Conserves & Épicerie', code: '6198502214433', purchasePrice: 0.950, sellingPrice: 1.250, unit: 'Pcs' },
+  { name: 'Tomate Double Concentrée Sicam 800g (طماطم سيكام)', category: 'Conserves & Épicerie', code: '6198502214455', purchasePrice: 3.400, sellingPrice: 4.100, unit: 'Pcs' },
+  { name: 'Eau Minérale Sabrine 1.5L (ماء صبرين)', category: 'Boissons / مشروبات', code: '6191234567891', purchasePrice: 0.550, sellingPrice: 0.700, unit: 'Pcs' },
+  { name: 'Eau Minérale Safia 1.5L (ماء صافية)', category: 'Boissons / مشروبات', code: '6191234567892', purchasePrice: 0.550, sellingPrice: 0.700, unit: 'Pcs' },
   { name: 'Pâtes Spaghetti Randa N°2 500g (سباغيتي راندة)', category: 'Céréales & Pâtes', code: '6194512009988', purchasePrice: 0.750, sellingPrice: 0.950, unit: 'Pcs' },
   { name: 'Yaourt Nature Délice (ياغورت دليس)', category: 'Produits Laitiers', code: '6191002003010', purchasePrice: 0.400, sellingPrice: 0.480, unit: 'Pcs' },
-  { name: 'Café Moulu Ben Yedder Traditionnel 250g (قهوة بن يدر)', category: 'Épicerie', code: '6192425262728', purchasePrice: 2.200, sellingPrice: 2.700, unit: 'Pcs' },
-  { name: 'Sucre Blanc Raffiné Canne 1kg (سكر)', category: 'Épicerie', code: '6191230001001', purchasePrice: 1.100, sellingPrice: 1.400, unit: 'Pcs' },
+  { name: 'Café Moulu Ben Yedder Traditionnel 250g (قهوة بن يدر)', category: 'Café, Thé & Biscuits', code: '6192425262728', purchasePrice: 2.200, sellingPrice: 2.700, unit: 'Pcs' },
+  { name: 'Sucre Blanc Raffiné Canne 1kg (سكر)', category: 'Huiles & Épices', code: '6191230001001', purchasePrice: 1.100, sellingPrice: 1.400, unit: 'Pcs' },
   { name: 'Semoule Fine Rose Blanche 1kg (سميد وردة)', category: 'Céréales & Pâtes', code: '6194512005524', purchasePrice: 0.900, sellingPrice: 1.150, unit: 'Pcs' },
   // Tabac tunisien
   { name: 'Légère Bleue - Paquet (علبة دخان لايت أزرق)', category: 'Tabac / دخان', code: '619001000101', purchasePrice: 7.200, sellingPrice: 8.500, unit: 'Paquet' },
@@ -530,7 +532,13 @@ export default function Products({ db, onUpdateDb }: ProductsProps) {
   }, [showFormModal]);
 
   const categories = useMemo(() => {
-    return ['Tous', ...Array.from(new Set(db.products.map(p => p.category)))];
+    const set = new Set<string>();
+    (db.products || []).forEach(p => {
+      if (p.category) {
+        set.add(normalizeCategoryName(p.category));
+      }
+    });
+    return ['Tous', ...Array.from(set).sort((a, b) => a.localeCompare(b))];
   }, [db.products]);
 
   // Handle fast incremental stock adjustments
@@ -695,7 +703,7 @@ export default function Products({ db, onUpdateDb }: ProductsProps) {
     return db.products.filter(p => {
       const matchSearch = p.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
                           p.code.includes(searchQuery);
-      const matchCategory = categoryFilter === 'Tous' || p.category === categoryFilter;
+      const matchCategory = categoryFilter === 'Tous' || normalizeCategoryName(p.category) === categoryFilter;
       
       let matchStatus = true;
       if (statusFilter === 'alert') matchStatus = p.stock <= p.minAlertQty && p.stock > 0;
@@ -714,55 +722,119 @@ export default function Products({ db, onUpdateDb }: ProductsProps) {
     return filteredProducts.slice(startIndex, endIndex);
   }, [filteredProducts, startIndex, endIndex]);
 
-  // Bulk import Tunisian presets (tobacco, fuel, and telecom)
-  const handleImportTunisianProducts = (type: 'tobacco' | 'fuel' | 'telecom' | 'all') => {
+  // Bulk import Tunisian presets & sync barcodes + deduplicate categories
+  const handleSyncRealTunisianBarcodes = () => {
+    const result = correctAndSyncProductBarcodes(db.products);
+    const catResult = deduplicateProductsCategories(result.updatedProducts);
+    onUpdateDb({ ...db, products: catResult.updatedProducts });
+    showToast(
+      language === 'ar'
+        ? `✅ تم تدقيق ومطابقة الباركودات وحذف الفئات المتكررة بنجاح! (${result.correctedCount} باركود مصحح، ${result.addedCount} مضاف، ${catResult.changedCount} فئة موحدة).`
+        : `✅ Codes-barres GS1 et catégories synchronisés avec succès ! (${result.correctedCount} codes corrigés, ${catResult.changedCount} catégories fusionnées).`,
+      'success'
+    );
+  };
+
+  // Dedicated action to deduplicate and harmonize categories
+  const handleHarmonizeAllCategories = () => {
+    const { updatedProducts, changedCount } = deduplicateProductsCategories(db.products);
+    if (changedCount > 0) {
+      onUpdateDb({
+        ...db,
+        products: updatedProducts
+      });
+      showToast(
+        language === 'ar'
+          ? `✅ تم تنظيف وتوحيد الفئات لـ ${changedCount} منتج وحذف التكرار (مثل Boissons و Boissons / مشروبات)!`
+          : `✅ Doublons supprimés ! ${changedCount} produit(s) harmonisé(s) vers des catégories uniques.`,
+        'success'
+      );
+    } else {
+      showToast(
+        language === 'ar'
+          ? '✨ جميع الفئات موحدة ومنظمة بالفعل ولا توجد أي فئات مكررة!'
+          : '✨ Toutes les catégories sont déjà uniques et propres !',
+        'info'
+      );
+    }
+  };
+
+  const handleImportTunisianProducts = (type: 'groceries' | 'water' | 'dairy' | 'tobacco' | 'fuel' | 'telecom' | 'all') => {
     const productsToAdd: any[] = [];
     
+    const groceryPresets = OFFICIAL_TUNISIAN_PRODUCTS.map(p => ({
+      name: `${p.nameFr} (${p.nameAr})`,
+      category: p.category,
+      code: p.code,
+      purchasePrice: p.purchasePrice,
+      sellingPrice: p.sellingPrice,
+      stock: p.defaultStock || 50,
+      minAlertQty: p.minAlertQty || 10,
+      unit: p.unit || 'Pcs',
+      tvaRate: 19,
+      isFoodProduct: true
+    }));
+
+    const waterPresets = groceryPresets.filter(p => p.category.includes('Boissons') || p.name.includes('Eau'));
+    const dairyPresets = groceryPresets.filter(p => p.category.includes('Laitiers') || p.name.includes('Lait') || p.name.includes('Yaourt') || p.name.includes('Fromage'));
+
     const presets = {
+      groceries: groceryPresets,
+      water: waterPresets,
+      dairy: dairyPresets,
       tobacco: [
-        { name: 'Légère Bleue - Paquet (علبة دخان لايت أزرق)', category: 'Tabac / دخان', code: '619001000101', purchasePrice: 7.200, sellingPrice: 8.500, stock: 100, minAlertQty: 10, unit: 'Paquet', tvaRate: 19 },
-        { name: 'Légère Bleue - Cigarette (سيڨار دخان لايت أزرق)', category: 'Tabac / دخان', code: '619001000102', purchasePrice: 0.360, sellingPrice: 0.450, stock: 200, minAlertQty: 20, unit: 'Cigarette', tvaRate: 19 },
-        { name: '20 Mars Doré - Paquet (علبة دخان 20 مارس ذهبي)', category: 'Tabac / دخان', code: '619001000201', purchasePrice: 5.200, sellingPrice: 5.900, stock: 100, minAlertQty: 10, unit: 'Paquet', tvaRate: 19 },
-        { name: '20 Mars Doré - Cigarette (سيڨار دخان 20 مارس ذهبي)', category: 'Tabac / دخان', code: '619001000202', purchasePrice: 0.260, sellingPrice: 0.320, stock: 200, minAlertQty: 20, unit: 'Cigarette', tvaRate: 19 },
-        { name: 'Cristal - Paquet (علبة دخان كريستال عادي)', category: 'Tabac / دخان', code: '619001000301', purchasePrice: 2.800, sellingPrice: 3.300, stock: 100, minAlertQty: 10, unit: 'Paquet', tvaRate: 19 },
-        { name: 'Cristal - Cigarette (سيڨار دخان كريستال)', category: 'Tabac / دخان', code: '619001000302', purchasePrice: 0.140, sellingPrice: 0.180, stock: 200, minAlertQty: 20, unit: 'Cigarette', tvaRate: 19 },
-        { name: 'Royale Menthe - Paquet (علبة دخان رويال نعناع)', category: 'Tabac / دخان', code: '619001000401', purchasePrice: 7.800, sellingPrice: 9.000, stock: 100, minAlertQty: 10, unit: 'Paquet', tvaRate: 19 },
-        { name: 'Royale Menthe - Cigarette (سيڨار دخان رويال نعناع)', category: 'Tabac / دخان', code: '619001000402', purchasePrice: 0.390, sellingPrice: 0.500, stock: 200, minAlertQty: 20, unit: 'Cigarette', tvaRate: 19 },
-        { name: 'Oris Bleue - Paquet (علبة دخان أوريس أزرق)', category: 'Tabac / دخان', code: '619001000501', purchasePrice: 8.500, sellingPrice: 10.000, stock: 100, minAlertQty: 10, unit: 'Paquet', tvaRate: 19 },
-        { name: 'Oris Bleue - Cigarette (سيڨار دخان أوريس أزرق)', category: 'Tabac / دخان', code: '619001000502', purchasePrice: 0.425, sellingPrice: 0.550, stock: 200, minAlertQty: 20, unit: 'Cigarette', tvaRate: 19 },
-        { name: 'Oris Double Apple - Paquet (علبة دخان أوريس تفاحتين)', category: 'Tabac / دخان', code: '619001000601', purchasePrice: 8.500, sellingPrice: 10.000, stock: 100, minAlertQty: 10, unit: 'Paquet', tvaRate: 19 },
-        { name: 'Oris Double Apple - Cigarette (سيڨار دخان أوريس تفاحتين)', category: 'Tabac / دخان', code: '619001000602', purchasePrice: 0.425, sellingPrice: 0.550, stock: 200, minAlertQty: 20, unit: 'Cigarette', tvaRate: 19 },
-        { name: 'Royale Business Bleue - Paquet (علبة دخان رويال بيزنس أزرق)', category: 'Tabac / دخان', code: '619001000701', purchasePrice: 7.200, sellingPrice: 8.200, stock: 100, minAlertQty: 10, unit: 'Paquet', tvaRate: 19 },
-        { name: 'Royale Business Bleue - Cigarette (سيڨار دخان رويال بيزنس أزرق)', category: 'Tabac / دخان', code: '619001000702', purchasePrice: 0.360, sellingPrice: 0.450, stock: 200, minAlertQty: 20, unit: 'Cigarette', tvaRate: 19 },
-        { name: '20 Mars Argent - Paquet (علبة دخان 20 مارس فضي)', category: 'Tabac / دخان', code: '619001000801', purchasePrice: 5.200, sellingPrice: 5.900, stock: 100, minAlertQty: 10, unit: 'Paquet', tvaRate: 19 },
-        { name: '20 Mars Argent - Cigarette (سيڨار دخان 20 مارس فضي)', category: 'Tabac / دخان', code: '619001000802', purchasePrice: 0.260, sellingPrice: 0.320, stock: 200, minAlertQty: 20, unit: 'Cigarette', tvaRate: 19 },
-        { name: '20 Mars International - Paquet (علبة دخان 20 مارس انترناسيونال)', category: 'Tabac / دخان', code: '619001000901', purchasePrice: 5.500, sellingPrice: 6.500, stock: 100, minAlertQty: 10, unit: 'Paquet', tvaRate: 19 },
-        { name: '20 Mars International - Cigarette (سيڨار دخان 20 مارس انترناسيونال)', category: 'Tabac / دخان', code: '619001000902', purchasePrice: 0.275, sellingPrice: 0.350, stock: 200, minAlertQty: 20, unit: 'Cigarette', tvaRate: 19 },
-        { name: 'Winston Bleue - Paquet (علبة دخان وينستون أزرق)', category: 'Tabac / دخان', code: '619001001001', purchasePrice: 8.500, sellingPrice: 9.800, stock: 100, minAlertQty: 10, unit: 'Paquet', tvaRate: 19 },
-        { name: 'Winston Bleue - Cigarette (سيڨار دخان وينستون أزرق)', category: 'Tabac / دخان', code: '619001001002', purchasePrice: 0.425, sellingPrice: 0.500, stock: 200, minAlertQty: 20, unit: 'Cigarette', tvaRate: 19 },
-        { name: 'Marlboro Gold - Paquet (علبة دخان مارلبورو ذهبي)', category: 'Tabac / دخان', code: '619001001101', purchasePrice: 11.000, sellingPrice: 12.500, stock: 100, minAlertQty: 10, unit: 'Paquet', tvaRate: 19 },
-        { name: 'Marlboro Gold - Cigarette (سيڨار دخان مارلبورو ذهبي)', category: 'Tabac / دخان', code: '619001001102', purchasePrice: 0.550, sellingPrice: 0.650, stock: 200, minAlertQty: 20, unit: 'Cigarette', tvaRate: 19 },
-        { name: 'Merit Bleue - Paquet (علبة دخان ميريت أزرق)', category: 'Tabac / دخان', code: '619001001201', purchasePrice: 11.500, sellingPrice: 13.000, stock: 100, minAlertQty: 10, unit: 'Paquet', tvaRate: 19 },
-        { name: 'Merit Bleue - Cigarette (سيڨار دخان ميريت أزرق)', category: 'Tabac / دخان', code: '619001001202', purchasePrice: 0.575, sellingPrice: 0.700, stock: 200, minAlertQty: 20, unit: 'Cigarette', tvaRate: 19 }
+        { name: 'Légère Bleue - Paquet (علبة دخان لايت أزرق)', category: 'Tabac / دخان', code: '619001000101', purchasePrice: 7.200, sellingPrice: 8.500, stock: 100, minAlertQty: 10, unit: 'Paquet', tvaRate: 19, isFoodProduct: false },
+        { name: 'Légère Bleue - Cigarette (سيڨار دخان لايت أزرق)', category: 'Tabac / دخان', code: '619001000102', purchasePrice: 0.360, sellingPrice: 0.450, stock: 200, minAlertQty: 20, unit: 'Cigarette', tvaRate: 19, isFoodProduct: false },
+        { name: '20 Mars Doré - Paquet (علبة دخان 20 مارس ذهبي)', category: 'Tabac / دخان', code: '619001000201', purchasePrice: 5.200, sellingPrice: 5.900, stock: 100, minAlertQty: 10, unit: 'Paquet', tvaRate: 19, isFoodProduct: false },
+        { name: '20 Mars Doré - Cigarette (سيڨار دخان 20 مارس ذهبي)', category: 'Tabac / دخان', code: '619001000202', purchasePrice: 0.260, sellingPrice: 0.320, stock: 200, minAlertQty: 20, unit: 'Cigarette', tvaRate: 19, isFoodProduct: false },
+        { name: 'Cristal - Paquet (علبة دخان كريستال عادي)', category: 'Tabac / دخان', code: '619001000301', purchasePrice: 2.800, sellingPrice: 3.300, stock: 100, minAlertQty: 10, unit: 'Paquet', tvaRate: 19, isFoodProduct: false },
+        { name: 'Cristal - Cigarette (سيڨار دخان كريستال)', category: 'Tabac / دخان', code: '619001000302', purchasePrice: 0.140, sellingPrice: 0.180, stock: 200, minAlertQty: 20, unit: 'Cigarette', tvaRate: 19, isFoodProduct: false },
+        { name: 'Royale Menthe - Paquet (علبة دخان رويال نعناع)', category: 'Tabac / دخان', code: '619001000401', purchasePrice: 7.800, sellingPrice: 9.000, stock: 100, minAlertQty: 10, unit: 'Paquet', tvaRate: 19, isFoodProduct: false },
+        { name: 'Royale Menthe - Cigarette (سيڨار دخان رويال نعناع)', category: 'Tabac / دخان', code: '619001000402', purchasePrice: 0.390, sellingPrice: 0.500, stock: 200, minAlertQty: 20, unit: 'Cigarette', tvaRate: 19, isFoodProduct: false },
+        { name: 'Oris Bleue - Paquet (علبة دخان أوريس أزرق)', category: 'Tabac / دخان', code: '619001000501', purchasePrice: 8.500, sellingPrice: 10.000, stock: 100, minAlertQty: 10, unit: 'Paquet', tvaRate: 19, isFoodProduct: false },
+        { name: 'Oris Bleue - Cigarette (سيڨار دخان أوريس أزرق)', category: 'Tabac / دخان', code: '619001000502', purchasePrice: 0.425, sellingPrice: 0.550, stock: 200, minAlertQty: 20, unit: 'Cigarette', tvaRate: 19, isFoodProduct: false },
+        { name: 'Oris Double Apple - Paquet (علبة دخان أوريس تفاحتين)', category: 'Tabac / دخان', code: '619001000601', purchasePrice: 8.500, sellingPrice: 10.000, stock: 100, minAlertQty: 10, unit: 'Paquet', tvaRate: 19, isFoodProduct: false },
+        { name: 'Oris Double Apple - Cigarette (سيڨار دخان أوريس تفاحتين)', category: 'Tabac / دخان', code: '619001000602', purchasePrice: 0.425, sellingPrice: 0.550, stock: 200, minAlertQty: 20, unit: 'Cigarette', tvaRate: 19, isFoodProduct: false },
+        { name: 'Royale Business Bleue - Paquet (علبة دخان رويال بيزنس أزرق)', category: 'Tabac / دخان', code: '619001000701', purchasePrice: 7.200, sellingPrice: 8.200, stock: 100, minAlertQty: 10, unit: 'Paquet', tvaRate: 19, isFoodProduct: false },
+        { name: 'Royale Business Bleue - Cigarette (سيڨار دخان رويال بيزنس أزرق)', category: 'Tabac / دخان', code: '619001000702', purchasePrice: 0.360, sellingPrice: 0.450, stock: 200, minAlertQty: 20, unit: 'Cigarette', tvaRate: 19, isFoodProduct: false },
+        { name: '20 Mars Argent - Paquet (علبة دخان 20 مارس فضي)', category: 'Tabac / دخان', code: '619001000801', purchasePrice: 5.200, sellingPrice: 5.900, stock: 100, minAlertQty: 10, unit: 'Paquet', tvaRate: 19, isFoodProduct: false },
+        { name: '20 Mars Argent - Cigarette (سيڨار دخان 20 مارس فضي)', category: 'Tabac / دخان', code: '619001000802', purchasePrice: 0.260, sellingPrice: 0.320, stock: 200, minAlertQty: 20, unit: 'Cigarette', tvaRate: 19, isFoodProduct: false },
+        { name: '20 Mars International - Paquet (علبة دخان 20 مارس انترناسيونال)', category: 'Tabac / دخان', code: '619001000901', purchasePrice: 5.500, sellingPrice: 6.500, stock: 100, minAlertQty: 10, unit: 'Paquet', tvaRate: 19, isFoodProduct: false },
+        { name: '20 Mars International - Cigarette (سيڨار دخان 20 مارس انترناسيونال)', category: 'Tabac / دخان', code: '619001000902', purchasePrice: 0.275, sellingPrice: 0.350, stock: 200, minAlertQty: 20, unit: 'Cigarette', tvaRate: 19, isFoodProduct: false },
+        { name: 'Winston Bleue - Paquet (علبة دخان وينستون أزرق)', category: 'Tabac / دخان', code: '619001001001', purchasePrice: 8.500, sellingPrice: 9.800, stock: 100, minAlertQty: 10, unit: 'Paquet', tvaRate: 19, isFoodProduct: false },
+        { name: 'Winston Bleue - Cigarette (سيڨار دخان وينستون أزرق)', category: 'Tabac / دخان', code: '619001001002', purchasePrice: 0.425, sellingPrice: 0.500, stock: 200, minAlertQty: 20, unit: 'Cigarette', tvaRate: 19, isFoodProduct: false },
+        { name: 'Marlboro Gold - Paquet (علبة دخان مارلبورو ذهبي)', category: 'Tabac / دخان', code: '619001001101', purchasePrice: 11.000, sellingPrice: 12.500, stock: 100, minAlertQty: 10, unit: 'Paquet', tvaRate: 19, isFoodProduct: false },
+        { name: 'Marlboro Gold - Cigarette (سيڨار دخان مارلبورو ذهبي)', category: 'Tabac / دخان', code: '619001001102', purchasePrice: 0.550, sellingPrice: 0.650, stock: 200, minAlertQty: 20, unit: 'Cigarette', tvaRate: 19, isFoodProduct: false },
+        { name: 'Merit Bleue - Paquet (علبة دخان ميريت أزرق)', category: 'Tabac / دخان', code: '619001001201', purchasePrice: 11.500, sellingPrice: 13.000, stock: 100, minAlertQty: 10, unit: 'Paquet', tvaRate: 19, isFoodProduct: false },
+        { name: 'Merit Bleue - Cigarette (سيڨار دخان ميريت أزرق)', category: 'Tabac / دخان', code: '619001001202', purchasePrice: 0.575, sellingPrice: 0.700, stock: 200, minAlertQty: 20, unit: 'Cigarette', tvaRate: 19, isFoodProduct: false }
       ],
       fuel: [
-        { name: 'Benzine Rouge 1L (بنزين أحمر 1 لتر)', category: 'Carburant / بنزين', code: '619002000101', purchasePrice: 2.000, sellingPrice: 2.520, stock: 50, minAlertQty: 5, unit: 'Litre', tvaRate: 19 },
-        { name: 'Benzine Rouge 1.5L (بنزين أحمر 1.5 لتر)', category: 'Carburant / بنزين', code: '619002000102', purchasePrice: 3.000, sellingPrice: 3.780, stock: 50, minAlertQty: 5, unit: 'Litre', tvaRate: 19 },
-        { name: 'Benzine Rouge 0.5L (بنزين أحمر نصف لتر)', category: 'Carburant / بنزين', code: '619002000103', purchasePrice: 1.000, sellingPrice: 1.260, stock: 50, minAlertQty: 5, unit: 'Litre', tvaRate: 19 },
-        { name: 'Benzine Vert 1L (بنزين أخضر خالي من الرصاص 1 لتر)', category: 'Carburant / بنزين', code: '619002000201', purchasePrice: 2.100, sellingPrice: 2.650, stock: 50, minAlertQty: 5, unit: 'Litre', tvaRate: 19 },
-        { name: 'Benzine Vert 1.5L (بنزين أخضر خالي من الرصاص 1.5 لتر)', category: 'Carburant / بنزين', code: '619002000202', purchasePrice: 3.150, sellingPrice: 3.970, stock: 50, minAlertQty: 5, unit: 'Litre', tvaRate: 19 },
-        { name: 'Benzine Vert 0.5L (بنزين أخضر خالي من الرصاص نصف لتر)', category: 'Carburant / بنزين', code: '619002000203', purchasePrice: 1.050, sellingPrice: 1.320, stock: 50, minAlertQty: 5, unit: 'Litre', tvaRate: 19 }
+        { name: 'Benzine Rouge 1L (بنزين أحمر 1 لتر)', category: 'Carburant / بنزين', code: '619002000101', purchasePrice: 2.000, sellingPrice: 2.520, stock: 50, minAlertQty: 5, unit: 'Litre', tvaRate: 19, isFoodProduct: false },
+        { name: 'Benzine Rouge 1.5L (بنزين أحمر 1.5 لتر)', category: 'Carburant / بنزين', code: '619002000102', purchasePrice: 3.000, sellingPrice: 3.780, stock: 50, minAlertQty: 5, unit: 'Litre', tvaRate: 19, isFoodProduct: false },
+        { name: 'Benzine Rouge 0.5L (بنزين أحمر نصف لتر)', category: 'Carburant / بنزين', code: '619002000103', purchasePrice: 1.000, sellingPrice: 1.260, stock: 50, minAlertQty: 5, unit: 'Litre', tvaRate: 19, isFoodProduct: false },
+        { name: 'Benzine Vert 1L (بنزين أخضر خالي من الرصاص 1 لتر)', category: 'Carburant / بنزين', code: '619002000201', purchasePrice: 2.100, sellingPrice: 2.650, stock: 50, minAlertQty: 5, unit: 'Litre', tvaRate: 19, isFoodProduct: false },
+        { name: 'Benzine Vert 1.5L (بنزين أخضر خالي من الرصاص 1.5 لتر)', category: 'Carburant / بنزين', code: '619002000202', purchasePrice: 3.150, sellingPrice: 3.970, stock: 50, minAlertQty: 5, unit: 'Litre', tvaRate: 19, isFoodProduct: false },
+        { name: 'Benzine Vert 0.5L (بنزين أخضر خالي من الرصاص نصف لتر)', category: 'Carburant / بنزين', code: '619002000203', purchasePrice: 1.050, sellingPrice: 1.320, stock: 50, minAlertQty: 5, unit: 'Litre', tvaRate: 19, isFoodProduct: false }
       ],
       telecom: [
-        { name: 'Ticket Ooredoo 1 DT (تذكرة أوريدو 1 د)', category: 'Télécom / شحن', code: '619003000101', purchasePrice: 0.930, sellingPrice: 1.000, stock: 100, minAlertQty: 10, unit: 'Ticket', tvaRate: 19 },
-        { name: 'Ticket Ooredoo 5 DT (تذكرة أوريدو 5 د)', category: 'Télécom / شحن', code: '619003000102', purchasePrice: 4.650, sellingPrice: 5.000, stock: 50, minAlertQty: 5, unit: 'Ticket', tvaRate: 19 },
-        { name: 'Ticket Tunisie Telecom 1 DT (تذكرة اتصالات تونس 1 د)', category: 'Télécom / شحن', code: '619003000201', purchasePrice: 0.930, sellingPrice: 1.000, stock: 100, minAlertQty: 10, unit: 'Ticket', tvaRate: 19 },
-        { name: 'Ticket Tunisie Telecom 5 DT (تذكرة اتصالات تونس 5 د)', category: 'Télécom / شحن', code: '619003000202', purchasePrice: 4.650, sellingPrice: 5.000, stock: 50, minAlertQty: 5, unit: 'Ticket', tvaRate: 19 },
-        { name: 'Ticket Orange 1 DT (تذكرة أورنج 1 د)', category: 'Télécom / شحن', code: '619003000301', purchasePrice: 0.930, sellingPrice: 1.000, stock: 100, minAlertQty: 10, unit: 'Ticket', tvaRate: 19 },
-        { name: 'Ticket Orange 5 DT (تذكرة أورنج 5 د)', category: 'Télécom / شحن', code: '619003000302', purchasePrice: 4.650, sellingPrice: 5.000, stock: 50, minAlertQty: 5, unit: 'Ticket', tvaRate: 19 }
+        { name: 'Ticket Ooredoo 1 DT (تذكرة أوريدو 1 د)', category: 'Télécom / شحن', code: '619003000101', purchasePrice: 0.930, sellingPrice: 1.000, stock: 100, minAlertQty: 10, unit: 'Ticket', tvaRate: 19, isFoodProduct: false },
+        { name: 'Ticket Ooredoo 5 DT (تذكرة أوريدو 5 د)', category: 'Télécom / شحن', code: '619003000102', purchasePrice: 4.650, sellingPrice: 5.000, stock: 50, minAlertQty: 5, unit: 'Ticket', tvaRate: 19, isFoodProduct: false },
+        { name: 'Ticket Tunisie Telecom 1 DT (تذكرة اتصالات تونس 1 د)', category: 'Télécom / شحن', code: '619003000201', purchasePrice: 0.930, sellingPrice: 1.000, stock: 100, minAlertQty: 10, unit: 'Ticket', tvaRate: 19, isFoodProduct: false },
+        { name: 'Ticket Tunisie Telecom 5 DT (تذكرة اتصالات تونس 5 د)', category: 'Télécom / شحن', code: '619003000202', purchasePrice: 4.650, sellingPrice: 5.000, stock: 50, minAlertQty: 5, unit: 'Ticket', tvaRate: 19, isFoodProduct: false },
+        { name: 'Ticket Orange 1 DT (تذكرة أورنج 1 د)', category: 'Télécom / شحن', code: '619003000301', purchasePrice: 0.930, sellingPrice: 1.000, stock: 100, minAlertQty: 10, unit: 'Ticket', tvaRate: 19, isFoodProduct: false },
+        { name: 'Ticket Orange 5 DT (تذكرة أورنج 5 د)', category: 'Télécom / شحن', code: '619003000302', purchasePrice: 4.650, sellingPrice: 5.000, stock: 50, minAlertQty: 5, unit: 'Ticket', tvaRate: 19, isFoodProduct: false }
       ]
     };
 
+    if (type === 'groceries' || type === 'all') {
+      productsToAdd.push(...presets.groceries);
+    }
+    if (type === 'water') {
+      productsToAdd.push(...presets.water);
+    }
+    if (type === 'dairy') {
+      productsToAdd.push(...presets.dairy);
+    }
     if (type === 'tobacco' || type === 'all') {
       productsToAdd.push(...presets.tobacco);
     }
@@ -789,7 +861,7 @@ export default function Products({ db, onUpdateDb }: ProductsProps) {
           stock: preset.stock,
           minAlertQty: preset.minAlertQty,
           unit: preset.unit,
-          isFoodProduct: false,
+          isFoodProduct: preset.isFoodProduct !== undefined ? preset.isFoodProduct : false,
           tvaRate: preset.tvaRate,
           priceHistory: [{
             id: `log-${Date.now()}`,
@@ -1503,6 +1575,26 @@ export default function Products({ db, onUpdateDb }: ProductsProps) {
             <span>{language === 'ar' ? 'سلع تونسية سريعة' : 'Presets Tunisiens'}</span>
           </button>
 
+          {/* Category Deduplication Button */}
+          <button
+            onClick={handleHarmonizeAllCategories}
+            className="px-4 py-2.5 bg-violet-600 hover:bg-violet-700 text-white rounded text-xs font-bold transition-all shadow-xs flex items-center justify-center gap-1.5 cursor-pointer"
+            title={language === 'ar' ? 'حذف وتوحيد الفئات المتكررة (مثل Boissons مع Boissons / مشروبات)' : 'Supprimer les doublons dans les catégories de produits'}
+          >
+            <Sparkles className="w-4 h-4 text-amber-300" />
+            <span>{language === 'ar' ? 'توحيد الفئات (حذف التكرار)' : 'Dédoublonner Catégories'}</span>
+          </button>
+
+          {/* GS1 Barcode Harmonization Button */}
+          <button
+            onClick={handleSyncRealTunisianBarcodes}
+            className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-xs font-bold transition-all shadow-xs flex items-center justify-center gap-1.5 cursor-pointer"
+            title={language === 'ar' ? 'تصحيح ومطابقة الباركودات بالرمز الرسمي GS1 لتونس (619)' : 'Harmoniser les codes-barres avec les codes officiels GS1 Tunisie (619)'}
+          >
+            <RotateCcw className="w-4 h-4" />
+            <span>{language === 'ar' ? 'تدقيق الباركودات (GS1)' : 'Harmoniser Barcodes (619)'}</span>
+          </button>
+
           <button
             onClick={() => handleOpenCreate()}
             className="px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded text-xs font-bold transition-all shadow-xs flex items-center justify-center gap-1.5 cursor-pointer"
@@ -1782,7 +1874,65 @@ export default function Products({ db, onUpdateDb }: ProductsProps) {
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {/* Mineral Waters & Beverages Card */}
+                <div className="bg-white/95 dark:bg-zinc-800/95 p-4 rounded-xl border border-indigo-100/80 dark:border-zinc-700/60 flex flex-col justify-between">
+                  <div>
+                    <h4 className="text-xs font-bold text-slate-800 dark:text-zinc-100 flex items-center gap-1.5 mb-2">
+                      <span className="text-sm">💧</span>
+                      {language === 'ar' ? 'المياه المعدنية والمشروبات التونسية (GS1 619)' : 'Eaux Minérales & Boissons (GS1 619)'}
+                    </h4>
+                    <p className="text-[11px] text-slate-500 dark:text-zinc-400 leading-relaxed mb-3">
+                      {language === 'ar'
+                        ? 'يشمل: ماء حياة 1.5L و 0.5L، صافية، صابرين، مروى، فرات، بوغا سيدي، كوكا كولا، فانتا، سيلكتو، عصير دليس، إلخ بباركوداتها الأصلية المطابقة للسكانير.'
+                        : 'Inclut: Eau Hayat 1.5L/0.5L, Safia, Sabrine, Marwa, Fourat, Boga Cidre, Coca-Cola, Fanta, Délio, etc. avec codes-barres GS1 exacts.'}
+                    </p>
+                    <div className="flex flex-wrap gap-1 mb-4">
+                      <span className="text-[9px] bg-sky-50 text-sky-700 dark:bg-sky-950/40 dark:text-sky-300 py-0.5 px-2 rounded-full font-medium">Hayat 1.5L (6191234500010)</span>
+                      <span className="text-[9px] bg-sky-50 text-sky-700 dark:bg-sky-950/40 dark:text-sky-300 py-0.5 px-2 rounded-full font-medium">Safia 1.5L</span>
+                      <span className="text-[9px] bg-sky-50 text-sky-700 dark:bg-sky-950/40 dark:text-sky-300 py-0.5 px-2 rounded-full font-medium">Sabrine 1.5L</span>
+                      <span className="text-[9px] bg-sky-50 text-sky-700 dark:bg-sky-950/40 dark:text-sky-300 py-0.5 px-2 rounded-full font-medium">Boga Cidre</span>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => handleImportTunisianProducts('water')}
+                    className="w-full py-2 bg-sky-600 hover:bg-sky-700 text-white font-bold rounded-lg text-xs transition-colors flex items-center justify-center gap-1.5 cursor-pointer shadow-xs"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>{language === 'ar' ? 'إضافة المياه والمشروبات الغازية' : 'Ajouter Eaux & Boissons'}</span>
+                  </button>
+                </div>
+
+                {/* Dairy & Groceries Card */}
+                <div className="bg-white/95 dark:bg-zinc-800/95 p-4 rounded-xl border border-indigo-100/80 dark:border-zinc-700/60 flex flex-col justify-between">
+                  <div>
+                    <h4 className="text-xs font-bold text-slate-800 dark:text-zinc-100 flex items-center gap-1.5 mb-2">
+                      <span className="text-sm">🥛</span>
+                      {language === 'ar' ? 'الحليب ومشتقاته والمصبرات (دليس، فيتالايت، سيكام)' : 'Produits Laitiers & Épicerie (Délice, Vitalait, Sicam)'}
+                    </h4>
+                    <p className="text-[11px] text-slate-500 dark:text-zinc-400 leading-relaxed mb-3">
+                      {language === 'ar'
+                        ? 'يشمل: حليب دليس 1 لتر، حليب فيتالايت، ياغورت ماميز ودليس، طماطم وهريسة سيكام، كسكسي دياري، مقرونة رندا، تن سيدي داود والمنار.'
+                        : 'Inclut: Lait Délice 1L, Vitalait, Yaourts, Tomate & Harissa Sicam, Couscous Diari, Pâtes Randa, Thon Sidi Daoud / El Manar.'}
+                    </p>
+                    <div className="flex flex-wrap gap-1 mb-4">
+                      <span className="text-[9px] bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300 py-0.5 px-2 rounded-full font-medium">Lait Délice (6191234500058)</span>
+                      <span className="text-[9px] bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300 py-0.5 px-2 rounded-full font-medium">Vitalait</span>
+                      <span className="text-[9px] bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300 py-0.5 px-2 rounded-full font-medium">Sicam 800g</span>
+                      <span className="text-[9px] bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300 py-0.5 px-2 rounded-full font-medium">Diari / Randa</span>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => handleImportTunisianProducts('dairy')}
+                    className="w-full py-2 bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-lg text-xs transition-colors flex items-center justify-center gap-1.5 cursor-pointer shadow-xs"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>{language === 'ar' ? 'إضافة الحليب والمصبرات التونسية' : 'Ajouter Laitiers & Épicerie'}</span>
+                  </button>
+                </div>
+
                 {/* Tobacco Presets Card */}
                 <div className="bg-white/95 dark:bg-zinc-800/95 p-4 rounded-xl border border-indigo-100/80 dark:border-zinc-700/60 flex flex-col justify-between">
                   <div>
@@ -1792,17 +1942,14 @@ export default function Products({ db, onUpdateDb }: ProductsProps) {
                     </h4>
                     <p className="text-[11px] text-slate-500 dark:text-zinc-400 leading-relaxed mb-3">
                       {language === 'ar'
-                        ? 'يشمل: لايت أزرق، 20 مارس ذهبي وفضي وعالمي، كريستال، رويال نعناع، أوريس (عادي وتفاحتين)، رويال بيزنس، وينستون، مارلبورو، ميريت. مجهزة كعلبة أو بالسيجارة الفردية.'
-                        : 'Inclut: Légère, 20 Mars (Doré, Argent, Int), Cristal, Royale Menthe, Oris (Bleu, Double Pomme), Royale Business, Winston, Marlboro, Merit. En paquet complet ou cigarette unitaire.'}
+                        ? 'يشمل: لايت أزرق، 20 مارس ذهبي وفضي وعالمي، كريستال، رويال نعناع، أوريس (عادي وتفاحتين)، رويال بيزنس، وينستون، مارلبورو، ميريت.'
+                        : 'Inclut: Légère, 20 Mars (Doré, Argent, Int), Cristal, Royale Menthe, Oris (Bleu, Double Pomme), Royale Business, Winston, Marlboro, Merit.'}
                     </p>
                     <div className="flex flex-wrap gap-1 mb-4">
                       <span className="text-[9px] bg-indigo-50/50 text-indigo-700 dark:bg-zinc-700 dark:text-zinc-300 py-0.5 px-2 rounded-full font-medium">Légère</span>
                       <span className="text-[9px] bg-indigo-50/50 text-indigo-700 dark:bg-zinc-700 dark:text-zinc-300 py-0.5 px-2 rounded-full font-medium">20 Mars</span>
                       <span className="text-[9px] bg-indigo-50/50 text-indigo-700 dark:bg-zinc-700 dark:text-zinc-300 py-0.5 px-2 rounded-full font-medium">Cristal</span>
                       <span className="text-[9px] bg-indigo-50/50 text-indigo-700 dark:bg-zinc-700 dark:text-zinc-300 py-0.5 px-2 rounded-full font-medium">Royale</span>
-                      <span className="text-[9px] bg-indigo-50/50 text-indigo-700 dark:bg-zinc-700 dark:text-zinc-300 py-0.5 px-2 rounded-full font-medium">Oris</span>
-                      <span className="text-[9px] bg-indigo-50/50 text-indigo-700 dark:bg-zinc-700 dark:text-zinc-300 py-0.5 px-2 rounded-full font-medium">Royale Business</span>
-                      <span className="text-[9px] bg-indigo-50/50 text-indigo-700 dark:bg-zinc-700 dark:text-zinc-300 py-0.5 px-2 rounded-full font-medium">Winston/Marlboro/Merit</span>
                     </div>
                   </div>
                   <button
@@ -1820,12 +1967,12 @@ export default function Products({ db, onUpdateDb }: ProductsProps) {
                   <div>
                     <h4 className="text-xs font-bold text-slate-800 dark:text-zinc-100 flex items-center gap-1.5 mb-2">
                       <span className="text-sm">⛽</span>
-                      {language === 'ar' ? 'وقود وبنزين أحمر وأخضر (لتر، لتر ونصف، نصف لتر)' : 'Carburants Rouge & Vert (1L, 1.5L, 0.5L)'}
+                      {language === 'ar' ? 'وقود وبنزين أحمر وأخضر (لتر، 1.5 لتر، نصف لتر)' : 'Carburants Rouge & Vert (1L, 1.5L, 0.5L)'}
                     </h4>
                     <p className="text-[11px] text-slate-500 dark:text-zinc-400 leading-relaxed mb-3">
                       {language === 'ar'
-                        ? 'يشمل: بنزين أحمر وبنزين أخضر خالي من الرصاص بالعلب والسعات الثلاث المطلوبة (1 لتر، 1.5 لتر، و0.5 لتر) مضافة مباشرة لكتالوج المنتجات.'
-                        : 'Inclut: Benzine Rouge et Benzine Vert sans plomb dans les 3 formats requis (1 Litre, 1.5 Litres, et 0.5 Litre) prêts à la vente.'}
+                        ? 'يشمل: بنزين أحمر وبنزين أخضر خالي من الرصاص بالعلب والسعات الثلاث المطلوبة (1 لتر، 1.5 لتر، و0.5 لتر).'
+                        : 'Inclut: Benzine Rouge et Benzine Vert sans plomb dans les 3 formats requis (1 Litre, 1.5 Litres, et 0.5 Litre).'}
                     </p>
                     <div className="flex flex-wrap gap-1 mb-4">
                       <span className="text-[9px] bg-red-50 text-red-700 dark:bg-red-950/40 dark:text-red-300 py-0.5 px-2 rounded-full font-medium">Rouge (0.5L / 1L / 1.5L)</span>
@@ -1852,7 +1999,7 @@ export default function Products({ db, onUpdateDb }: ProductsProps) {
                     <p className="text-[11px] text-slate-500 dark:text-zinc-400 leading-relaxed mb-3">
                       {language === 'ar'
                         ? 'يشمل: تذاكر شحن هاتف لشركات أوريدو (Ooredoo)، اتصالات تونس (Telecom)، وأورنج (Orange) بفئات 1 د و5 د.'
-                        : 'Inclut: Tickets de recharge pour Ooredoo, Tunisie Telecom et Orange en formats 1 DT et 5 DT prêts pour la caisse.'}
+                        : 'Inclut: Tickets de recharge pour Ooredoo, Tunisie Telecom et Orange en formats 1 DT et 5 DT.'}
                     </p>
                     <div className="flex flex-wrap gap-1 mb-4">
                       <span className="text-[9px] bg-red-50 text-red-700 dark:bg-red-950/40 dark:text-red-300 py-0.5 px-2 rounded-full font-medium">Ooredoo (1D / 5D)</span>
@@ -2466,14 +2613,18 @@ export default function Products({ db, onUpdateDb }: ProductsProps) {
                       }}
                       className="w-full bg-slate-50 border border-slate-200 rounded py-2 px-2.5 focus:outline-hidden text-slate-800 font-semibold cursor-pointer"
                     >
-                      <option value="">Sélectionner...</option>
-                      {db.products
-                        .map(p => p.category)
-                        .filter((v, i, self) => self.indexOf(v) === i && v)
-                        .map(c => (
-                          <option key={c} value={c}>{c}</option>
-                        ))
-                      }
+                      <option value="">Sélectionner une catégorie...</option>
+                      {Array.from(
+                        new Set([
+                          ...CANONICAL_CATEGORIES.map(c => c.fullName),
+                          ...(db.products || []).map(p => normalizeCategoryName(p.category)).filter(Boolean)
+                        ])
+                      ).sort((a, b) => a.localeCompare(b)).map(c => {
+                        const meta = getCategoryMetadata(c);
+                        return (
+                          <option key={c} value={c}>{meta.icon} {c}</option>
+                        );
+                      })}
                       <option value="__add_new__" className="text-blue-600 font-extrabold bg-blue-50">➕ Nouvelle catégorie...</option>
                     </select>
                   )}
