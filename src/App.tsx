@@ -42,6 +42,7 @@ import BranchStockTransferModal from './components/BranchStockTransferModal';
 import MultiBranchOverviewModal from './components/MultiBranchOverviewModal';
 import WeeklyInventory from './components/WeeklyInventory';
 import { checkAndRunAutoWeeklyInventory } from './utils/inventoryScheduler';
+import { updateDynamicAppBranding } from './utils/dynamicPWA';
 import { BranchMeta } from './types';
 
 import { 
@@ -534,6 +535,11 @@ function AppContent() {
       clearInterval(interval);
     };
   }, [activeUser, isAppScreenLocked, db?.settings]);
+
+  useEffect(() => {
+    // 🎨 Synchronize custom logo, store name, favicon, apple-touch-icon, and PWA manifest in real-time
+    updateDynamicAppBranding(db?.settings?.storeName, db?.settings?.storeLogo);
+  }, [db?.settings?.storeName, db?.settings?.storeLogo]);
 
   const handlePerformSystemUpdate = async () => {
     setIsPerformingUpdate(true);

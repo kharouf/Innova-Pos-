@@ -2109,9 +2109,20 @@ encryption_mode: High-Security Advanced
 
             {/* Store Branding Logo & Icon Customizer */}
             <div className="md:col-span-2 border-t border-slate-100 pt-4 mt-2">
-              <label className="text-[11px] font-bold text-slate-600 uppercase block mb-2">
-                {language === 'ar' ? '🎨 تخصيص شعار أو أيقونة المحل / الشعار الرقمي' : '🎨 Logo & Identité Visuelle de la Boutique'}
-              </label>
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 mb-2">
+                <label className="text-[11px] font-black text-slate-700 uppercase tracking-wide flex items-center gap-1.5 font-display">
+                  <span>🎨</span>
+                  <span>{language === 'ar' ? 'شعار المحل وأيقونة التطبيق المثبت (موبايل وكمبيوتر / PWA)' : 'Logo & Icône de l\'Application (Mobile & PC / PWA)'}</span>
+                </label>
+                <span className="text-[9px] font-bold text-indigo-600 bg-indigo-50 border border-indigo-100 rounded-full px-2.5 py-0.5 self-start font-mono">
+                  {language === 'ar' ? '📱 متزامن تلقائياً مع شاشة الهاتف والكمبيوتر' : '📱 Synchronisé avec Mobile & PC'}
+                </span>
+              </div>
+              <p className="text-[10px] text-slate-500 mb-3 font-sans leading-relaxed">
+                {language === 'ar'
+                  ? 'الشعار أو الأيقونة المحددة ستظهر فوراً على وصولات الدفع وتذاكر الكاشير، وكذلك كأيقونة رسمية للتطبيق عند تثبيته على شاشة الهاتف (Android / iPhone) أو سطح مكتب الكمبيوتر (PWA).'
+                  : 'Le logo ou l\'icône sélectionné sera immédiatement utilisé sur les tickets de caisse, factures, favicon de navigateur, et comme icône d\'application lors de l\'installation sur Mobile (Android / iOS) ou PC (Chrome / Edge / Windows).'}
+              </p>
               
               <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
                 
