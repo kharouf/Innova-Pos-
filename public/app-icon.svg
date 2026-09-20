@@ -1,18 +1,80 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
-  <!-- Rounded elegant background -->
-  <rect width="512" height="512" rx="110" fill="#0f172a"/>
-  
-  <!-- Outer accent gradient ring -->
-  <circle cx="256" cy="256" r="180" fill="none" stroke="url(#g)" stroke-width="28" stroke-linecap="round"/>
-  
   <defs>
-    <linearGradient id="g" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#3b82f6"/>
-      <stop offset="50%" stop-color="#10b981"/>
-      <stop offset="100%" stop-color="#06b6d4"/>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#081729"/>
+      <stop offset="50%" stop-color="#0a2540"/>
+      <stop offset="100%" stop-color="#050d18"/>
     </linearGradient>
   </defs>
-  
-  <!-- Inner Brand Initials -->
-  <text x="256" y="300" font-family="system-ui, -apple-system, sans-serif" font-weight="900" font-size="140" fill="#ffffff" text-anchor="middle" letter-spacing="-2">IN</text>
+
+  <!-- Rounded App Icon Background -->
+  <rect width="512" height="512" rx="115" fill="url(#bgGrad)"/>
+  <rect width="504" height="504" x="4" y="4" rx="111" fill="none" stroke="#00a86b" stroke-width="4" stroke-opacity="0.3"/>
+
+  <!-- Centered Emblem -->
+  <g transform="translate(256, 256) scale(1.7) translate(-120, -120)">
+    <!-- 1. Green Gear (Behind the shield on the top & right side) -->
+    <g stroke="#00a86b" stroke-width="11" stroke-linecap="round" stroke-linejoin="round" fill="none">
+      <path d="M 152 46 A 78 78 0 0 1 206 102 A 78 78 0 0 1 184 158" />
+      <line x1="156" y1="40" x2="162" y2="28" />
+      <line x1="180" y1="56" x2="191" y2="47" />
+      <line x1="198" y1="78" x2="211" y2="73" />
+      <line x1="206" y1="104" x2="220" y2="104" />
+      <line x1="202" y1="130" x2="215" y2="135" />
+      <line x1="186" y1="154" x2="197" y2="163" />
+      <line x1="164" y1="174" x2="171" y2="186" />
+    </g>
+
+    <!-- 2. Main Dark Navy Shield Body -->
+    <path 
+      d="M 120 25 
+         C 175 25, 195 40, 195 85 
+         C 195 148, 156 200, 120 222 
+         C 84 200, 45 148, 45 85 
+         C 45 40, 65 25, 120 25 Z" 
+      fill="#0a2540" 
+    />
+
+    <!-- 3. Inner White Shield Border Line -->
+    <path 
+      d="M 120 37 
+         C 164 37, 181 49, 181 85 
+         C 181 138, 148 184, 120 203 
+         C 92 184, 59 138, 59 85 
+         C 59 49, 76 37, 120 37 Z" 
+      fill="none" 
+      stroke="#ffffff" 
+      stroke-width="3.5" 
+      stroke-opacity="0.85"
+    />
+
+    <!-- 4. Inside Elements: Bar Chart, Lines, Pie Chart -->
+    <g>
+      <rect x="145" y="74" width="6.5" height="14" rx="1.5" fill="#00a86b" />
+      <rect x="156" y="67" width="6.5" height="21" rx="1.5" fill="#00a86b" />
+      <rect x="167" y="60" width="6.5" height="28" rx="1.5" fill="#00a86b" />
+
+      <line x1="142" y1="96" x2="178" y2="96" stroke="#ffffff" stroke-width="3" stroke-linecap="round" />
+      <line x1="148" y1="104" x2="178" y2="104" stroke="#ffffff" stroke-width="3" stroke-linecap="round" />
+
+      <circle cx="162" cy="128" r="12" fill="#ffffff" />
+      <path d="M 162 128 L 162 116 A 12 12 0 0 1 174 128 Z" fill="#0a2540" />
+    </g>
+
+    <!-- 5. Big Stylized Letter 'A' across the Shield -->
+    <path 
+      d="M 120 48 
+         L 154 165 
+         L 132 165 
+         L 124 135 
+         L 89 135 
+         L 68 152 
+         L 84 105 
+         L 106 48 
+         Z" 
+      fill="#ffffff" 
+    />
+    <polygon points="87,132 135,132 142,154 75,154" fill="#00a86b" />
+    <polygon points="116,68 102,116 128,116" fill="#0a2540" />
+  </g>
 </svg>

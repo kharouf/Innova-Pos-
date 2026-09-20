@@ -551,6 +551,11 @@ export default function DatabaseControl({ db, onUpdateDb, license, user }: Datab
 
   const [receiptCustomLogo, setReceiptCustomLogo] = useState<string>(initialSettings.receiptCustomLogo || '');
   const [invoiceCustomLogo, setInvoiceCustomLogo] = useState<string>(initialSettings.invoiceCustomLogo || '');
+
+  // 🔐 Google Login Secondary Password / PIN 2FA Security State
+  const [loginSecurityPassword, setLoginSecurityPassword] = useState<string>(initialSettings.loginSecurityPassword || '');
+  const [enableGoogleLoginPasswordProtection, setEnableGoogleLoginPasswordProtection] = useState<boolean>(initialSettings.enableGoogleLoginPasswordProtection ?? true);
+  const [showGoogleSecurityPassword, setShowGoogleSecurityPassword] = useState<boolean>(false);
   const [receiptMarginTop, setReceiptMarginTop] = useState<number>(initialSettings.receiptMarginTop ?? 2);
   const [receiptMarginBottom, setReceiptMarginBottom] = useState<number>(initialSettings.receiptMarginBottom ?? 3);
   const [receiptMarginLeft, setReceiptMarginLeft] = useState<number>(initialSettings.receiptMarginLeft ?? 3);
@@ -629,6 +634,8 @@ export default function DatabaseControl({ db, onUpdateDb, license, user }: Datab
       setReceiptCompactSize(s.receiptCompactSize ?? false);
       setReceiptCustomLogo(s.receiptCustomLogo || '');
       setInvoiceCustomLogo(s.invoiceCustomLogo || '');
+      setLoginSecurityPassword(s.loginSecurityPassword || '');
+      setEnableGoogleLoginPasswordProtection(s.enableGoogleLoginPasswordProtection ?? true);
       setReceiptMarginTop(s.receiptMarginTop ?? 2);
       setReceiptMarginBottom(s.receiptMarginBottom ?? 3);
       setReceiptMarginLeft(s.receiptMarginLeft ?? 3);
@@ -1217,6 +1224,10 @@ encryption_mode: High-Security Advanced
       storeLogo,
       ownerPin,
       databaseSecurityPin,
+      loginSecurityPassword,
+      enableGoogleLoginPasswordProtection,
+      innovaLogoStyle: db?.settings?.innovaLogoStyle || 'shield',
+      innovaCustomLogo: db?.settings?.innovaCustomLogo || '',
       manualExpensesOffset,
       manualProfitsOffset,
       manualCreditOffset,
@@ -1941,6 +1952,79 @@ encryption_mode: High-Security Advanced
                   ? 'الرمز السري الرئيسي لفتح قاعدة البيانات والدخول لقسم الإعدادات.' 
                   : 'Code principal pour déverrouiller la base de données et l\'onglet d\'administration.'}
               </span>
+            </div>
+
+            {/* 🔐 GOOGLE LOGIN SECONDARY PASSWORD / PIN 2FA PROTECTION */}
+            <div className="md:col-span-2 bg-gradient-to-r from-emerald-50 to-teal-50/60 border border-emerald-200/80 rounded-xl p-4 mt-2 space-y-3 shadow-xs">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <div className="p-1.5 bg-emerald-600 text-white rounded-lg">
+                    <ShieldCheck className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h4 className="text-xs font-black text-emerald-950 uppercase font-display flex items-center gap-1.5">
+                      <span>{language === 'ar' ? 'حماية الدخول المزدوجة لحساب Google (2FA Password)' : 'Sécurité Renforcée Connexion Google (Mot de Passe 2FA)'}</span>
+                      <span className="text-[9px] px-1.5 py-0.5 rounded bg-emerald-200 text-emerald-900 font-mono font-bold">
+                        {enableGoogleLoginPasswordProtection ? (language === 'ar' ? 'مفعل' : 'ACTIF') : (language === 'ar' ? 'معطل' : 'INACTIF')}
+                      </span>
+                    </h4>
+                    <p className="text-[10px] text-emerald-800 leading-relaxed">
+                      {language === 'ar'
+                        ? 'عند تسجيل الدخول بحساب Google، يُطلب إدخال كلمة المرور أو رمز PIN المحدد هنا لمزيد من الأمان قبل الوصول إلى بيانات المحل.'
+                        : 'Après la connexion avec votre compte Google, un mot de passe ou code PIN sera exigé pour plus de sécurité avant d\'accéder à la caisse.'}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 shrink-0">
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={enableGoogleLoginPasswordProtection}
+                      onChange={(e) => setEnableGoogleLoginPasswordProtection(e.target.checked)}
+                      className="sr-only peer"
+                    />
+                    <div className="w-9 h-5 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-emerald-600"></div>
+                  </label>
+                  <span className="text-[10px] font-bold text-emerald-900">
+                    {enableGoogleLoginPasswordProtection ? (language === 'ar' ? 'تفعيل الحماية' : 'Protection activée') : (language === 'ar' ? 'تعطيل الحماية' : 'Désactivée')}
+                  </span>
+                </div>
+              </div>
+
+              {enableGoogleLoginPasswordProtection && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-emerald-200/60 items-center">
+                  <div>
+                    <label className="text-[10px] font-bold text-emerald-900 uppercase block mb-1">
+                      {language === 'ar' ? 'كلمة المرور أو رمز PIN الخاص بالدخول' : 'Mot de passe ou Code PIN de sécurité'}
+                    </label>
+                    <div className="relative">
+                      <input
+                        type={showGoogleSecurityPassword ? "text" : "password"}
+                        value={loginSecurityPassword}
+                        onChange={(e) => setLoginSecurityPassword(e.target.value)}
+                        placeholder="Ex: 0000 ou mot de passe personnalisé"
+                        className="w-full bg-white border border-emerald-300 rounded-lg py-2 px-3 pr-9 text-xs font-bold text-emerald-900 font-mono focus:outline-hidden focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 shadow-inner"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowGoogleSecurityPassword(!showGoogleSecurityPassword)}
+                        className="absolute top-1/2 -translate-y-1/2 right-2 text-emerald-700 hover:text-emerald-950 p-1 rounded-md transition-colors cursor-pointer"
+                        title={showGoogleSecurityPassword ? (language === 'ar' ? "إخفاء" : "Masquer") : (language === 'ar' ? "إظهار" : "Afficher")}
+                      >
+                        {showGoogleSecurityPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="p-2.5 rounded-lg bg-emerald-100/60 border border-emerald-200 text-[10px] text-emerald-900 leading-relaxed">
+                    <span className="font-bold block mb-0.5">ℹ️ {language === 'ar' ? 'ملاحظة هامة :' : 'Note importante :'}</span>
+                    {language === 'ar'
+                      ? 'إذا تركت هذا الحقل فارغاً، سيتم قبول الرمز السري للمالك (0000) تلقائياً كرمز دخول إضافي.'
+                      : 'Si laissé vide, votre code PIN Propriétaire (par défaut 0000) sera utilisé pour déverrouiller l\'accès.'}
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* 🏷️ CUSTOM TVA RATES CONFIGURATION */}

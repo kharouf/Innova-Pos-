@@ -41,6 +41,7 @@ import BranchManagerModal from './components/BranchManagerModal';
 import BranchStockTransferModal from './components/BranchStockTransferModal';
 import MultiBranchOverviewModal from './components/MultiBranchOverviewModal';
 import WeeklyInventory from './components/WeeklyInventory';
+import GoogleSecurityGate from './components/GoogleSecurityGate';
 import { checkAndRunAutoWeeklyInventory } from './utils/inventoryScheduler';
 import { updateDynamicAppBranding } from './utils/dynamicPWA';
 import { BranchMeta } from './types';
@@ -93,6 +94,12 @@ function AppContent() {
   const [isAppScreenLocked, setIsAppScreenLocked] = useState<boolean>(false);
   const [showLogoutCenterModal, setShowLogoutCenterModal] = useState<boolean>(false);
   const [isConfirmingLogout, setIsConfirmingLogout] = useState<boolean>(false);
+  const [isGoogleSecurityVerified, setIsGoogleSecurityVerified] = useState<boolean>(() => {
+    if (typeof window !== 'undefined') {
+      return sessionStorage.getItem('google_auth_security_verified') === 'true';
+    }
+    return false;
+  });
 
   // SaaS Subscription & Cloud Licensing protection hooks
   const [license, setLicense] = useState<UserLicenseData | null>(null);
@@ -1368,7 +1375,15 @@ function AppContent() {
   // Handle logout
   const handleLogout = async () => {
     try {
+      if (typeof window !== 'undefined') {
+        sessionStorage.removeItem('google_auth_security_verified');
+        if (user?.uid) {
+          sessionStorage.removeItem(`google_auth_security_verified_${user.uid}`);
+        }
+      }
+      setIsGoogleSecurityVerified(false);
       await auth.signOut();
+      setUser(null);
       setDemoMode(false);
       setDb(null);
       setLicense(null);
@@ -1401,6 +1416,22 @@ function AppContent() {
         db={db || undefined} 
         lockError={authLockError}
         clearLockError={() => setAuthLockError(null)}
+      />
+    );
+  }
+
+  // 🔐 Mandatory Secondary Password/PIN Security Gate after Google Login
+  const enableGooglePasswordProtection = db?.settings?.enableGoogleLoginPasswordProtection !== false;
+  if (user && !demoMode && !isGoogleSecurityVerified && enableGooglePasswordProtection) {
+    return (
+      <GoogleSecurityGate 
+        user={user}
+        db={db}
+        language={language}
+        onSuccess={() => setIsGoogleSecurityVerified(true)}
+        onLogout={handleLogout}
+        superettesList={superettesList}
+        activeSuperetteId={activeSuperetteId}
       />
     );
   }
@@ -1689,61 +1720,51 @@ function AppContent() {
       </AnimatePresence>
       
       {/* SIDEBAR NAVIGATION - DESKTOP SCREEN (Persistent) */}
-      <aside className={`${isAppFullscreen && activeTab === 'pos' ? 'hidden' : 'hidden lg:flex'} flex-col w-64 h-screen sticky top-0 bg-slate-900 text-white shrink-0 border-r border-slate-800 shadow-xl no-print overflow-y-auto custom-scrollbar`}>
+      <aside className={`${isAppFullscreen && activeTab === 'pos' ? 'hidden' : 'hidden lg:flex'} flex-col w-64 h-screen sticky top-0 bg-[#0b1e36] text-white shrink-0 border-r border-[#122b4d] shadow-2xl no-print overflow-y-auto custom-scrollbar`}>
         {/* Brand identity */}
-        <div className="p-6 flex items-center gap-3 border-b border-slate-800">
-          {resolveStoreLogo(db.settings?.storeLogo) ? (
-            ((resolveStoreLogo(db.settings?.storeLogo) || '').startsWith('data:') || (resolveStoreLogo(db.settings?.storeLogo) || '').startsWith('http') || (resolveStoreLogo(db.settings?.storeLogo) || '').startsWith('/') || (resolveStoreLogo(db.settings?.storeLogo) || '').includes('.') || (resolveStoreLogo(db.settings?.storeLogo) || '').length > 15) ? (
-              <img 
-                src={resolveStoreLogo(db.settings?.storeLogo)} 
-                alt="Logo" 
-                className="w-8 h-8 rounded-md object-cover bg-white" 
-                referrerPolicy="no-referrer"
-              />
-            ) : (
-              <div className="w-8 h-8 bg-blue-600/20 text-blue-300 rounded border border-blue-500/30 flex items-center justify-center text-sm font-bold shadow-xs shrink-0 select-none">
-                {resolveStoreLogo(db.settings?.storeLogo)}
-              </div>
-            )
-          ) : (
-            <div className="w-8 h-8 bg-blue-600 rounded flex items-center justify-center font-bold text-white text-xs shrink-0 select-none">
-              {db.settings?.storeName ? db.settings.storeName.substring(0, 2).toUpperCase() : 'GP'}
+        <div className="p-5 flex items-center justify-between border-b border-[#122b4d] bg-[#08172b]">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="p-1 bg-slate-950/80 border border-slate-850 rounded-lg overflow-hidden w-9 h-9 flex items-center justify-center shrink-0">
+              <img src={defaultPosLogo} className="w-full h-full object-contain" alt="Innova POS Pro" referrerPolicy="no-referrer" />
             </div>
-          )}
-          <div className="min-w-0 flex-1">
-            <span className="text-white font-bold tracking-tight text-xs font-display truncate block uppercase leading-tight">
-              {db.settings?.storeName || 'INNOVA POS PRO'}
-            </span>
-            <span className="text-[9px] text-slate-505 block truncate font-mono mt-0.5 capitalize font-semibold tracking-wide">
-              {db.settings?.activitySector || 'Etablissement'}
-            </span>
+            <div className="min-w-0">
+              <h1 className="text-xs font-black tracking-[0.1em] text-slate-300 font-mono uppercase truncate">
+                INNOVA POS PRO
+              </h1>
+              <p className="text-[10px] text-slate-500 font-mono truncate">
+                GESTION COMMERCIALE INTELLIGENTE
+              </p>
+            </div>
           </div>
-          {/* Global Theme Toggle Button */}
-          <button
-            onClick={handleToggleGlobalTheme}
-            id="theme-mode-toggle-desktop"
-            className="p-1.5 rounded-lg bg-slate-850 hover:bg-slate-800 text-slate-300 hover:text-white transition-all cursor-pointer flex items-center justify-center border border-slate-800 shrink-0 select-none focus:outline-hidden"
-            title={language === 'ar' ? 'تغيير المظهر' : 'Changer thème'}
-          >
-            {(db?.settings?.themeMode || 'light') === 'dark' ? (
-              <Sun className="w-3.5 h-3.5 text-amber-500 shrink-0" />
-            ) : (
-              <Moon className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-            )}
-          </button>
+          
+          <div className="flex items-center gap-1.5 shrink-0">
+            {/* Global Theme Toggle Button */}
+            <button
+              onClick={handleToggleGlobalTheme}
+              id="theme-mode-toggle-desktop"
+              className="p-1.5 rounded-lg bg-[#0f2744] hover:bg-[#193a63] text-slate-300 hover:text-white transition-all cursor-pointer flex items-center justify-center border border-[#1e3e6b] shrink-0 select-none focus:outline-hidden"
+              title={language === 'ar' ? 'تغيير المظهر' : 'Changer thème'}
+            >
+              {(db?.settings?.themeMode || 'light') === 'dark' ? (
+                <Sun className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+              ) : (
+                <Moon className="w-3.5 h-3.5 text-slate-300 shrink-0" />
+              )}
+            </button>
 
-          {/* Secure Logout & Cloud Disconnect Gear Icon (Écrou de Déconnexion) */}
-          <button
-            onClick={() => {
-              setIsConfirmingLogout(false);
-              setShowLogoutCenterModal(true);
-            }}
-            id="disconnect-gear-desktop"
-            className="p-1.5 rounded-lg bg-slate-850 hover:bg-rose-950/40 text-rose-400 hover:text-rose-300 border border-slate-800 hover:border-rose-900/50 transition-all cursor-pointer flex items-center justify-center shrink-0 select-none focus:outline-hidden group"
-            title={language === 'ar' ? 'مركز إدارة الاتصال و فك الارتباط' : 'Déconnexion & Synchro Multi-Appareils'}
-          >
-            <Settings className="w-3.5 h-3.5 animate-spin-slow group-hover:rotate-90 transition-transform duration-500 shrink-0" />
-          </button>
+            {/* Secure Logout & Cloud Disconnect Gear Icon */}
+            <button
+              onClick={() => {
+                setIsConfirmingLogout(false);
+                setShowLogoutCenterModal(true);
+              }}
+              id="disconnect-gear-desktop"
+              className="p-1.5 rounded-lg bg-[#0f2744] hover:bg-rose-950/50 text-slate-300 hover:text-rose-300 border border-[#1e3e6b] hover:border-rose-800 transition-all cursor-pointer flex items-center justify-center shrink-0 select-none focus:outline-hidden group"
+              title={language === 'ar' ? 'مركز إدارة الاتصال و فك الارتباط' : 'Paramètres & Synchronisation'}
+            >
+              <Settings className="w-3.5 h-3.5 group-hover:rotate-90 transition-transform duration-500 shrink-0 text-slate-300 group-hover:text-rose-300" />
+            </button>
+          </div>
         </div>
 
         {/* Multi-Branch Selector in Sidebar */}
@@ -1757,15 +1778,13 @@ function AppContent() {
           onOpenGlobalOverview={() => setShowMultiBranchOverviewModal(true)}
         />
 
-
-
         {/* Section title */}
-        <div className="text-slate-500 text-[10px] uppercase font-bold tracking-widest px-4 pt-5 pb-1">
+        <div className="text-slate-400 text-[10px] uppercase font-extrabold tracking-widest px-4 pt-4 pb-1">
           {t('nav_principal')}
         </div>
 
         {/* Sidebar Navigation links */}
-        <nav className="flex-1 p-3 space-y-1 overflow-y-auto custom-scrollbar">
+        <nav className="flex-1 p-3 space-y-1.5 overflow-y-auto custom-scrollbar">
           {NAV_ITEMS.map(item => {
             const Icon = item.icon;
             const isActive = activeTab === item.id;
@@ -1773,17 +1792,20 @@ function AppContent() {
               <button
                 key={item.id}
                 onClick={() => setActiveTab(item.id)}
-                className={`w-full text-right rounded-md px-3 py-2 cursor-pointer flex items-center gap-3 transition-colors group relative ${
+                className={`w-full text-right rounded-lg px-3.5 py-2.5 cursor-pointer flex items-center gap-3 transition-all duration-150 group relative ${
                   isActive 
-                    ? 'bg-blue-600 text-white font-bold shadow-lg shadow-blue-600/10' 
-                    : 'text-slate-400 hover:text-white hover:bg-slate-800/40'
+                    ? 'bg-blue-600 text-white font-black shadow-lg shadow-blue-600/30 ring-1 ring-blue-400/40' 
+                    : 'text-slate-300 hover:text-white hover:bg-[#132e52] hover:ring-1 hover:ring-blue-500/25'
                 }`}
               >
-                <Icon className={`w-4 h-4 shrink-0 transition-transform group-hover:scale-115 ${isActive ? 'text-white' : 'text-slate-400 group-hover:text-blue-400'}`} />
-                <div className="min-w-0 text-start">
-                  <span className="text-xs truncate block leading-none font-bold">{item.label}</span>
-                  <span className="text-[9px] text-slate-500 block font-medium mt-0.5 truncate">{item.subLabel}</span>
+                <Icon className={`w-4 h-4 shrink-0 transition-transform group-hover:scale-110 ${isActive ? 'text-white' : 'text-slate-400 group-hover:text-blue-300'}`} />
+                <div className="min-w-0 text-start flex-1">
+                  <span className={`text-xs truncate block leading-none ${isActive ? 'font-black text-white' : 'font-bold group-hover:text-white'}`}>{item.label}</span>
+                  <span className={`text-[9px] block font-medium mt-0.5 truncate ${isActive ? 'text-blue-100' : 'text-slate-400 group-hover:text-slate-200'}`}>{item.subLabel}</span>
                 </div>
+                {isActive && (
+                  <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse shrink-0"></span>
+                )}
               </button>
             );
           })}
@@ -1916,33 +1938,15 @@ function AppContent() {
       </aside>
 
       {/* MOBILE HEADER BAR & HAMBURGER (Visible on small screen) */}
-      <div className={`${isAppFullscreen && activeTab === 'pos' ? 'hidden' : 'lg:hidden'} fixed top-0 left-0 right-0 h-16 bg-slate-900 text-white flex items-center justify-between px-5 border-b border-slate-800 z-40 no-print`}>
+      <div className={`${isAppFullscreen && activeTab === 'pos' ? 'hidden' : 'lg:hidden'} fixed top-0 left-0 right-0 h-16 bg-[#0b1e36] text-white flex items-center justify-between px-4 border-b border-[#122b4d] z-40 no-print`}>
         <div className="flex items-center gap-2.5">
-          {resolveStoreLogo(db.settings?.storeLogo) ? (
-            ((resolveStoreLogo(db.settings?.storeLogo) || '').startsWith('data:') || (resolveStoreLogo(db.settings?.storeLogo) || '').startsWith('http') || (resolveStoreLogo(db.settings?.storeLogo) || '').startsWith('/') || (resolveStoreLogo(db.settings?.storeLogo) || '').includes('.') || (resolveStoreLogo(db.settings?.storeLogo) || '').length > 15) ? (
-              <img 
-                src={resolveStoreLogo(db.settings?.storeLogo)} 
-                alt="Logo" 
-                className="w-10 h-10 rounded-md object-cover bg-white" 
-                referrerPolicy="no-referrer"
-              />
-            ) : (
-              <div className="w-10 h-10 bg-blue-600/20 text-blue-300 rounded border border-blue-500/30 flex items-center justify-center text-xl font-bold shadow-xs shrink-0 select-none">
-                {resolveStoreLogo(db.settings?.storeLogo)}
-              </div>
-            )
-          ) : (
-            <div className="p-1.5 bg-blue-550/10 text-blue-400 rounded border border-blue-550/20">
-              <Building2 className="w-4 h-4" />
-            </div>
-          )}
-          <div className="min-w-0">
-            <h1 className="text-xs font-bold tracking-tight font-display text-white truncate max-w-[150px]">
-              {db.settings?.storeName || 'INNOVA POS'}
+          <div className="p-1 bg-slate-950/80 border border-slate-850 rounded-lg overflow-hidden w-8 h-8 flex items-center justify-center shrink-0">
+            <img src={defaultPosLogo} className="w-full h-full object-contain" alt="Innova POS Pro" referrerPolicy="no-referrer" />
+          </div>
+          <div>
+            <h1 className="text-xs font-black tracking-wider text-slate-200 font-mono uppercase leading-tight">
+              INNOVA POS PRO
             </h1>
-            <span className="text-[8px] text-slate-400 block truncate max-w-[150px]">
-              {language === 'ar' ? 'تسيير المحل والمبيعات' : 'Gestion Point de Vente & Stocks'}
-            </span>
           </div>
         </div>
 
@@ -2020,11 +2024,25 @@ function AppContent() {
               animate={{ x: 0 }}
               exit={{ x: language === 'ar' ? "100%" : "-100%" }}
               transition={{ type: "spring", damping: 26, stiffness: 230 }}
-              className={`w-72 bg-slate-950 h-full flex flex-col justify-between pt-20 overflow-y-auto custom-scrollbar border-slate-900 ${
+              className={`w-72 bg-[#0b1e36] text-white h-full flex flex-col justify-between pt-16 overflow-y-auto custom-scrollbar border-[#122b4d] ${
                 language === 'ar' ? 'mr-0 ml-auto border-l' : 'ml-0 mr-auto border-r'
               }`}
               onClick={(e) => e.stopPropagation()}
             >
+              <div className="p-4 border-b border-[#122b4d] bg-[#08172b] flex items-center gap-3">
+                <div className="p-1 bg-slate-950/80 border border-slate-850 rounded-lg overflow-hidden w-9 h-9 flex items-center justify-center shrink-0">
+                  <img src={defaultPosLogo} className="w-full h-full object-contain" alt="Innova POS Pro" referrerPolicy="no-referrer" />
+                </div>
+                <div>
+                  <h1 className="text-xs font-black tracking-[0.1em] text-slate-300 font-mono uppercase">
+                    INNOVA POS PRO
+                  </h1>
+                  <p className="text-[10px] text-slate-500 font-mono">
+                    GESTION COMMERCIALE INTELLIGENTE
+                  </p>
+                </div>
+              </div>
+
               <nav className="p-4 space-y-2">
                 {/* Multi-Branch Selector in Mobile Drawer */}
                 <div className="mb-2">
@@ -2051,7 +2069,7 @@ function AppContent() {
                   />
                 </div>
 
-                <div className="text-slate-500 text-[10px] uppercase font-bold tracking-widest px-2 pb-1">
+                <div className="text-slate-400 text-[10px] uppercase font-bold tracking-widest px-2 pb-1">
                   {t('nav_principal')}
                 </div>
                 {NAV_ITEMS.map(item => {
@@ -2064,14 +2082,16 @@ function AppContent() {
                         setActiveTab(item.id);
                         setMobileMenuOpen(false);
                       }}
-                      className={`w-full text-start rounded-md px-3 py-2 flex items-center gap-3 transition-all ${
-                        isActive ? 'bg-blue-600 text-white font-bold' : 'text-slate-400 hover:bg-slate-900 hover:text-white'
+                      className={`w-full text-start rounded-lg px-3.5 py-2.5 flex items-center gap-3 transition-all ${
+                        isActive 
+                          ? 'bg-blue-600 text-white font-black shadow-md ring-1 ring-blue-400/40' 
+                          : 'text-slate-300 hover:bg-[#132e52] hover:text-white'
                       }`}
                     >
                       <Icon className="w-4 h-4 shrink-0" />
                       <div>
                         <span className="text-xs block font-bold">{item.label}</span>
-                        <span className="text-[9px] text-slate-500 block font-mono">{item.subLabel}</span>
+                        <span className={`text-[9px] block font-mono ${isActive ? 'text-blue-100' : 'text-slate-400'}`}>{item.subLabel}</span>
                       </div>
                     </button>
                   );
@@ -2196,18 +2216,20 @@ function AppContent() {
       <div className="flex-1 flex flex-col min-h-screen overflow-hidden">
         
         {/* Top Header */}
-        <header className={`${isAppFullscreen && activeTab === 'pos' ? 'hidden' : 'hidden lg:flex'} h-16 bg-white border-b border-slate-200 items-center justify-between px-8 shrink-0 no-print`}>
-          <div className="flex items-center gap-4">
-            <h1 className="text-lg font-bold text-slate-900 uppercase tracking-tighter italic">
-              {activeItem?.label || "Vue d'Ensemble"}
+        <header className={`${isAppFullscreen && activeTab === 'pos' ? 'hidden' : 'hidden lg:flex'} h-16 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 items-center justify-between px-8 shrink-0 no-print shadow-xs`}>
+          <div className="flex items-center gap-3">
+            <div className="w-2 h-6 bg-blue-600 rounded-full shrink-0"></div>
+            <h1 className="text-base font-black text-slate-900 dark:text-white tracking-tight uppercase font-display">
+              {activeItem?.label || "Tableau de bord"}
             </h1>
-            <span className="text-slate-300">|</span>
-            <div className="text-xs text-slate-500 font-medium flex items-center gap-2">
-              <span className="text-emerald-600 animate-pulse">●</span> 
-              <span>{t('status_online')}</span>
+            <span className="text-slate-300 dark:text-slate-700">|</span>
+            <div className="text-[11px] text-slate-500 font-bold flex items-center gap-1.5 font-mono">
+              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span> 
+              <span>{isEffectiveOffline ? (language === 'ar' ? 'دون اتصال' : 'OFFLINE') : (language === 'ar' ? 'متصل ومحمي' : 'SYSTÈME ACTIF')}</span>
             </div>
           </div>
-          <div className="flex items-center gap-6">
+
+          <div className="flex items-center gap-4">
             {isSystemFullyUpdated ? (
               <button
                 type="button"
@@ -2215,14 +2237,14 @@ function AppContent() {
                   setIsUpdateSuccess(true);
                   setShowUpdateHistoryModal(true);
                 }}
-                className="text-right hover:bg-slate-50 p-1.5 px-3 rounded-lg border border-slate-250 transition-all active:scale-95 flex flex-col items-end text-slate-500 cursor-pointer select-none group shrink-0"
+                className="text-right hover:bg-slate-50 dark:hover:bg-slate-800 p-1.5 px-3 rounded-lg border border-slate-200 dark:border-slate-800 transition-all active:scale-95 flex flex-col items-end text-slate-500 cursor-pointer select-none group shrink-0"
                 title={language === 'ar' ? 'عرض سجل وتفاصيل تحديثات النظام' : 'Consulter l’historique des versions'}
               >
                 <div className="text-[9px] text-slate-400 font-extrabold uppercase tracking-widest flex items-center gap-1">
                   <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full"></span>
                   <span>{language === 'ar' ? 'نظام محدث' : 'Système à jour'}</span>
                 </div>
-                <div className="text-[10px] font-mono font-bold text-slate-600 mt-0.5">
+                <div className="text-[10px] font-mono font-bold text-slate-700 dark:text-slate-300 mt-0.5">
                   {updateSettings?.latestAppVersion || (systemUpdates.length > 0 ? systemUpdates[0].id : 'v1.3.0')}
                 </div>
               </button>
@@ -2233,14 +2255,14 @@ function AppContent() {
                   setIsUpdateSuccess(false);
                   setShowUpdateHistoryModal(true);
                 }}
-                className="text-right hover:bg-rose-50/70 p-1.5 px-3 rounded-lg border border-dashed border-slate-200 hover:border-rose-200 transition-all active:scale-95 flex flex-col items-end text-slate-750 cursor-pointer select-none group shrink-0"
+                className="text-right hover:bg-rose-50/70 dark:hover:bg-rose-950/30 p-1.5 px-3 rounded-lg border border-dashed border-slate-200 hover:border-rose-200 transition-all active:scale-95 flex flex-col items-end text-slate-750 cursor-pointer select-none group shrink-0"
                 title={language === 'ar' ? 'عرض سجل وتفاصيل تحديثات النظام' : 'Consulter l’historique des versions'}
               >
                 <div className="text-[9px] text-slate-400 font-extrabold uppercase tracking-widest group-hover:text-rose-600 transition-colors flex items-center gap-1">
                   <span className="w-1 h-1 bg-emerald-500 rounded-full animate-ping"></span>
                   <span>{language === 'ar' ? 'تحديث متاح' : 'MàJ Active'}</span>
                 </div>
-                <div className="text-xs font-mono font-bold text-slate-800 flex items-center gap-1 mt-0.5">
+                <div className="text-xs font-mono font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1 mt-0.5">
                   <CloudLightning className="w-3.5 h-3.5 text-rose-500 animate-bounce" />
                   <span className="group-hover:text-rose-600 transition-colors">
                     {updateSettings?.latestAppVersion || (systemUpdates.length > 0 ? systemUpdates[0].id : 'v1.3.0')}
@@ -2261,25 +2283,25 @@ function AppContent() {
             />
             
             {/* Sync Status Badge */}
-            <div className={`py-1 px-3 border rounded text-[10px] flex items-center gap-1.5 shrink-0 font-bold uppercase tracking-normal ${
+            <div className={`py-1.5 px-3 border rounded-lg text-[10px] flex items-center gap-1.5 shrink-0 font-bold uppercase tracking-normal ${
               isEffectiveOffline 
                 ? 'bg-amber-50 text-amber-800 border-amber-250 animate-pulse' 
-                : 'bg-indigo-50 text-indigo-700 border-indigo-150'
+                : 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800'
             }`}>
               {isEffectiveOffline ? (
                 <>
                   <WifiOff className="w-3.5 h-3.5 text-amber-600 shrink-0" />
-                  <span>{language === 'ar' ? 'وضع العمل دون اتصال' : 'Hors-ligne (Actif)'}</span>
+                  <span>{language === 'ar' ? 'دون اتصال' : 'Hors-ligne'}</span>
                 </>
               ) : user ? (
                 <>
                   <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
-                  <span>Cloud {user.displayName ? user.displayName.split(' ')[0] : 'Connecté'}</span>
+                  <span>Cloud Sync</span>
                 </>
               ) : (
                 <>
-                  <ShieldCheck className="w-3.5 h-3.5 text-blue-500 shrink-0" />
-                  <span>Sûr hors-ligne (Démo)</span>
+                  <ShieldCheck className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                  <span>Local Sécurisé</span>
                 </>
               )}
             </div>
@@ -2300,7 +2322,7 @@ function AppContent() {
                 className={`relative p-2 rounded-lg transition-all shrink-0 cursor-pointer border ${
                   criticalProductsCount > 0 
                     ? 'bg-rose-50 border-rose-200 text-rose-700 hover:bg-rose-100 hover:text-rose-800' 
-                    : 'bg-slate-50 border-slate-200 text-slate-500 hover:bg-slate-100 hover:text-slate-800'
+                    : 'bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-750 hover:text-slate-800'
                 }`}
                 title={language === 'ar' ? 'إشعارات مستويات المخزون' : 'Seuils de stock critique'}
               >
@@ -2313,7 +2335,22 @@ function AppContent() {
               </button>
             )}
 
-            {/* Simple Header Logout button if logged in */}
+            {/* User / Admin Profile Badge Pill (Matching target design) */}
+            <div className="flex items-center gap-2.5 pl-3 border-l border-slate-200 dark:border-slate-700">
+              <div className="w-9 h-9 rounded-full bg-[#0b1e36] text-blue-400 flex items-center justify-center font-bold text-sm shadow-xs ring-2 ring-blue-500/40 select-none">
+                {activeUser?.name ? activeUser.name.charAt(0).toUpperCase() : (user?.displayName ? user.displayName.charAt(0).toUpperCase() : 'A')}
+              </div>
+              <div className="flex flex-col text-start leading-tight">
+                <span className="text-xs font-black text-slate-900 dark:text-white font-display">
+                  {activeUser?.name || user?.displayName || 'Admin'}
+                </span>
+                <span className="text-[9.5px] font-semibold text-slate-400 uppercase tracking-wider font-mono">
+                  {activeUser?.role ? (activeUser.role === 'admin' ? 'Administrateur' : activeUser.role) : 'Administrateur'}
+                </span>
+              </div>
+            </div>
+
+            {/* Logout button */}
             {user && (
               <button
                 type="button"
@@ -2324,8 +2361,6 @@ function AppContent() {
                 <LogOut className="w-4 h-4 text-rose-600" />
               </button>
             )}
-
-
           </div>
         </header>
 

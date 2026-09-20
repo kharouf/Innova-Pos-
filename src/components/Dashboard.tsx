@@ -43,7 +43,9 @@ import {
   Settings,
   Clock,
   Hourglass,
-  FileText
+  FileText,
+  ShoppingCart,
+  Coins
 } from 'lucide-react';
 
 interface DashboardProps {
@@ -1317,79 +1319,105 @@ export default function Dashboard({ db, onNavigate, onUpdateDb, license, user }:
         </div>
       </div>
 
-      {/* KPI Stats Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-6">
+      {/* KPI Stats Grid - Upgraded to match reference design */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
         {/* Chiffre d'Affaires KPI */}
-        <div className="bg-white border border-slate-200 p-5 flex flex-col justify-between h-32 rounded">
-          <div className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">{t('db_revenue')}</div>
-          <div className="flex items-baseline gap-1">
-            <span className="text-xl font-mono font-black text-slate-900">{formatCurrency(coreStats.totalRevenue)}</span>
+        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-5 rounded-xl shadow-xs flex flex-col justify-between h-36 relative overflow-hidden group hover:border-[#00c853]/40 transition-all">
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">{t('db_revenue')}</span>
+            <div className="w-8 h-8 rounded-lg bg-emerald-50 dark:bg-emerald-950/50 text-[#00c853] flex items-center justify-center">
+              <ShoppingCart className="w-4 h-4" />
+            </div>
           </div>
-          <div className="text-[9px] text-emerald-600 font-bold font-sans">
-            {language === 'ar' ? 'قيمة فواتير المبيعات' : 'Revenu cumulé des ventes'}
+          <div className="my-1">
+            <span className="text-2xl font-mono font-black text-slate-900 dark:text-white tracking-tight">{formatCurrency(coreStats.totalRevenue)}</span>
+          </div>
+          <div className="flex items-center gap-1.5 text-[10px] font-bold text-emerald-600 dark:text-emerald-400">
+            <TrendingUp className="w-3 h-3" />
+            <span>{language === 'ar' ? 'مجموع المبيعات المكتملة' : 'Ventes totales enregistrées'}</span>
           </div>
         </div>
 
         {/* Bénéfice Net KPI */}
-        <div className="bg-white border border-slate-200 p-5 flex flex-col justify-between h-32 rounded relative group">
+        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-5 rounded-xl shadow-xs flex flex-col justify-between h-36 relative overflow-hidden group hover:border-blue-500/40 transition-all">
           <div className="flex items-center justify-between">
-            <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">{t('db_net_benefit')}</span>
-            <button
-              type="button"
-              onClick={() => setIsAddingExpense(true)}
-              className="text-[9px] font-bold bg-rose-50 text-rose-700 hover:bg-rose-100 border border-rose-200 px-2 py-0.5 rounded cursor-pointer transition-colors flex items-center gap-0.5"
-              title={language === 'ar' ? 'تسجيل مصروف سريع لخصمه من الأرباح' : 'Ajouter une dépense rapide'}
-            >
-              <Plus className="w-2.5 h-2.5 animate-pulse" />
-              <span>{language === 'ar' ? 'مصروف' : 'Dépense'}</span>
-            </button>
+            <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">{t('db_net_benefit')}</span>
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => setIsAddingExpense(true)}
+                className="text-[9px] font-bold bg-rose-50 text-rose-700 hover:bg-rose-100 border border-rose-200 px-2 py-0.5 rounded-md cursor-pointer transition-colors flex items-center gap-0.5"
+                title={language === 'ar' ? 'تسجيل مصروف سريع لخصمه من الأرباح' : 'Ajouter une dépense rapide'}
+              >
+                <Plus className="w-2.5 h-2.5" />
+                <span>{language === 'ar' ? 'مصروف' : 'Dépense'}</span>
+              </button>
+              <div className="w-8 h-8 rounded-lg bg-blue-50 dark:bg-blue-950/50 text-blue-600 dark:text-blue-400 flex items-center justify-center">
+                <Coins className="w-4 h-4" />
+              </div>
+            </div>
           </div>
-          <div className="flex items-baseline gap-1 mt-1">
-            <span className="text-xl font-mono font-black text-blue-600">{formatCurrency(coreStats.netBenefit)}</span>
+          <div className="my-1">
+            <span className="text-2xl font-mono font-black text-blue-600 dark:text-blue-400 tracking-tight">{formatCurrency(coreStats.netBenefit)}</span>
           </div>
-          <div className="text-[9px] text-slate-400 font-bold font-sans">
-            {language === 'ar' ? 'صافي أرباح السلع بعد خصم المصاريف' : 'Bénéfice net réel après charges'}
+          <div className="text-[10px] text-slate-400 font-semibold truncate">
+            {language === 'ar' ? 'صافي الربح بعد خصم المصاريف' : 'Marge nette réelle après charges'}
+          </div>
+        </div>
+
+        {/* Total Commandes / Factures KPI */}
+        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-5 rounded-xl shadow-xs flex flex-col justify-between h-36 relative overflow-hidden group hover:border-indigo-500/40 transition-all">
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+              {language === 'ar' ? 'عدد التذاكر والفواتير' : 'Commandes'}
+            </span>
+            <div className="w-8 h-8 rounded-lg bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400 flex items-center justify-center">
+              <FileText className="w-4 h-4" />
+            </div>
+          </div>
+          <div className="my-1">
+            <span className="text-2xl font-mono font-black text-slate-900 dark:text-white tracking-tight">
+              {db.invoices.length}
+            </span>
+          </div>
+          <div className="text-[10px] text-indigo-600 dark:text-indigo-400 font-bold flex items-center gap-1">
+            <CheckCircle2 className="w-3 h-3" />
+            <span>{db.invoices.filter(i => (i.date || '').startsWith(new Date().toISOString().split('T')[0])).length} {language === 'ar' ? 'اليوم' : "aujourd'hui"}</span>
           </div>
         </div>
 
         {/* Dettes Clients KPI */}
-        <div className="bg-white border border-slate-200 p-5 flex flex-col justify-between h-32 rounded">
-          <div className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">{t('db_outstanding')}</div>
-          <div className="flex items-baseline gap-1">
-            <span className="text-xl font-mono font-black text-rose-600">{formatCurrency(financial.clientDebits)}</span>
+        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-5 rounded-xl shadow-xs flex flex-col justify-between h-36 relative overflow-hidden group hover:border-rose-500/40 transition-all">
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">{t('db_outstanding')}</span>
+            <div className="w-8 h-8 rounded-lg bg-rose-50 dark:bg-rose-950/50 text-rose-600 dark:text-rose-400 flex items-center justify-center">
+              <Users className="w-4 h-4" />
+            </div>
           </div>
-          <div className="text-[9px] text-rose-500 font-bold font-sans">
-            {language === 'ar' ? 'إجمالي الكريدي المستحق على الزبائن' : 'Crédits clients actifs'}
+          <div className="my-1">
+            <span className="text-2xl font-mono font-black text-rose-600 dark:text-rose-400 tracking-tight">{formatCurrency(financial.clientDebits)}</span>
           </div>
-        </div>
-
-        {/* Valeur de Stock KPI */}
-        <div className="bg-white border border-slate-200 p-5 flex flex-col justify-between h-32 rounded">
-          <div className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">{t('db_stock_val')}</div>
-          <div className="flex items-baseline gap-1">
-            <span className="text-xl font-mono font-black text-amber-600">{formatCurrency(stock.totalStockValue)}</span>
-          </div>
-          <div className="text-[9px] text-slate-400 font-sans font-bold">
-            {db.products.length} {language === 'ar' ? 'سلعة مسجلة ومسعرة' : 'articles référencés'}
+          <div className="text-[10px] text-rose-500 font-bold">
+            {language === 'ar' ? 'كريدي الزبائن غير المستخلص' : 'Crédits clients à recouvrer'}
           </div>
         </div>
 
-        {/* Capital de l'Etablissement KPI */}
-        <div className="bg-slate-900 border border-slate-800 p-5 flex flex-col justify-between h-32 rounded text-white text-right">
-          <div className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">
-            {language === 'ar' ? 'رأس مال المشروع (Capital)' : 'Capital de l\'Établissement'}
-          </div>
-          <div className="flex items-baseline gap-1">
-            <span className="text-xl font-mono font-black text-cyan-400">
-              {formatCurrency(
-                db.settings?.customCapitalValue !== undefined && db.settings.customCapitalValue > 0
-                  ? db.settings.customCapitalValue
-                  : (stock.totalStockValue + financial.clientDebits - (db.partners.filter(p => p.type === 'fournisseur' && p.currentBalance < 0).reduce((sum, p) => sum + Math.abs(p.currentBalance), 0)))
-              )}
+        {/* Valeur Stock / Capital Etablissement KPI */}
+        <div className="bg-[#0b1e36] text-white border border-[#122b4d] p-5 rounded-xl shadow-xs flex flex-col justify-between h-36 relative overflow-hidden group">
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] font-bold text-slate-300 uppercase tracking-wider">
+              {t('db_stock_val')}
             </span>
+            <div className="w-8 h-8 rounded-lg bg-[#122b4d] text-[#00c853] flex items-center justify-center">
+              <Boxes className="w-4 h-4" />
+            </div>
           </div>
-          <div className="text-[9px] text-slate-400 font-sans font-bold">
-            {language === 'ar' ? 'رأس مال المشروع والموازنات المتوفرة ' : 'Fonds propres déclarés ou calculés'}
+          <div className="my-1">
+            <span className="text-2xl font-mono font-black text-[#00e676] tracking-tight">{formatCurrency(stock.totalStockValue)}</span>
+          </div>
+          <div className="text-[10px] text-slate-300 font-semibold flex items-center justify-between">
+            <span>{db.products.length} {language === 'ar' ? 'منتج' : 'produits'}</span>
+            <span className="text-cyan-300 font-mono text-[9px]">INNOVA PRO</span>
           </div>
         </div>
       </div>

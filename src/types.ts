@@ -147,8 +147,12 @@ export interface StoreSettings {
   activitySector: 'superette' | 'pharmacie' | 'materiaux' | 'general';
   matriculeFiscal?: string;
   storeLogo?: string; // Base64 image, icon, or emoji representation
+  innovaCustomLogo?: string; // Custom image or SVG logo specifically for the system header/branding
+  innovaLogoStyle?: 'shield' | 'hexagon' | 'orbit' | 'monogram' | 'custom'; // Selected logo theme
   ownerPin?: string; // 4-digit PIN for locks/restrictions
   databaseSecurityPin?: string; // Master administrative PIN for general database security gate and Settings tab
+  loginSecurityPassword?: string; // Additional secondary security password/PIN required after Google login
+  enableGoogleLoginPasswordProtection?: boolean; // Toggle secondary security password after Google OAuth (enabled by default)
   enableBiometricOrCodeBypass?: boolean; // Enable Secret Code or Face ID Bypass login
   bypassSecretCode?: string; // Optional custom secret code just for bypass
   manualExpensesOffset?: number;
