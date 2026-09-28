@@ -611,10 +611,20 @@ export default function InvoicesList({ db, onUpdateDb }: InvoicesListProps) {
                     <span>{language === 'ar' ? 'الصافي للدفع:' : 'Net à Payer:'}</span>
                     <span>{formatCurrency(selectedInvoice.total)}</span>
                   </div>
-                  <div className="flex justify-between text-xs font-bold text-slate-650">
-                    <span>{language === 'ar' ? 'المستلم:' : 'Acompte reçu:'}</span>
-                    <span className="text-emerald-600">{formatCurrency(selectedInvoice.paidAmount)}</span>
+                  <div className="flex justify-between text-xs font-bold text-slate-700">
+                    <span>{language === 'ar' ? 'المبلغ المستلم:' : 'Montant Donné / Reçu:'}</span>
+                    <span className="text-slate-900 font-mono font-bold">
+                      {formatCurrency(selectedInvoice.tenderedAmount !== undefined ? selectedInvoice.tenderedAmount : selectedInvoice.paidAmount)}
+                    </span>
                   </div>
+                  {((selectedInvoice.changeReturned !== undefined ? selectedInvoice.changeReturned : Math.max(0, (selectedInvoice.tenderedAmount || selectedInvoice.paidAmount) - selectedInvoice.total)) > 0) && (
+                    <div className="flex justify-between text-xs bg-emerald-50 text-emerald-800 p-1 rounded font-black border border-emerald-200">
+                      <span>{language === 'ar' ? 'الباقي المرجع (الفائض):' : 'Reste Rendu (Monnaie):'}</span>
+                      <span className="font-mono text-emerald-700 font-black">
+                        {formatCurrency(selectedInvoice.changeReturned !== undefined ? selectedInvoice.changeReturned : ((selectedInvoice.tenderedAmount || selectedInvoice.paidAmount) - selectedInvoice.total))}
+                      </span>
+                    </div>
+                  )}
                   {selectedInvoice.balance > 0 && (
                     <div className="flex justify-between text-xs bg-rose-50 text-rose-800 p-1 rounded font-bold">
                       <span>{language === 'ar' ? 'المتبقي بالدين:' : 'Reste à CREDIT:'}</span>
@@ -745,10 +755,20 @@ export default function InvoicesList({ db, onUpdateDb }: InvoicesListProps) {
                       <span>{language === 'ar' ? 'الصافي النهائي للدفع:' : 'Total Net à Payer :'}</span>
                       <span>{formatCurrency(selectedInvoice.total)}</span>
                     </div>
-                    <div className="flex justify-between text-xs font-bold pt-1 text-slate-600">
-                      <span>{language === 'ar' ? 'المبلغ المستلم سابقا:' : 'Montant Versé :'}</span>
-                      <span className="text-emerald-605 font-bold">{formatCurrency(selectedInvoice.paidAmount)}</span>
+                    <div className="flex justify-between text-xs font-bold pt-1 text-slate-700">
+                      <span>{language === 'ar' ? 'المبلغ المستلم:' : 'Montant Donné / Versé :'}</span>
+                      <span className="text-slate-900 font-mono font-bold">
+                        {formatCurrency(selectedInvoice.tenderedAmount !== undefined ? selectedInvoice.tenderedAmount : selectedInvoice.paidAmount)}
+                      </span>
                     </div>
+                    {((selectedInvoice.changeReturned !== undefined ? selectedInvoice.changeReturned : Math.max(0, (selectedInvoice.tenderedAmount || selectedInvoice.paidAmount) - selectedInvoice.total)) > 0) && (
+                      <div className="flex justify-between text-xs bg-emerald-50 text-emerald-800 p-1 rounded font-black border border-emerald-200">
+                        <span>{language === 'ar' ? 'الباقي المرجع (الفائض):' : 'Reste Rendu (Monnaie) :'}</span>
+                        <span className="font-mono text-emerald-700 font-black">
+                          {formatCurrency(selectedInvoice.changeReturned !== undefined ? selectedInvoice.changeReturned : ((selectedInvoice.tenderedAmount || selectedInvoice.paidAmount) - selectedInvoice.total))}
+                        </span>
+                      </div>
+                    )}
                     {selectedInvoice.balance > 0 && (
                       <div className="flex justify-between text-xs bg-rose-50 text-rose-800 p-1 rounded font-bold border border-rose-100">
                         <span>{language === 'ar' ? 'باقي الحساب (دين):' : 'Reste à CREDIT :'}</span>

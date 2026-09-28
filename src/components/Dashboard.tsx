@@ -45,7 +45,18 @@ import {
   Hourglass,
   FileText,
   ShoppingCart,
-  Coins
+  Coins,
+  PackageX,
+  PackageCheck,
+  ClipboardList,
+  ClipboardCheck,
+  Printer,
+  Search,
+  SlidersHorizontal,
+  Layers,
+  ExternalLink,
+  Sparkles,
+  RefreshCw
 } from 'lucide-react';
 
 interface DashboardProps {
@@ -98,6 +109,12 @@ export default function Dashboard({ db, onNavigate, onUpdateDb, license, user }:
 
   // Date Range Filters for Dashboard trends
   const [dateFilter, setDateFilter] = useState<'7days' | 'thisMonth' | 'thisYear' | 'custom'>('7days');
+  
+  // Automatic Inventory Summary Module States
+  const [showAutoInventoryDetails, setShowAutoInventoryDetails] = useState(false);
+  const [inventoryDetailTab, setInventoryDetailTab] = useState<'outOfStock' | 'categories'>('outOfStock');
+  const [outOfStockSearch, setOutOfStockSearch] = useState('');
+  const [showPrintInventoryModal, setShowPrintInventoryModal] = useState(false);
   const [customStartDate, setCustomStartDate] = useState<string>(() => {
     const d = new Date();
     d.setDate(d.getDate() - 30);
@@ -550,6 +567,91 @@ export default function Dashboard({ db, onNavigate, onUpdateDb, license, user }:
     const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24));
     return diffDays;
   };
+
+  // ============================================
+  // AUTOMATIC INVENTORY SUMMARY CALCULATIONS
+  // ============================================
+  const autoInventorySummary = React.useMemo(() => {
+    const products = db.products || [];
+
+    // Ruptures de stock (stock <= 0)
+    const outOfStockProducts = products.filter(p => Number(p.stock) <= 0);
+
+    // Stock faible mais non épuisé (0 < stock <= minAlertQty)
+    const lowStockProducts = products.filter(p => Number(p.stock) > 0 && Number(p.stock) <= Number(p.minAlertQty ?? 5));
+
+    // Stock suffisant / optimal (stock > minAlertQty)
+    const healthyStockProducts = products.filter(p => Number(p.stock) > Number(p.minAlertQty ?? 5));
+
+    // Quantité totale d'unités physiques en magasin (hors négatifs)
+    const totalPhysicalUnits = products.reduce((acc, p) => acc + Math.max(0, Number(p.stock) || 0), 0);
+
+    // Valeur totale du stock au prix d'achat
+    const totalStockPurchaseValue = products.reduce((acc, p) => {
+      const qty = Math.max(0, Number(p.stock) || 0);
+      return acc + (qty * (Number(p.purchasePrice) || 0));
+    }, 0);
+
+    // Valeur totale du stock au prix de vente
+    const totalStockSellingValue = products.reduce((acc, p) => {
+      const qty = Math.max(0, Number(p.stock) || 0);
+      return acc + (qty * (Number(p.sellingPrice) || 0));
+    }, 0);
+
+    // Marge brute / Bénéfice potentiel dans le stock actuel
+    const potentialStockProfit = totalStockSellingValue - totalStockPurchaseValue;
+
+    // Taux de disponibilité du stock
+    const availabilityRate = products.length > 0
+      ? Math.round(((products.length - outOfStockProducts.length) / products.length) * 100)
+      : 100;
+
+    // Répartition de la valeur et des ruptures par catégorie
+    const catMap = new Map<string, { count: number; outOfStock: number; totalUnits: number; purchaseVal: number; sellingVal: number }>();
+    products.forEach(p => {
+      const cat = p.category?.trim() || (language === 'ar' ? 'عام' : 'Général');
+      const entry = catMap.get(cat) || { count: 0, outOfStock: 0, totalUnits: 0, purchaseVal: 0, sellingVal: 0 };
+      entry.count += 1;
+      const qty = Math.max(0, Number(p.stock) || 0);
+      entry.totalUnits += qty;
+      entry.purchaseVal += qty * (Number(p.purchasePrice) || 0);
+      entry.sellingVal += qty * (Number(p.sellingPrice) || 0);
+      if (Number(p.stock) <= 0) {
+        entry.outOfStock += 1;
+      }
+      catMap.set(cat, entry);
+    });
+
+    const categoryBreakdown = Array.from(catMap.entries()).map(([name, data]) => ({
+      name,
+      ...data
+    })).sort((a, b) => b.purchaseVal - a.purchaseVal);
+
+    return {
+      totalProducts: products.length,
+      outOfStockCount: outOfStockProducts.length,
+      outOfStockProducts,
+      lowStockCount: lowStockProducts.length,
+      lowStockProducts,
+      healthyStockCount: healthyStockProducts.length,
+      totalPhysicalUnits,
+      totalStockPurchaseValue,
+      totalStockSellingValue,
+      potentialStockProfit,
+      availabilityRate,
+      categoryBreakdown
+    };
+  }, [db.products, language]);
+
+  const filteredOutOfStockProducts = React.useMemo(() => {
+    if (!outOfStockSearch.trim()) return autoInventorySummary.outOfStockProducts;
+    const q = outOfStockSearch.toLowerCase().trim();
+    return autoInventorySummary.outOfStockProducts.filter(p =>
+      p.name.toLowerCase().includes(q) ||
+      (p.code && p.code.toLowerCase().includes(q)) ||
+      (p.category && p.category.toLowerCase().includes(q))
+    );
+  }, [autoInventorySummary.outOfStockProducts, outOfStockSearch]);
   
   // Dynamic Date Range Calculator and Trend Aggregator
   const getDateRangeBoundaries = () => {
@@ -1408,18 +1510,507 @@ export default function Dashboard({ db, onNavigate, onUpdateDb, license, user }:
             <span className="text-[11px] font-bold text-slate-300 uppercase tracking-wider">
               {t('db_stock_val')}
             </span>
-            <div className="w-8 h-8 rounded-lg bg-[#122b4d] text-[#00c853] flex items-center justify-center">
+            <div className="w-8 h-8 rounded-lg bg-[#122b4d] text-blue-400 flex items-center justify-center">
               <Boxes className="w-4 h-4" />
             </div>
           </div>
           <div className="my-1">
-            <span className="text-2xl font-mono font-black text-[#00e676] tracking-tight">{formatCurrency(stock.totalStockValue)}</span>
+            <span className="text-2xl font-mono font-black text-emerald-400 tracking-tight">{formatCurrency(stock.totalStockValue)}</span>
           </div>
           <div className="text-[10px] text-slate-300 font-semibold flex items-center justify-between">
             <span>{db.products.length} {language === 'ar' ? 'منتج' : 'produits'}</span>
             <span className="text-cyan-300 font-mono text-[9px]">INNOVA PRO</span>
           </div>
         </div>
+      </div>
+
+      {/* ========================================================== */}
+      {/* 📦 MODULE DE RÉSUMÉ D'INVENTAIRE AUTOMATIQUE (EN DIRECT)  */}
+      {/* ========================================================== */}
+      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-sm overflow-hidden p-5 sm:p-6 transition-all duration-200 space-y-5">
+        
+        {/* Module Header Bar */}
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-100 dark:border-slate-800/80 pb-4.5">
+          <div className="flex items-start gap-3">
+            <div className="w-10 h-10 rounded-xl bg-blue-600/10 dark:bg-blue-500/15 border border-blue-500/20 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0">
+              <ClipboardList className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <h2 className="text-sm font-black text-slate-900 dark:text-white uppercase tracking-wider font-display flex items-center gap-2">
+                  <span>{language === 'ar' ? 'ملخص الجرد التلقائي للمخزون' : 'Résumé d\'Inventaire Automatique'}</span>
+                </h2>
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800/50 font-mono">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                  <span>{language === 'ar' ? 'تحديث آلي مباشر' : 'Auto • Temps Réel'}</span>
+                </span>
+              </div>
+              <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                {language === 'ar' 
+                  ? 'رصد وحساب فوري لقيمة المخزون الحالي الإجمالية وحالات النفاد التام من الرفوف والمستودع' 
+                  : 'Calcul dynamique en direct de la valorisation globale du stock et des ruptures critiques'}
+              </p>
+            </div>
+          </div>
+
+          {/* Module Action Shortcuts */}
+          <div className="flex items-center flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => setShowAutoInventoryDetails(!showAutoInventoryDetails)}
+              className={`px-3 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 border ${
+                showAutoInventoryDetails 
+                  ? 'bg-slate-900 text-white border-slate-900 dark:bg-white dark:text-slate-900' 
+                  : 'bg-slate-50 hover:bg-slate-100 dark:bg-slate-800/60 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700'
+              }`}
+            >
+              <SlidersHorizontal className="w-3.5 h-3.5" />
+              <span>{showAutoInventoryDetails ? (language === 'ar' ? 'إخفاء التفاصيل' : 'Masquer détails') : (language === 'ar' ? 'تفاصيل الجرد والتصنيفات' : 'Détails & Analyse')}</span>
+              {autoInventorySummary.outOfStockCount > 0 && (
+                <span className="bg-rose-600 text-white text-[9px] font-bold px-1.5 py-0.2 rounded-full font-mono">
+                  {autoInventorySummary.outOfStockCount}
+                </span>
+              )}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setShowPrintInventoryModal(true)}
+              className="px-3 py-2 rounded-lg text-xs font-bold bg-slate-50 hover:bg-slate-100 dark:bg-slate-800/60 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 transition-all cursor-pointer flex items-center gap-1.5"
+              title={language === 'ar' ? 'طباعة تقرير ملخص الجرد' : 'Imprimer la fiche de résumé d\'inventaire'}
+            >
+              <Printer className="w-3.5 h-3.5 text-slate-500 dark:text-slate-400" />
+              <span>{language === 'ar' ? 'طباعة التقرير' : 'Imprimer'}</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => onNavigate('weekly_inventory')}
+              className="px-3 py-2 rounded-lg text-xs font-bold bg-blue-50 hover:bg-blue-100 dark:bg-blue-950/40 dark:hover:bg-blue-950/70 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800/50 transition-all cursor-pointer flex items-center gap-1.5"
+            >
+              <ClipboardCheck className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
+              <span>{language === 'ar' ? 'الجرد الأسبوعي' : 'Audit Hebdo'}</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => onNavigate('products')}
+              className="px-3 py-2 rounded-lg text-xs font-bold bg-slate-900 hover:bg-slate-800 dark:bg-slate-100 dark:hover:bg-white text-white dark:text-slate-900 transition-all cursor-pointer flex items-center gap-1.5 shadow-xs"
+            >
+              <span>{language === 'ar' ? 'إدارة السلع والمخزون' : 'Gérer le Stock'}</span>
+              <ArrowRight className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        </div>
+
+        {/* 2 PRIMARY HIGHLIGHT HERO CARDS (Requested by User) */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          
+          {/* 🔴 HERO CARD 1: PRODUITS EN RUPTURE DE STOCK */}
+          <div className={`p-5 rounded-xl border transition-all relative overflow-hidden flex flex-col justify-between ${
+            autoInventorySummary.outOfStockCount > 0 
+              ? 'bg-gradient-to-br from-rose-50/90 via-rose-50/40 to-white dark:from-rose-950/30 dark:via-slate-900 dark:to-slate-900 border-rose-200 dark:border-rose-900/60 shadow-sm' 
+              : 'bg-gradient-to-br from-emerald-50/70 via-emerald-50/20 to-white dark:from-emerald-950/20 dark:via-slate-900 dark:to-slate-900 border-emerald-200 dark:border-emerald-900/50'
+          }`}>
+            <div>
+              <div className="flex items-center justify-between gap-3 mb-2">
+                <span className="text-[11px] font-black uppercase tracking-wider text-slate-600 dark:text-slate-400 flex items-center gap-1.5">
+                  <PackageX className={`w-4 h-4 ${autoInventorySummary.outOfStockCount > 0 ? 'text-rose-600 dark:text-rose-400' : 'text-emerald-600 dark:text-emerald-400'}`} />
+                  <span>{language === 'ar' ? 'المنتجات في حالة نفاد كلي (مقطوعة)' : 'Produits en Rupture de Stock'}</span>
+                </span>
+                
+                <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold font-mono ${
+                  autoInventorySummary.outOfStockCount > 0
+                    ? 'bg-rose-600 text-white animate-pulse'
+                    : 'bg-emerald-600 text-white'
+                }`}>
+                  {autoInventorySummary.outOfStockCount > 0 
+                    ? (language === 'ar' ? 'نفاد من الرفوف' : 'Rupture active')
+                    : (language === 'ar' ? 'متوفر 100%' : 'Stock complet')}
+                </span>
+              </div>
+
+              {/* Large Metric Counter */}
+              <div className="flex items-baseline gap-2 my-2">
+                <span className={`text-4xl sm:text-5xl font-mono font-black tracking-tight ${
+                  autoInventorySummary.outOfStockCount > 0 ? 'text-rose-600 dark:text-rose-400' : 'text-emerald-600 dark:text-emerald-400'
+                }`}>
+                  {autoInventorySummary.outOfStockCount}
+                </span>
+                <span className="text-xs font-bold text-slate-500 dark:text-slate-400">
+                  {language === 'ar' 
+                    ? `سلعة من إجمالي ${autoInventorySummary.totalProducts} مسجلة` 
+                    : `référence(s) sur ${autoInventorySummary.totalProducts}`}
+                </span>
+              </div>
+
+              {/* Status Explanation */}
+              <p className="text-xs leading-relaxed font-medium text-slate-600 dark:text-slate-300">
+                {autoInventorySummary.outOfStockCount > 0 ? (
+                  <span className="flex items-center gap-1 text-rose-700 dark:text-rose-300 font-bold">
+                    <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                    <span>{language === 'ar' ? 'هذه المواد كميتها صفر أو سالبة، وتتطلب طلباً عاجلاً من الموردين لتفادي ضياع المبيعات.' : 'Articles avec stock épuisé (≤ 0). Réapprovisionnement urgent conseillé pour éviter les pertes de ventes.'}</span>
+                  </span>
+                ) : (
+                  <span className="text-emerald-700 dark:text-emerald-300 flex items-center gap-1 font-bold">
+                    <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+                    <span>{language === 'ar' ? 'ممتاز! لا توجد أي مواد في حالة نفاد تام حالياً، جميع المنتجات متوفرة للزبائن.' : 'Excellent ! Aucun produit en rupture de stock. Toutes les références ont des unités disponibles.'}</span>
+                  </span>
+                )}
+              </p>
+            </div>
+
+            {/* Quick action footer */}
+            <div className="pt-3 mt-3 border-t border-rose-100 dark:border-rose-950/60 flex items-center justify-between text-xs">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowAutoInventoryDetails(true);
+                  setInventoryDetailTab('outOfStock');
+                }}
+                className={`font-bold hover:underline cursor-pointer flex items-center gap-1 ${
+                  autoInventorySummary.outOfStockCount > 0 ? 'text-rose-700 dark:text-rose-400' : 'text-emerald-700 dark:text-emerald-400'
+                }`}
+              >
+                <span>{language === 'ar' ? 'عرض قائمة السلع المقطوعة' : 'Voir la liste des ruptures'}</span>
+                <ChevronDown className="w-3 h-3" />
+              </button>
+
+              {autoInventorySummary.outOfStockCount > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setShowOrderModal(true)}
+                  className="px-2.5 py-1 rounded bg-rose-600 hover:bg-rose-700 text-white text-[11px] font-bold cursor-pointer transition-colors shadow-2xs"
+                >
+                  {language === 'ar' ? 'إنشاء طلب شراء للمزود' : 'Créer Bon de Commande'}
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* 💼 HERO CARD 2: VALEUR TOTALE DU STOCK ACTUEL */}
+          <div className="p-5 rounded-xl border border-blue-200 dark:border-blue-900/60 bg-gradient-to-br from-blue-50/90 via-slate-50/50 to-white dark:from-[#0b1e36] dark:via-slate-900 dark:to-slate-900 shadow-sm flex flex-col justify-between relative overflow-hidden">
+            <div>
+              <div className="flex items-center justify-between gap-3 mb-2">
+                <span className="text-[11px] font-black uppercase tracking-wider text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                  <Boxes className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+                  <span>{language === 'ar' ? 'القيمة الإجمالية للمخزون الحالي (سعر الشراء)' : 'Valeur Totale du Stock Actuel (Prix d\'Achat)'}</span>
+                </span>
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-600 text-white font-mono">
+                  {language === 'ar' ? 'رأس المال المخزن' : 'Capital Immobilisé'}
+                </span>
+              </div>
+
+              {/* Large Metric Amount */}
+              <div className="my-2">
+                <div className="text-3xl sm:text-4xl font-mono font-black text-blue-600 dark:text-blue-400 tracking-tight">
+                  {formatCurrency(autoInventorySummary.totalStockPurchaseValue)}
+                </div>
+                <div className="text-xs font-semibold text-slate-500 dark:text-slate-400 mt-1 flex items-center gap-1">
+                  <span>{language === 'ar' ? 'القيمة التقديرية بسعر البيع:' : 'Valeur marchande estimée (Prix de Vente) :'}</span>
+                  <strong className="text-slate-800 dark:text-slate-200 font-mono font-bold">
+                    {formatCurrency(autoInventorySummary.totalStockSellingValue)}
+                  </strong>
+                </div>
+              </div>
+
+              {/* Potential Profit & Volume Details */}
+              <p className="text-xs leading-relaxed text-slate-600 dark:text-slate-300">
+                {language === 'ar'
+                  ? `هامش الربح الخام المتوقع في هذا المخزون هو `
+                  : `Marge brute potentielle intégrée dans le stock actuel : `}
+                <strong className="text-emerald-600 dark:text-emerald-400 font-mono font-bold">
+                  +{formatCurrency(autoInventorySummary.potentialStockProfit)}
+                </strong>
+              </p>
+            </div>
+
+            {/* Quick volume summary footer */}
+            <div className="pt-3 mt-3 border-t border-blue-100 dark:border-blue-950/60 flex items-center justify-between text-xs">
+              <span className="text-slate-500 dark:text-slate-400 font-mono text-[11px]">
+                {autoInventorySummary.totalPhysicalUnits.toLocaleString()} {language === 'ar' ? 'وحدة / قطعة في المستودع' : 'unités physiques en magasin'}
+              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowAutoInventoryDetails(true);
+                  setInventoryDetailTab('categories');
+                }}
+                className="font-bold text-blue-600 dark:text-blue-400 hover:underline cursor-pointer flex items-center gap-1"
+              >
+                <span>{language === 'ar' ? 'التقسيم حسب الأقسام' : 'Valeur par Rayon'}</span>
+                <ChevronDown className="w-3 h-3" />
+              </button>
+            </div>
+          </div>
+
+        </div>
+
+        {/* SECONDARY ROW: AVAILABILITY GAUGE & HEALTH BREAKDOWN */}
+        <div className="bg-slate-50 dark:bg-slate-850/60 p-4 rounded-xl border border-slate-200/80 dark:border-slate-800 flex flex-col md:flex-row md:items-center justify-between gap-4">
+          {/* Availability Rate & Progress Bar */}
+          <div className="flex-1 space-y-1.5">
+            <div className="flex items-center justify-between text-xs">
+              <span className="font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                <PackageCheck className="w-3.5 h-3.5 text-emerald-500" />
+                <span>{language === 'ar' ? 'نسبة الجاهزية وتوفر السلع بالمتجر:' : 'Taux de disponibilité globale du stock :'}</span>
+              </span>
+              <span className="font-mono font-extrabold text-xs text-slate-900 dark:text-white">
+                {autoInventorySummary.availabilityRate}%
+              </span>
+            </div>
+            
+            {/* Visual segmented bar */}
+            <div className="w-full h-2.5 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden flex">
+              <div 
+                className="bg-emerald-500 h-full transition-all duration-500" 
+                style={{ width: `${autoInventorySummary.totalProducts > 0 ? (autoInventorySummary.healthyStockCount / autoInventorySummary.totalProducts) * 100 : 100}%` }}
+                title={`${autoInventorySummary.healthyStockCount} en stock optimal`}
+              />
+              <div 
+                className="bg-amber-400 h-full transition-all duration-500" 
+                style={{ width: `${autoInventorySummary.totalProducts > 0 ? (autoInventorySummary.lowStockCount / autoInventorySummary.totalProducts) * 100 : 0}%` }}
+                title={`${autoInventorySummary.lowStockCount} en stock bas`}
+              />
+              <div 
+                className="bg-rose-500 h-full transition-all duration-500" 
+                style={{ width: `${autoInventorySummary.totalProducts > 0 ? (autoInventorySummary.outOfStockCount / autoInventorySummary.totalProducts) * 100 : 0}%` }}
+                title={`${autoInventorySummary.outOfStockCount} en rupture`}
+              />
+            </div>
+          </div>
+
+          {/* Quick Stats Badges */}
+          <div className="flex items-center flex-wrap gap-2 text-xs font-mono shrink-0">
+            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-100/70 dark:bg-emerald-950/50 text-emerald-800 dark:text-emerald-300 border border-emerald-200/60 dark:border-emerald-900/50 font-bold">
+              <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+              <span>{autoInventorySummary.healthyStockCount} {language === 'ar' ? 'متوفر بشكل كافٍ' : 'stock optimal'}</span>
+            </span>
+
+            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-amber-100/70 dark:bg-amber-950/50 text-amber-800 dark:text-amber-300 border border-amber-200/60 dark:border-amber-900/50 font-bold">
+              <span className="w-2 h-2 rounded-full bg-amber-500"></span>
+              <span>{autoInventorySummary.lowStockCount} {language === 'ar' ? 'قريب من النفاد' : 'stock faible'}</span>
+            </span>
+
+            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-rose-100/70 dark:bg-rose-950/50 text-rose-800 dark:text-rose-300 border border-rose-200/60 dark:border-rose-900/50 font-bold">
+              <span className="w-2 h-2 rounded-full bg-rose-500"></span>
+              <span>{autoInventorySummary.outOfStockCount} {language === 'ar' ? 'مقطوع كلياً' : 'en rupture'}</span>
+            </span>
+          </div>
+        </div>
+
+        {/* INTERACTIVE EXPANDABLE ACCORDION: OUT OF STOCK LIST & CATEGORIES */}
+        <AnimatePresence>
+          {showAutoInventoryDetails && (
+            <motion.div
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: 'auto' }}
+              exit={{ opacity: 0, height: 0 }}
+              transition={{ duration: 0.25, ease: "easeInOut" }}
+              className="border-t border-slate-100 dark:border-slate-800 pt-4 space-y-4 overflow-hidden"
+            >
+              {/* Tabs Switcher */}
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="flex bg-slate-100 dark:bg-slate-800 p-1 rounded-lg gap-1 self-start">
+                  <button
+                    type="button"
+                    onClick={() => setInventoryDetailTab('outOfStock')}
+                    className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                      inventoryDetailTab === 'outOfStock'
+                        ? 'bg-white dark:bg-slate-900 text-rose-600 dark:text-rose-400 shadow-xs'
+                        : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
+                    }`}
+                  >
+                    <PackageX className="w-3.5 h-3.5" />
+                    <span>{language === 'ar' ? 'قائمة السلع المقطوعة' : 'Articles en Rupture'}</span>
+                    <span className="bg-rose-100 dark:bg-rose-950 text-rose-700 dark:text-rose-300 text-[10px] px-1.5 rounded-full font-mono">
+                      {autoInventorySummary.outOfStockCount}
+                    </span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setInventoryDetailTab('categories')}
+                    className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                      inventoryDetailTab === 'categories'
+                        ? 'bg-white dark:bg-slate-900 text-blue-600 dark:text-blue-400 shadow-xs'
+                        : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
+                    }`}
+                  >
+                    <Layers className="w-3.5 h-3.5" />
+                    <span>{language === 'ar' ? 'التقييم حسب الأقسام والتصنيفات' : 'Valorisation par Rayon'}</span>
+                    <span className="bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-300 text-[10px] px-1.5 rounded-full font-mono">
+                      {autoInventorySummary.categoryBreakdown.length}
+                    </span>
+                  </button>
+                </div>
+
+                {/* Search input for out of stock products */}
+                {inventoryDetailTab === 'outOfStock' && autoInventorySummary.outOfStockCount > 0 && (
+                  <div className="relative w-full sm:w-64">
+                    <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                    <input
+                      type="text"
+                      value={outOfStockSearch}
+                      onChange={(e) => setOutOfStockSearch(e.target.value)}
+                      placeholder={language === 'ar' ? 'بحث عن سلعة مقطوعة...' : 'Filtrer un produit...'}
+                      className="w-full pl-8 pr-3 py-1.5 text-xs bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-800 dark:text-white focus:outline-none focus:border-blue-500"
+                    />
+                    {outOfStockSearch && (
+                      <button 
+                        type="button" 
+                        onClick={() => setOutOfStockSearch('')}
+                        className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-xs"
+                      >
+                        ×
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* TAB CONTENT: OUT OF STOCK PRODUCTS */}
+              {inventoryDetailTab === 'outOfStock' && (
+                <div>
+                  {autoInventorySummary.outOfStockCount === 0 ? (
+                    <div className="text-center py-8 bg-slate-50 dark:bg-slate-800/40 rounded-xl border border-slate-200/60 dark:border-slate-800">
+                      <div className="w-12 h-12 bg-emerald-50 dark:bg-emerald-950/50 rounded-full flex items-center justify-center mx-auto mb-2 text-emerald-600 dark:text-emerald-400">
+                        <CheckCircle2 className="w-6 h-6" />
+                      </div>
+                      <h4 className="text-sm font-bold text-slate-800 dark:text-white">
+                        {language === 'ar' ? 'المخزون متوفر بالكامل !' : 'Aucune rupture de stock'}
+                      </h4>
+                      <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 max-w-md mx-auto">
+                        {language === 'ar' 
+                          ? 'لا توجد أي مادة مسجلة برصيد صفر أو سلبي. كافة الرفوف تتوفر على كميات كافية للبيع.' 
+                          : 'Toutes vos références disposent d\'une quantité positive en magasin et en réserve.'}
+                      </p>
+                    </div>
+                  ) : filteredOutOfStockProducts.length === 0 ? (
+                    <div className="text-center py-6 text-xs text-slate-500">
+                      {language === 'ar' ? 'لم يتم العثور على سلع تطابق معايير البحث' : 'Aucun produit ne correspond à votre recherche.'}
+                    </div>
+                  ) : (
+                    <div className="border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden shadow-2xs">
+                      <div className="overflow-x-auto max-h-72 custom-scrollbar">
+                        <table className="w-full text-xs text-start">
+                          <thead className="bg-slate-50 dark:bg-slate-800/90 text-slate-500 dark:text-slate-400 text-[10px] font-mono uppercase border-b border-slate-200 dark:border-slate-800 sticky top-0 z-10 backdrop-blur-sm">
+                            <tr>
+                              <th className="px-3.5 py-2.5 text-start">{language === 'ar' ? 'المنتج / الصنف' : 'Produit / Rayon'}</th>
+                              <th className="px-3 py-2.5 text-start font-mono">{language === 'ar' ? 'الرمز / الباركود' : 'Réf / Code'}</th>
+                              <th className="px-3 py-2.5 text-center">{language === 'ar' ? 'الرصيد الفعلي' : 'Stock Réel'}</th>
+                              <th className="px-3 py-2.5 text-center">{language === 'ar' ? 'حد التنبيه' : 'Seuil Min'}</th>
+                              <th className="px-3 py-2.5 text-end">{language === 'ar' ? 'سعر الشراء' : 'Prix Achat'}</th>
+                              <th className="px-3 py-2.5 text-end">{language === 'ar' ? 'سعر البيع' : 'Prix Vente'}</th>
+                              <th className="px-3 py-2.5 text-center">{language === 'ar' ? 'الإجراءات' : 'Actions'}</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100 dark:divide-slate-800 bg-white dark:bg-slate-900">
+                            {filteredOutOfStockProducts.map(p => (
+                              <tr key={p.id} className="hover:bg-rose-50/40 dark:hover:bg-rose-950/20 transition-colors">
+                                <td className="px-3.5 py-2.5">
+                                  <div className="font-bold text-slate-900 dark:text-white truncate max-w-xs">{p.name}</div>
+                                  <div className="text-[10px] text-slate-400">{p.category || 'Général'}</div>
+                                </td>
+                                <td className="px-3 py-2.5 font-mono text-[11px] text-slate-500">
+                                  {p.code || 'N/A'}
+                                </td>
+                                <td className="px-3 py-2.5 text-center">
+                                  <span className="inline-block px-2 py-0.5 rounded text-[10px] font-bold font-mono bg-rose-100 dark:bg-rose-950/80 text-rose-700 dark:text-rose-400">
+                                    {p.stock} {p.unit}
+                                  </span>
+                                </td>
+                                <td className="px-3 py-2.5 text-center font-mono text-slate-400">
+                                  {p.minAlertQty ?? 5}
+                                </td>
+                                <td className="px-3 py-2.5 text-end font-mono text-slate-600 dark:text-slate-300">
+                                  {formatCurrency(p.purchasePrice || 0)}
+                                </td>
+                                <td className="px-3 py-2.5 text-end font-mono font-bold text-slate-900 dark:text-white">
+                                  {formatCurrency(p.sellingPrice)}
+                                </td>
+                                <td className="px-3 py-2.5 text-center">
+                                  <div className="flex items-center justify-center gap-1.5">
+                                    <button
+                                      type="button"
+                                      onClick={() => handleStartEditProduct(p)}
+                                      className="p-1 hover:bg-slate-100 dark:hover:bg-slate-800 text-blue-600 dark:text-blue-400 rounded cursor-pointer transition-colors"
+                                      title={language === 'ar' ? 'تعديل الكمية الفورية' : 'Ajuster la quantité'}
+                                    >
+                                      <Edit2 className="w-3.5 h-3.5" />
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => setShowOrderModal(true)}
+                                      className="px-2 py-0.5 rounded bg-slate-900 hover:bg-slate-800 dark:bg-slate-800 dark:hover:bg-slate-700 text-white text-[10px] font-bold cursor-pointer transition-colors"
+                                      title={language === 'ar' ? 'إضافة إلى طلب التموين' : 'Commander'}
+                                    >
+                                      {language === 'ar' ? 'طلب' : 'Commander'}
+                                    </button>
+                                  </div>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* TAB CONTENT: VALORISATION BY CATEGORY */}
+              {inventoryDetailTab === 'categories' && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                  {autoInventorySummary.categoryBreakdown.map((cat, idx) => {
+                    const pctOfTotalValue = autoInventorySummary.totalStockPurchaseValue > 0 
+                      ? Math.round((cat.purchaseVal / autoInventorySummary.totalStockPurchaseValue) * 100) 
+                      : 0;
+
+                    return (
+                      <div key={idx} className="p-3.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 flex flex-col justify-between space-y-2">
+                        <div className="flex items-start justify-between gap-2">
+                          <div>
+                            <h5 className="font-bold text-xs text-slate-900 dark:text-white">{cat.name}</h5>
+                            <span className="text-[10px] text-slate-400 font-mono">
+                              {cat.count} {language === 'ar' ? 'منتج' : 'articles'} • {cat.totalUnits} {language === 'ar' ? 'قطعة' : 'unités'}
+                            </span>
+                          </div>
+                          {cat.outOfStock > 0 ? (
+                            <span className="px-1.5 py-0.5 bg-rose-100 dark:bg-rose-950 text-rose-700 dark:text-rose-400 text-[10px] font-bold rounded font-mono">
+                              {cat.outOfStock} {language === 'ar' ? 'مقطوع' : 'rupture'}
+                            </span>
+                          ) : (
+                            <span className="px-1.5 py-0.5 bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-400 text-[10px] font-bold rounded font-mono">
+                              {language === 'ar' ? 'مكتمل' : '100% en stock'}
+                            </span>
+                          )}
+                        </div>
+
+                        <div>
+                          <div className="flex justify-between items-baseline text-xs mb-1">
+                            <span className="text-[10px] text-slate-500 font-medium">{language === 'ar' ? 'قيمة الشراء:' : 'Valeur Achat :'}</span>
+                            <span className="font-mono font-black text-blue-600 dark:text-blue-400">{formatCurrency(cat.purchaseVal)}</span>
+                          </div>
+                          
+                          <div className="w-full h-1.5 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
+                            <div className="bg-blue-600 h-full rounded-full transition-all" style={{ width: `${Math.min(100, Math.max(5, pctOfTotalValue))}%` }} />
+                          </div>
+
+                          <div className="flex justify-between text-[9px] text-slate-400 mt-1 font-mono">
+                            <span>{pctOfTotalValue}% {language === 'ar' ? 'من إجمالي المستودع' : 'du stock global'}</span>
+                            <span>Vente: {formatCurrency(cat.sellingVal)}</span>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </motion.div>
+          )}
+        </AnimatePresence>
+
       </div>
 
       {/* Warning Indicators and Charts Grid */}
@@ -3017,6 +3608,182 @@ export default function Dashboard({ db, onNavigate, onUpdateDb, license, user }:
                 </span>
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Printable Automatic Inventory Summary */}
+      {showPrintInventoryModal && (
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/60 backdrop-blur-md flex items-center justify-center p-3 md:p-6 print:p-0 print:bg-white print:static">
+          <div className="bg-white border border-slate-200 rounded-2xl max-w-3xl w-full p-6 space-y-6 shadow-2xl my-auto animate-fadeIn print:border-none print:shadow-none print:p-0" dir={language === 'ar' ? 'rtl' : 'ltr'}>
+            
+            {/* Header (hidden in print controls) */}
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3 print:hidden">
+              <div className="flex items-center gap-2">
+                <Printer className="w-5 h-5 text-blue-600" />
+                <h3 className="text-sm font-bold uppercase tracking-wider text-slate-900 font-display">
+                  {language === 'ar' ? 'تقرير ملخص الجرد التلقائي' : 'Rapport de Synthèse d\'Inventaire'}
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowPrintInventoryModal(false)}
+                className="p-1 text-slate-400 hover:text-slate-600 rounded cursor-pointer transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Document Content to Print */}
+            <div id="printable-inventory-content" className="space-y-5 text-slate-800">
+              
+              {/* Store branding & date banner */}
+              <div className="flex items-start justify-between border-b-2 border-slate-900 pb-4">
+                <div>
+                  <h1 className="text-xl font-black text-slate-900 tracking-tight">
+                    {db.settings?.storeName || 'SUPERETTE INNOVA'}
+                  </h1>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    {db.settings?.storeAddress || 'Tunisie'} • Tél: {db.settings?.storePhone || 'N/A'}
+                  </p>
+                  {db.settings?.matriculeFiscal && (
+                    <p className="text-[10px] text-slate-400 font-mono mt-0.5">
+                      MF: {db.settings.matriculeFiscal}
+                    </p>
+                  )}
+                </div>
+                <div className="text-end">
+                  <span className="inline-block bg-slate-900 text-white text-[10px] font-bold px-2 py-0.5 rounded font-mono uppercase">
+                    {language === 'ar' ? 'تقرير جرد تلقائي' : 'Audit Inventaire'}
+                  </span>
+                  <p className="text-xs font-mono font-bold text-slate-700 mt-1">
+                    {new Date().toLocaleDateString(language === 'ar' ? 'ar-TN' : 'fr-FR', {
+                      weekday: 'long',
+                      year: 'numeric',
+                      month: 'long',
+                      day: 'numeric',
+                      hour: '2-digit',
+                      minute: '2-digit'
+                    })}
+                  </p>
+                </div>
+              </div>
+
+              {/* 2 Primary Core Numbers Grid */}
+              <div className="grid grid-cols-2 gap-4">
+                <div className="p-4 rounded-xl border border-rose-200 bg-rose-50/50">
+                  <span className="text-[11px] font-bold uppercase tracking-wider text-rose-700 block mb-1">
+                    {language === 'ar' ? 'المنتجات في حالة نفاد تام' : 'Produits en Rupture de Stock'}
+                  </span>
+                  <span className="text-3xl font-mono font-black text-rose-600 block">
+                    {autoInventorySummary.outOfStockCount}
+                  </span>
+                  <span className="text-[10px] text-slate-500">
+                    {language === 'ar' ? `من إجمالي ${autoInventorySummary.totalProducts} مادة` : `sur ${autoInventorySummary.totalProducts} références`}
+                  </span>
+                </div>
+
+                <div className="p-4 rounded-xl border border-blue-200 bg-blue-50/50">
+                  <span className="text-[11px] font-bold uppercase tracking-wider text-blue-700 block mb-1">
+                    {language === 'ar' ? 'القيمة الإجمالية للمخزون الحالي' : 'Valeur Totale du Stock (Achat)'}
+                  </span>
+                  <span className="text-3xl font-mono font-black text-blue-600 block">
+                    {formatCurrency(autoInventorySummary.totalStockPurchaseValue)}
+                  </span>
+                  <span className="text-[10px] text-slate-500">
+                    {language === 'ar' ? `قيمة البيع: ${formatCurrency(autoInventorySummary.totalStockSellingValue)}` : `Valeur vente : ${formatCurrency(autoInventorySummary.totalStockSellingValue)}`}
+                  </span>
+                </div>
+              </div>
+
+              {/* Complementary Audit Numbers */}
+              <div className="grid grid-cols-3 gap-3 p-3 bg-slate-50 rounded-xl border border-slate-200 text-xs text-center font-mono">
+                <div>
+                  <span className="text-slate-400 text-[10px] block font-sans">{language === 'ar' ? 'إجمالي القطع في المخزن' : 'Volume Physique'}</span>
+                  <strong className="text-slate-900 text-sm">{autoInventorySummary.totalPhysicalUnits.toLocaleString()}</strong>
+                </div>
+                <div>
+                  <span className="text-slate-400 text-[10px] block font-sans">{language === 'ar' ? 'هامش الربح المتوقع' : 'Marge Brute Prévue'}</span>
+                  <strong className="text-emerald-600 text-sm">+{formatCurrency(autoInventorySummary.potentialStockProfit)}</strong>
+                </div>
+                <div>
+                  <span className="text-slate-400 text-[10px] block font-sans">{language === 'ar' ? 'نسبة توفر السلع' : 'Taux Disponibilité'}</span>
+                  <strong className="text-slate-900 text-sm">{autoInventorySummary.availabilityRate}%</strong>
+                </div>
+              </div>
+
+              {/* Table of Out-of-Stock Products */}
+              <div>
+                <h4 className="text-xs font-bold uppercase tracking-wider text-slate-900 mb-2 flex items-center justify-between">
+                  <span>{language === 'ar' ? 'قائمة المنتجات المنتهية (رصيد ≤ 0)' : 'Détail des Produits en Rupture (Stock ≤ 0)'}</span>
+                  <span className="text-[10px] font-mono text-slate-400">({autoInventorySummary.outOfStockCount} articles)</span>
+                </h4>
+
+                {autoInventorySummary.outOfStockCount === 0 ? (
+                  <p className="text-xs text-emerald-600 font-bold bg-emerald-50 p-2.5 rounded border border-emerald-200">
+                    {language === 'ar' ? '✅ لا توجد أي مواد مقطوعة من المخزون حالياً.' : '✅ Aucune rupture de stock constatée lors de cet audit.'}
+                  </p>
+                ) : (
+                  <div className="border border-slate-200 rounded-lg overflow-hidden max-h-56 overflow-y-auto">
+                    <table className="w-full text-xs text-start">
+                      <thead className="bg-slate-100 text-slate-600 text-[10px] font-mono uppercase border-b border-slate-200">
+                        <tr>
+                          <th className="px-3 py-1.5 text-start">{language === 'ar' ? 'المنتج' : 'Article'}</th>
+                          <th className="px-2 py-1.5 text-start font-mono">{language === 'ar' ? 'الرمز' : 'Réf'}</th>
+                          <th className="px-2 py-1.5 text-center">{language === 'ar' ? 'الرصيد' : 'Stock'}</th>
+                          <th className="px-2 py-1.5 text-end">{language === 'ar' ? 'سعر الشراء' : 'P. Achat'}</th>
+                          <th className="px-2 py-1.5 text-end">{language === 'ar' ? 'سعر البيع' : 'P. Vente'}</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {autoInventorySummary.outOfStockProducts.map(p => (
+                          <tr key={p.id}>
+                            <td className="px-3 py-1.5 font-bold text-slate-900">{p.name}</td>
+                            <td className="px-2 py-1.5 font-mono text-slate-500 text-[10px]">{p.code || 'N/A'}</td>
+                            <td className="px-2 py-1.5 text-center font-bold text-rose-600 font-mono">{p.stock} {p.unit}</td>
+                            <td className="px-2 py-1.5 text-end font-mono text-slate-600">{formatCurrency(p.purchasePrice || 0)}</td>
+                            <td className="px-2 py-1.5 text-end font-mono font-bold text-slate-900">{formatCurrency(p.sellingPrice)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+
+              {/* Signatures Zone */}
+              <div className="pt-6 border-t border-slate-200 flex justify-between text-xs text-slate-500">
+                <div>
+                  <p className="font-bold text-slate-700">{language === 'ar' ? 'توقيع وختم المسؤول:' : 'Signature et cachet du gérant :'}</p>
+                  <div className="h-14"></div>
+                </div>
+                <div className="text-end">
+                  <p className="font-bold text-slate-700">{language === 'ar' ? 'تأشيرة مراجع الجرد:' : 'Visa du responsable d\'inventaire :'}</p>
+                  <div className="h-14"></div>
+                </div>
+              </div>
+
+            </div>
+
+            {/* Modal Actions */}
+            <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-slate-100 print:hidden">
+              <button
+                type="button"
+                onClick={() => setShowPrintInventoryModal(false)}
+                className="py-2 px-4 rounded border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-bold transition-colors cursor-pointer"
+              >
+                {language === 'ar' ? 'إغلاق' : 'Fermer'}
+              </button>
+              <button
+                type="button"
+                onClick={() => window.print()}
+                className="py-2 px-5 rounded bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer shadow-sm active:scale-95"
+              >
+                <Printer className="w-3.5 h-3.5" />
+                <span>{language === 'ar' ? 'طباعة الوثيقة' : 'Imprimer la Fiche'}</span>
+              </button>
+            </div>
+
           </div>
         </div>
       )}

@@ -197,9 +197,21 @@ export function downloadInvoicePDF({
     // Payments
     doc.setFontSize(8);
     doc.setFont("helvetica", "normal");
-    doc.text("Montant Versé :", 35, currentY);
-    doc.text(formatCurrency(invoice.paidAmount), 75, currentY, { align: 'right' });
+    const tendered = invoice.tenderedAmount !== undefined ? invoice.tenderedAmount : invoice.paidAmount;
+    doc.text("Montant Donné / Reçu :", 35, currentY);
+    doc.text(formatCurrency(tendered), 75, currentY, { align: 'right' });
     currentY += 4;
+
+    const change = invoice.changeReturned !== undefined ? invoice.changeReturned : Math.max(0, tendered - invoice.total);
+    if (change > 0) {
+      doc.setFont("helvetica", "bold");
+      doc.setTextColor(5, 150, 105);
+      doc.text("Reste Rendu (Monnaie) :", 35, currentY);
+      doc.text(formatCurrency(change), 75, currentY, { align: 'right' });
+      doc.setTextColor(0, 0, 0);
+      doc.setFont("helvetica", "normal");
+      currentY += 4;
+    }
 
     // Remaining debt Credit
     if (invoice.balance > 0) {
@@ -487,9 +499,21 @@ export function downloadInvoicePDF({
   doc.setFontSize(8.5);
   doc.setTextColor(71, 85, 105);
   doc.setFont("helvetica", "normal");
-  doc.text("Montant déjà acquitté (Acompte) :", calcX, currentY + 3);
-  doc.text(formatCurrency(invoice.paidAmount), valX, currentY + 3, { align: 'right' });
+  const tenderedA4 = invoice.tenderedAmount !== undefined ? invoice.tenderedAmount : invoice.paidAmount;
+  doc.text("Montant Donné par Client (Reçu) :", calcX, currentY + 3);
+  doc.text(formatCurrency(tenderedA4), valX, currentY + 3, { align: 'right' });
   currentY += 5;
+
+  const changeA4 = invoice.changeReturned !== undefined ? invoice.changeReturned : Math.max(0, tenderedA4 - invoice.total);
+  if (changeA4 > 0) {
+    doc.setFont("helvetica", "bold");
+    doc.setTextColor(5, 150, 105); // Emerald green for change returned
+    doc.text("Reste Rendu (Monnaie) :", calcX, currentY + 3);
+    doc.text(formatCurrency(changeA4), valX, currentY + 3, { align: 'right' });
+    doc.setTextColor(71, 85, 105);
+    doc.setFont("helvetica", "normal");
+    currentY += 5;
+  }
 
   if (invoice.balance > 0) {
     doc.setFont("helvetica", "bold");

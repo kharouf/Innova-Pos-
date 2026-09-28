@@ -144,6 +144,7 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
   const [globalDiscount, setGlobalDiscount] = useState<number>(0);
   const [taxRate, setTaxRate] = useState<number>(-1); // -1: Itemized TVA par article, >=0: Global flat taxrate
   const [paidAmount, setPaidAmount] = useState<string>('');
+  const [showCashChangeModal, setShowCashChangeModal] = useState<boolean>(false);
 
   // Virtual keypad configuration states
   const [activeNumpadTarget, setActiveNumpadTarget] = useState<'rapidScan' | 'search' | 'paidAmount' | 'discount' | 'customPrice' | 'lastItemQty'>('rapidScan');
@@ -1152,6 +1153,34 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
         activeEl.tagName.toLowerCase() === 'textarea'
       );
 
+      // Direct keyboard capture for paidAmount when target is active
+      if (!typingInInput && activeNumpadTarget === 'paidAmount' && cart.length > 0) {
+        if ((e.key >= '0' && e.key <= '9') || e.key === '.' || e.key === ',') {
+          e.preventDefault();
+          const char = e.key === ',' ? '.' : e.key;
+          paidAmountInputRef.current?.focus();
+          setPaidAmount(prev => {
+            if (char === '.') {
+              return prev.includes('.') ? prev : (prev || '0') + '.';
+            }
+            return prev === '0' ? char : prev + char;
+          });
+          return;
+        } else if (e.key === 'Backspace') {
+          e.preventDefault();
+          paidAmountInputRef.current?.focus();
+          setPaidAmount(prev => prev.slice(0, -1));
+          return;
+        } else if (e.key === 'Enter') {
+          e.preventDefault();
+          const isClientSatisfied = selectedPartnerId || remainingDebt <= 0;
+          if (cart.length > 0 && isClientSatisfied) {
+            handleCheckoutClick();
+          }
+          return;
+        }
+      }
+
       if (e.key === 'F2') {
         e.preventDefault();
         setCart([]);
@@ -1163,12 +1192,11 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
         setKeyboardLayout('alphabetic');
       } else if (e.key === 'F4') {
         e.preventDefault();
-        if (cart.length > 0) {
-          paidAmountInputRef.current?.focus();
-          paidAmountInputRef.current?.select();
-          setActiveNumpadTarget('paidAmount');
-          setKeyboardLayout('numeric');
-        }
+        paidAmountInputRef.current?.focus();
+        paidAmountInputRef.current?.select();
+        setActiveNumpadTarget('paidAmount');
+        setKeyboardLayout('numeric');
+        showToast(language === 'ar' ? '⌨️ إدخال المبلغ كاش باللوحة أو لوحة المفاتيح (F4)' : '⌨️ Saisie montant espèces au clavier active (F4)', 'info');
       } else if (e.key === 'F6') {
         e.preventDefault();
         if (cart.length > 0) {
@@ -1215,10 +1243,18 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
           setActiveNumpadTarget('rapidScan');
           setKeyboardLayout('numeric');
         }
+      } else if (e.key === 'F11') {
+        e.preventDefault();
+        if (cart.length > 0) {
+          setShowCashChangeModal(true);
+        } else {
+          showToast(language === 'ar' ? 'السلة فارغة' : 'Panier vide', 'info');
+        }
       } else if (e.key === 'Escape') {
         setPrintedInvoice(null);
         setShowNewClientModal(false);
         setShowOtpModal(false);
+        setShowCashChangeModal(false);
       }
     };
 
@@ -1707,8 +1743,10 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
       taxRate,
       taxAmount,
       total: finalTotal,
-      paidAmount: currentPay,
-      balance: remainingDebt,
+      paidAmount: isReturnMode ? currentPay : Math.min(finalTotal, currentPay > 0 ? currentPay : finalTotal),
+      tenderedAmount: currentPay > 0 ? currentPay : finalTotal,
+      changeReturned: isReturnMode ? 0 : changeDue,
+      balance: isReturnMode ? 0 : remainingDebt,
       dueDate: remainingDebt > 0 && !isReturnMode ? new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0] : undefined,
       notes: isReturnMode 
         ? (language === 'ar' ? 'عملية إسترجاع سلع للزبون (تذكرة إرجاع)' : 'Retour de marchandise (Avoir client)')
@@ -2949,16 +2987,16 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
                   {/* Highlighted current active input field target indicator bubble */}
                   <div className="bg-slate-950 px-2.5 py-1.5 rounded-xl border border-slate-850 flex items-center justify-between text-[10px] font-mono">
                     <span className="text-slate-400">
-                      {activeNumpadTarget === 'rapidScan' && (language === 'ar' ? '🎯 الإدخال النشط: باركود' : '🎯 TARGET: CODE-BARRES')}
-                      {activeNumpadTarget === 'lastItemQty' && (language === 'ar' ? '🎯 الإدخال النشط: كمية السلعة' : '🎯 TARGET: QUANTITÉ')}
-                      {activeNumpadTarget === 'paidAmount' && (language === 'ar' ? '🎯 الإدخال النشط: كاش مستلم' : '🎯 TARGET: ESPÈCES CASH')}
-                      {activeNumpadTarget === 'discount' && (language === 'ar' ? '🎯 الإدخال النشط: تخفيض' : '🎯 TARGET: REMISE GLOBAL')}
-                      {activeNumpadTarget === 'customPrice' && (language === 'ar' ? '🎯 الإدخال النشط: تعديل السعر' : '🎯 TARGET: TARIF MODIF')}
+                      {activeNumpadTarget === 'rapidScan' && (language === 'ar' ? '🎯 الإدخال: باركود' : '🎯 TARGET: CODE-BARRES')}
+                      {activeNumpadTarget === 'lastItemQty' && (language === 'ar' ? '🎯 الإدخال: كمية السلعة' : '🎯 TARGET: QUANTITÉ')}
+                      {activeNumpadTarget === 'paidAmount' && (language === 'ar' ? '🎯 الإدخال: مبلغ مستلم (كاش)' : '🎯 TARGET: ESPÈCES REÇUES')}
+                      {activeNumpadTarget === 'discount' && (language === 'ar' ? '🎯 الإدخال: تخفيض' : '🎯 TARGET: REMISE GLOBAL')}
+                      {activeNumpadTarget === 'customPrice' && (language === 'ar' ? '🎯 الإدخال: تعديل السعر' : '🎯 TARGET: TARIF MODIF')}
                     </span>
-                    <span className="text-cyan-400 font-extrabold max-w-[120px] truncate">
+                    <span className="text-cyan-400 font-extrabold max-w-[130px] truncate">
                       {activeNumpadTarget === 'rapidScan' && (rapidScanValue || '—')}
                       {activeNumpadTarget === 'lastItemQty' && (cart.length > 0 ? `${cart[selectedCartIdx >= 0 && selectedCartIdx < cart.length ? selectedCartIdx : cart.length - 1]?.qty || 0} u` : '—')}
-                      {activeNumpadTarget === 'paidAmount' && (paidAmount ? `${formatCurrency(parseFloat(paidAmount))} TND` : '0 TND')}
+                      {activeNumpadTarget === 'paidAmount' && (paidAmount ? `${formatCurrency(parseFloat(paidAmount))} TND (Reste: ${formatCurrency(changeDue)})` : '0 TND')}
                       {activeNumpadTarget === 'discount' && (`${globalDiscount} TND`)}
                       {activeNumpadTarget === 'customPrice' && (customItemPrice ? `${customItemPrice} TND` : '—')}
                     </span>
@@ -3000,6 +3038,94 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
                   </button>
                 </div>
 
+                {/* Quick Banknote Selection Strip & Live Change Preview */}
+                <div className="space-y-1.5 shrink-0">
+                  <div className="flex items-center gap-1 overflow-x-auto py-0.5 scrollbar-none text-[10px] font-mono font-black">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setPaidAmount(String(finalTotal));
+                        playScanBeep();
+                        setActiveNumpadTarget('paidAmount');
+                      }}
+                      className="bg-emerald-800/80 hover:bg-emerald-700 text-emerald-200 px-2 py-1 rounded-lg border border-emerald-600 transition-all shrink-0 cursor-pointer active:scale-95"
+                    >
+                      {language === 'ar' ? '⚡ مضبوط' : '⚡ Exact'}
+                    </button>
+                    {[10, 20, 50, 100].map(amt => (
+                      <button
+                        key={amt}
+                        type="button"
+                        onClick={() => {
+                          setPaidAmount(String(amt));
+                          playScanBeep();
+                          setActiveNumpadTarget('paidAmount');
+                        }}
+                        className={`px-2 py-1 rounded-lg border transition-all shrink-0 cursor-pointer active:scale-95 ${
+                          Number(paidAmount) === amt ? 'bg-cyan-600 text-white border-cyan-400 font-bold' : 'bg-slate-800 hover:bg-slate-700 text-slate-200 border-slate-700'
+                        }`}
+                      >
+                        {amt} DT
+                      </button>
+                    ))}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setPaidAmount(prev => String((Number(prev) || 0) + 10));
+                        playScanBeep();
+                        setActiveNumpadTarget('paidAmount');
+                      }}
+                      className="bg-indigo-900/80 hover:bg-indigo-700 text-indigo-200 px-1.5 py-1 rounded-lg border border-indigo-700 transition-all shrink-0 cursor-pointer active:scale-95"
+                    >
+                      +10
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setPaidAmount(prev => String((Number(prev) || 0) + 20));
+                        playScanBeep();
+                        setActiveNumpadTarget('paidAmount');
+                      }}
+                      className="bg-indigo-900/80 hover:bg-indigo-700 text-indigo-200 px-1.5 py-1 rounded-lg border border-indigo-700 transition-all shrink-0 cursor-pointer active:scale-95"
+                    >
+                      +20
+                    </button>
+                  </div>
+
+                  {/* Live Change & Tendered Display Box */}
+                  <div 
+                    onClick={() => {
+                      setActiveNumpadTarget('paidAmount');
+                      if (cart.length > 0) {
+                        setShowCashChangeModal(true);
+                      }
+                    }}
+                    className={`p-2 rounded-xl border flex items-center justify-between text-xs font-mono select-none cursor-pointer transition-all hover:scale-[1.01] ${
+                      changeDue > 0
+                        ? 'bg-emerald-950/80 border-emerald-500/70 text-emerald-300 shadow-[0_0_12px_rgba(16,185,129,0.3)] animate-pulse'
+                        : remainingDebt > 0 && currentPay > 0
+                        ? 'bg-amber-950/80 border-amber-500/70 text-amber-300'
+                        : 'bg-slate-950 border-slate-800 text-slate-300'
+                    }`}
+                  >
+                    <div>
+                      <span className="text-[8.5px] uppercase font-bold tracking-wider block opacity-90">
+                        {changeDue > 0 
+                          ? (language === 'ar' ? '🪙 الباقي المستحق للحريف (الفائض):' : '🪙 MONNAIE À RENDRE (RESTE) :') 
+                          : remainingDebt > 0 && currentPay > 0
+                          ? (language === 'ar' ? '⚠️ متبقي للدفع (دين):' : '⚠️ MANQUE / RESTE À PAYER :')
+                          : (language === 'ar' ? '💵 المبلغ المستلم من الحريف:' : '💵 MONTANT DONNÉ (CLIENT) :')}
+                      </span>
+                      <span className="text-sm font-black font-mono">
+                        {changeDue > 0 ? formatCurrency(changeDue) : remainingDebt > 0 && currentPay > 0 ? formatCurrency(remainingDebt) : formatCurrency(currentPay || finalTotal)} DT
+                      </span>
+                    </div>
+                    <span className="text-[9px] bg-slate-800 hover:bg-slate-700 text-cyan-300 font-sans font-bold px-2 py-1 rounded-lg border border-slate-700">
+                      {language === 'ar' ? 'حاسبة الصرف 🔍' : 'Monnaie F11 🔍'}
+                    </span>
+                  </div>
+                </div>
+
                 {/* Color-coded command clusters inspired by Tictaac POS screenshot */}
                 <div className="space-y-1.5 shrink-0">
                   <div className="grid grid-cols-2 gap-2">
@@ -3011,7 +3137,9 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
                           showToast(language === 'ar' ? 'السلة فارغة!' : 'Ajoutez d\'abord des articles pour encaisser immédiat !', 'error');
                           return;
                         }
-                        setPaidAmount(String(finalTotal));
+                        if (!paidAmount || Number(paidAmount) === 0) {
+                          setPaidAmount(String(finalTotal));
+                        }
                         setPaymentMethod('especes');
                         setTimeout(() => {
                           handleCheckoutClick();
@@ -3019,21 +3147,28 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
                       }}
                       className="bg-emerald-600 hover:bg-emerald-750 text-white font-black py-3 rounded-2xl transition-all active:scale-95 cursor-pointer flex flex-col items-center justify-center border-b-4 border-emerald-800 shadow-md text-xs leading-4"
                     >
-                      <span className="text-sm">💵 Espèce (F11)</span>
-                      <span className="text-[9px] text-emerald-100 opacity-90">{formatCurrency(finalTotal)}</span>
+                      <span className="text-sm">💵 {language === 'ar' ? 'نقداً / كاش (F11)' : 'Espèce (F11)'}</span>
+                      <span className="text-[9px] text-emerald-100 opacity-90 font-mono">
+                        {currentPay > 0 && currentPay !== finalTotal
+                          ? (language === 'ar' ? `المستلم: ${formatCurrency(currentPay)} | الباقي: ${formatCurrency(changeDue)}` : `Donné: ${formatCurrency(currentPay)} | Reste: ${formatCurrency(changeDue)}`)
+                          : formatCurrency(finalTotal)}
+                      </span>
                     </button>
 
                     {/* PLUS DE RÉGLEMENT (Blue block) */}
                     <button
                       type="button"
                       onClick={() => {
-                        setActiveNumpadTarget('paidAmount');
-                        showToast(language === 'ar' ? 'الرجاء إدخال المبلغ كاش باللوحة ثم الحفظ' : 'Activez le montant payé pour saisir des chèques ou traites', 'info');
+                        if (cart.length === 0) {
+                          showToast(language === 'ar' ? 'السلة فارغة!' : 'Ajoutez d\'abord des articles !', 'error');
+                          return;
+                        }
+                        setShowCashChangeModal(true);
                       }}
                       className="bg-sky-600 hover:bg-sky-750 text-white font-black py-3 rounded-2xl transition-all active:scale-95 cursor-pointer flex flex-col items-center justify-center border-b-4 border-sky-800 shadow-md text-xs leading-4"
                     >
-                      <span className="text-xs">💳 Règlement (F12)</span>
-                      <span className="text-[9px] text-sky-100 opacity-90">Chèques / Crédits</span>
+                      <span className="text-xs">🪙 {language === 'ar' ? 'حساب الصرف & النقدية' : 'Calcul Monnaie (F11)'}</span>
+                      <span className="text-[9px] text-sky-100 opacity-90">{language === 'ar' ? 'المبلغ المستلم والباقي' : 'Montant Donné & Reste'}</span>
                     </button>
                   </div>
 
@@ -3355,17 +3490,189 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
                         </table>
                       </div>
 
-                      {/* Reste Rendu bottom cash panel */}
+                      {/* Interactive Cashier Payment & Change Return Toolbar */}
                       {cart.length > 0 && (
-                        <div className="bg-slate-100 p-2.5 border-t border-slate-150 grid grid-cols-3 gap-2 text-[10.5px] font-mono font-bold text-slate-700 shrink-0">
-                          <div>
-                            {language === 'ar' ? 'المدفوع:' : 'REÇU :'} <span className="text-emerald-700 font-black">{formatCurrency(parseFloat(paidAmount) || 0)} DT</span>
+                        <div className="bg-slate-900 border-t-2 border-slate-800 p-3 flex flex-col gap-2.5 text-white shrink-0 shadow-lg">
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            {/* Montant Donné par le Client Input */}
+                            <div className="flex items-center gap-2 flex-1 min-w-[220px]">
+                              <span className="text-[10px] uppercase font-black tracking-wider text-emerald-400 shrink-0 flex items-center gap-1">
+                                <span>💵</span>
+                                <span>{language === 'ar' ? 'المبلغ المستلم :' : 'Montant Donné :'}</span>
+                              </span>
+                              <div className="relative flex-1 max-w-[170px]">
+                                <input
+                                  ref={paidAmountInputRef}
+                                  type="text"
+                                  inputMode="decimal"
+                                  value={paidAmount}
+                                  placeholder={formatCurrency(finalTotal)}
+                                  onChange={(e) => {
+                                    const val = e.target.value.replace(',', '.');
+                                    if (val === '' || /^\d*\.?\d*$/.test(val)) {
+                                      setPaidAmount(val);
+                                    }
+                                  }}
+                                  onKeyDown={handlePaidAmountKeyDown}
+                                  onFocus={(e) => {
+                                    e.target.select();
+                                    setActiveNumpadTarget('paidAmount');
+                                    setKeyboardLayout('numeric');
+                                  }}
+                                  className="w-full bg-slate-950 border-2 border-emerald-500/80 focus:border-emerald-400 rounded-xl py-1.5 pl-2.5 pr-8 text-xs font-mono font-black text-emerald-300 focus:outline-none focus:ring-2 focus:ring-emerald-500/40"
+                                  title={language === 'ar' ? 'يمكنك الكتابة مباشرة بلوحة المفاتيح (F4)' : 'Saisie directe au clavier (Raccourci F4)'}
+                                />
+                                <span className="absolute right-2 top-2 text-[9px] font-mono font-black text-emerald-500/70 pointer-events-none">
+                                  DT
+                                </span>
+                              </div>
+                              {paidAmount && (
+                                <button
+                                  type="button"
+                                  onClick={() => setPaidAmount('')}
+                                  className="text-slate-400 hover:text-rose-400 text-xs p-1 cursor-pointer"
+                                  title="Effacer"
+                                >
+                                  ✕
+                                </button>
+                              )}
+                            </div>
+
+                            {/* Banknotes Quick Selector Buttons */}
+                            <div className="flex items-center gap-1 overflow-x-auto py-0.5 scrollbar-none text-[10px] font-mono font-black">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setPaidAmount(String(finalTotal));
+                                  playScanBeep();
+                                }}
+                                className="bg-emerald-700 hover:bg-emerald-600 text-white px-2 py-1.5 rounded-lg border border-emerald-500/50 transition-all shrink-0 cursor-pointer active:scale-95"
+                                title={language === 'ar' ? 'المبلغ مضبوط' : 'Montant exact'}
+                              >
+                                {language === 'ar' ? '⚡ مضبوط' : '⚡ Exact'}
+                              </button>
+                              {[10, 20, 50, 100].map(amt => (
+                                <button
+                                  key={amt}
+                                  type="button"
+                                  onClick={() => {
+                                    setPaidAmount(String(amt));
+                                    playScanBeep();
+                                  }}
+                                  className={`px-2 py-1.5 rounded-lg border transition-all shrink-0 cursor-pointer active:scale-95 ${
+                                    Number(paidAmount) === amt
+                                      ? 'bg-cyan-600 border-cyan-400 text-white'
+                                      : 'bg-slate-800 hover:bg-slate-700 text-slate-200 border-slate-700'
+                                  }`}
+                                >
+                                  {amt} DT
+                                </button>
+                              ))}
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setPaidAmount(prev => String((Number(prev) || 0) + 10));
+                                  playScanBeep();
+                                }}
+                                className="bg-indigo-950 border border-indigo-800 hover:bg-indigo-900 text-indigo-300 px-1.5 py-1.5 rounded-lg transition-all shrink-0 cursor-pointer active:scale-95"
+                              >
+                                +10
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setPaidAmount(prev => String((Number(prev) || 0) + 20));
+                                  playScanBeep();
+                                }}
+                                className="bg-indigo-950 border border-indigo-800 hover:bg-indigo-900 text-indigo-300 px-1.5 py-1.5 rounded-lg transition-all shrink-0 cursor-pointer active:scale-95"
+                              >
+                                +20
+                              </button>
+                            </div>
                           </div>
-                          <div className="text-center">
-                            {language === 'ar' ? 'المتبقي:' : 'RENDU :'} <span className="text-cyan-700 font-black">{formatCurrency(Math.max(0, (parseFloat(paidAmount) || 0) - finalTotal))} DT</span>
-                          </div>
-                          <div className="text-right">
-                            {language === 'ar' ? 'السلع:' : 'ARTICLES :'} <span className="text-indigo-700 font-black">{totalItemsCount}</span>
+
+                          {/* Second Row: Reste à Rendre Display & Quick Validation */}
+                          <div className="flex flex-wrap items-center justify-between gap-2 pt-1 border-t border-slate-800/80">
+                            {/* Le Reste à Rendre (Monnaie) Badge */}
+                            <div className="flex items-center gap-2 flex-1 min-w-[240px]">
+                              {changeDue > 0 ? (
+                                <div className="bg-emerald-950 border border-emerald-500 text-emerald-300 px-3 py-1.5 rounded-xl flex items-center gap-2 shadow-[0_0_15px_rgba(16,185,129,0.3)] animate-pulse w-full">
+                                  <span className="text-base">🪙</span>
+                                  <div className="flex-1">
+                                    <span className="text-[9px] uppercase font-black tracking-wider block text-emerald-200 leading-3">
+                                      {language === 'ar' ? 'الفائض / المتبقي لـه (صرف) :' : 'LE RESTE À RENDRE (MONNAIE) :'}
+                                    </span>
+                                    <span className="text-[8.5px] text-emerald-300 font-medium">
+                                      {language === 'ar' ? 'يرجى إرجاع المبلغ للحريف' : 'Remettre au client en espèces'}
+                                    </span>
+                                  </div>
+                                  <span className="text-base sm:text-lg font-mono font-black text-white">
+                                    {formatCurrency(changeDue)} <span className="text-xs text-emerald-300">DT</span>
+                                  </span>
+                                </div>
+                              ) : remainingDebt > 0 && currentPay > 0 ? (
+                                <div className="bg-amber-950 border border-amber-500 text-amber-300 px-3 py-1.5 rounded-xl flex items-center justify-between gap-2 w-full">
+                                  <div className="flex items-center gap-1.5">
+                                    <span>⚠️</span>
+                                    <div>
+                                      <span className="text-[9px] uppercase font-black block text-amber-200 leading-3">
+                                        {language === 'ar' ? 'المتبقي كدين على العميل :' : 'MANQUE / RESTE À PAYER (CRÉDIT) :'}
+                                      </span>
+                                      <span className="text-[8.5px] text-amber-300 font-medium">
+                                        {selectedPartnerId ? (language === 'ar' ? 'يسجل في الحساب' : 'Enregistré sur compte client') : (language === 'ar' ? 'يلزم إكمال المبلغ' : 'Règlement total requis')}
+                                      </span>
+                                    </div>
+                                  </div>
+                                  <span className="text-sm sm:text-base font-mono font-black text-rose-300">
+                                    {formatCurrency(remainingDebt)} <span className="text-xs">DT</span>
+                                  </span>
+                                </div>
+                              ) : (
+                                <div className="bg-slate-950 border border-slate-800 text-slate-300 px-3 py-1.5 rounded-xl flex items-center justify-between gap-2 w-full text-xs font-mono">
+                                  <div className="flex items-center gap-1.5">
+                                    <span className="text-emerald-400">✓</span>
+                                    <span className="text-[9.5px] font-bold text-slate-400">
+                                      {currentPay > 0 
+                                        ? (language === 'ar' ? 'المبلغ المستلم مطابق تماماً (لا يوجد باقي)' : 'Compte exact (Monnaie : 0.000 DT)')
+                                        : (language === 'ar' ? 'الصافي للدفع (جاهز للإدخال)' : 'Net à Payer (Prêt à encaisser)')}
+                                    </span>
+                                  </div>
+                                  <span className="font-black text-emerald-400">
+                                    {formatCurrency(finalTotal)} DT
+                                  </span>
+                                </div>
+                              )}
+                            </div>
+
+                            {/* Direct Action Buttons */}
+                            <div className="flex items-center gap-1.5 shrink-0">
+                              <button
+                                type="button"
+                                onClick={() => setShowCashChangeModal(true)}
+                                className="bg-slate-800 hover:bg-slate-700 text-cyan-300 px-2.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer border border-slate-700 flex items-center gap-1 active:scale-95"
+                                title="Ouvrir calculatrice de monnaie"
+                              >
+                                <span>🪙</span>
+                                <span>{language === 'ar' ? 'حاسبة الصرف (F11)' : 'Calcul Monnaie (F11)'}</span>
+                              </button>
+                              <button
+                                type="button"
+                                disabled={!selectedPartnerId && remainingDebt > 0}
+                                onClick={() => {
+                                  if (!paidAmount || Number(paidAmount) === 0) {
+                                    setPaidAmount(String(finalTotal));
+                                  }
+                                  setPaymentMethod('especes');
+                                  setTimeout(() => {
+                                    handleCheckoutClick();
+                                  }, 100);
+                                }}
+                                className="bg-emerald-600 hover:bg-emerald-500 disabled:bg-slate-800 disabled:text-slate-600 text-white px-3.5 py-2 rounded-xl text-xs font-black transition-all cursor-pointer shadow-md flex items-center gap-1.5 active:scale-95 border-b-2 border-emerald-800"
+                              >
+                                <CheckCircle className="w-3.5 h-3.5" />
+                                <span>{language === 'ar' ? 'تأكيد ودفع' : 'Valider & Payer'}</span>
+                              </button>
+                            </div>
                           </div>
                         </div>
                       )}
@@ -3516,13 +3823,21 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
                   </div>
                 </div>
 
-                <div className="grid grid-cols-2 gap-2 mt-2 pt-2 border-t border-slate-850/50 text-[9.5px] text-slate-400 font-mono">
+                <div 
+                  onClick={() => {
+                    setActiveNumpadTarget('paidAmount');
+                    if (cart.length > 0) setShowCashChangeModal(true);
+                  }}
+                  className={`grid grid-cols-2 gap-2 mt-2 pt-2 border-t border-slate-850/50 text-[10px] font-mono cursor-pointer p-1.5 rounded-lg transition-colors ${
+                    changeDue > 0 ? 'bg-emerald-950/60 border border-emerald-500/40 text-emerald-300' : 'text-slate-400 hover:bg-slate-900/50'
+                  }`}
+                >
                   <div>
-                    {language === 'ar' ? 'المدفوع كاش:' : 'REÇU CASH :'} <span className="font-bold text-emerald-400">{formatCurrency(parseFloat(paidAmount) || 0)}</span>
+                    {language === 'ar' ? 'المبلغ المستلم كاش:' : 'DONNÉ CASH :'} <span className="font-bold text-emerald-400">{formatCurrency(parseFloat(paidAmount) || (cart.length > 0 ? finalTotal : 0))}</span>
                   </div>
                   <div className="text-right">
-                    {language === 'ar' ? 'المتبقي لـه:' : 'RESTE RENDU :'} <span className="font-bold text-cyan-400">
-                      {formatCurrency(Math.max(0, (parseFloat(paidAmount) || 0) - finalTotal))}
+                    {language === 'ar' ? 'المتبقي لـه (صرف):' : 'RESTE RENDU :'} <span className={`font-black ${changeDue > 0 ? 'text-emerald-300 text-xs' : 'text-cyan-400'}`}>
+                      {formatCurrency(Math.max(0, (parseFloat(paidAmount) || 0) - finalTotal))} DT
                     </span>
                   </div>
                 </div>
@@ -3702,7 +4017,9 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
                         showToast(language === 'ar' ? 'السلة فارغة!' : 'Ajoutez d\'abord des articles pour encaisser immédiat !', 'error');
                         return;
                       }
-                      setPaidAmount(String(finalTotal));
+                      if (!paidAmount || Number(paidAmount) === 0) {
+                        setPaidAmount(String(finalTotal));
+                      }
                       setPaymentMethod('especes');
                       setTimeout(() => {
                         handleCheckoutClick();
@@ -4704,18 +5021,19 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
                     </div>
                   </div>
                 ) : (
-                  <div className="space-y-3">
+                  <div className="space-y-2">
                     <div className="flex items-center justify-between select-none">
-                      <label className="text-[10px] font-black text-slate-600 uppercase">
-                        {language === 'ar' ? 'المبلغ المستلم / كاش' : 'Montant Reçu / Cash (DT)'}
+                      <label className="text-[10px] font-black text-slate-700 uppercase flex items-center gap-1">
+                        <span>💵</span>
+                        <span>{language === 'ar' ? 'المبلغ المستلم من الحريف (كاش)' : 'Montant Donné par Client (Espèces)'}</span>
                       </label>
                       <button
                         type="button"
                         onClick={handleQuickPayFull}
-                        className="text-[10.5px] font-extrabold text-blue-600 hover:text-blue-800 flex items-center gap-1 transition-colors cursor-pointer"
+                        className="text-[10.5px] font-extrabold text-emerald-600 hover:text-emerald-800 flex items-center gap-1 transition-colors cursor-pointer"
                       >
                         <Coins className="w-3.5 h-3.5" />
-                        <span>Exact / الكل</span>
+                        <span>{language === 'ar' ? 'المبلغ مضبوط' : 'Exact'}</span>
                       </button>
                     </div>
                     
@@ -4723,19 +5041,47 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
                       <input
                         ref={paidAmountInputRef}
                         type="number"
+                        step="any"
                         value={paidAmount}
-                        placeholder={language === 'ar' ? "أدخل المبلغ المستلم..." : "Saisir montant reçu..."}
+                        placeholder={formatCurrency(finalTotal)}
                         onChange={(e) => setPaidAmount(e.target.value)}
                         onKeyDown={handlePaidAmountKeyDown}
                         onFocus={() => {
                           setActiveNumpadTarget('paidAmount');
                           setKeyboardLayout('numeric');
                         }}
-                        className="w-full bg-slate-50 border border-slate-205 rounded-lg py-2.5 pl-3 pr-10 text-xs font-black font-mono focus:bg-white focus:outline-none transition-colors text-slate-850"
+                        className="w-full bg-slate-50 border-2 border-emerald-500/60 focus:border-emerald-600 rounded-lg py-2.5 pl-3 pr-10 text-xs font-black font-mono focus:bg-white focus:outline-none transition-colors text-slate-900"
                       />
-                      <span className="font-black text-[10px] text-slate-400 absolute right-3.5 top-3">
+                      <span className="font-black text-[10px] text-emerald-600 absolute right-3.5 top-3">
                         DT
                       </span>
+                    </div>
+
+                    {/* Quick Banknote Buttons */}
+                    <div className="flex items-center gap-1 overflow-x-auto py-0.5 scrollbar-none text-[9.5px] font-mono font-bold">
+                      <button
+                        type="button"
+                        onClick={() => setShowCashChangeModal(true)}
+                        className="bg-slate-100 hover:bg-slate-200 text-slate-700 px-2 py-1 rounded border border-slate-250 cursor-pointer"
+                        title="Calculatrice de monnaie"
+                      >
+                        🪙 {language === 'ar' ? 'صرف' : 'Monnaie'}
+                      </button>
+                      {[10, 20, 50, 100].map(amt => (
+                        <button
+                          key={amt}
+                          type="button"
+                          onClick={() => {
+                            setPaidAmount(String(amt));
+                            playScanBeep();
+                          }}
+                          className={`px-2 py-1 rounded border transition-all cursor-pointer ${
+                            Number(paidAmount) === amt ? 'bg-cyan-600 text-white border-cyan-500' : 'bg-white hover:bg-slate-50 text-slate-700 border-slate-200'
+                          }`}
+                        >
+                          {amt} DT
+                        </button>
+                      ))}
                     </div>
                   </div>
                 )}
@@ -5255,6 +5601,227 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
 
       </div>
 
+      {/* 💵 CASHIER CASH & CHANGE RETURN CALCULATOR MODAL */}
+      {showCashChangeModal && (
+        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-3 md:p-6 z-50 overflow-y-auto no-print animate-fade-in">
+          <div className="bg-slate-900 border-2 border-slate-700 rounded-3xl w-full max-w-xl p-5 md:p-6 shadow-2xl text-white relative space-y-4 font-sans my-auto">
+            {/* Header */}
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <div className="flex items-center gap-2.5">
+                <span className="p-2 bg-emerald-500/20 text-emerald-400 rounded-xl text-xl">💵</span>
+                <div>
+                  <h3 className="text-base font-black text-white">
+                    {language === 'ar' ? 'حساب الصرف & المبلغ المستلم من الحريف' : 'Encaissement Espèces & Calcul de la Monnaie'}
+                  </h3>
+                  <p className="text-xs text-slate-400 font-medium">
+                    {language === 'ar' ? 'أدخل المبلغ المسلّم واطلع على الفائض الواجب إرجاعه' : 'Saisissez les espèces remises par le client pour calculer le reste à rendre'}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowCashChangeModal(false)}
+                className="text-slate-400 hover:text-white bg-slate-800 hover:bg-slate-700 p-2 rounded-xl text-sm transition-colors cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Screen Display: Total Net à Payer */}
+            <div className="bg-slate-950 border border-slate-800 p-4 rounded-2xl flex items-center justify-between">
+              <div>
+                <span className="text-[10px] font-mono uppercase tracking-widest text-slate-400 block font-bold">
+                  {language === 'ar' ? 'المجموع الصافي للدفع' : 'TOTAL NET À PAYER (TTC)'}
+                </span>
+                <span className="text-xs text-indigo-400 font-bold truncate max-w-[200px] block">
+                  👤 {activePartner ? activePartner.name : (language === 'ar' ? 'زبون كاش' : 'Client Comptoir')}
+                </span>
+              </div>
+              <div className="text-right">
+                <span className="text-3xl font-mono font-black text-cyan-400">
+                  {formatCurrency(finalTotal)} <span className="text-sm text-cyan-200">DT</span>
+                </span>
+              </div>
+            </div>
+
+            {/* Montant Donné par Client (Input + Banknotes) */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-black uppercase tracking-wider text-emerald-400 flex items-center gap-1.5">
+                  <span>💵</span>
+                  <span>{language === 'ar' ? 'المبلغ المستلم من الحريف (كاش) :' : 'Montant Donné par le Client (Espèces) :'}</span>
+                </label>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPaidAmount(String(finalTotal));
+                    playScanBeep();
+                  }}
+                  className="text-[11px] font-bold text-cyan-400 hover:text-cyan-300 transition-colors flex items-center gap-1 cursor-pointer"
+                >
+                  ⚡ {language === 'ar' ? 'المبلغ مضبوط' : 'Compte Exact'}
+                </button>
+              </div>
+
+              <div className="relative">
+                <input
+                  autoFocus
+                  type="text"
+                  inputMode="decimal"
+                  value={paidAmount}
+                  placeholder={formatCurrency(finalTotal)}
+                  onFocus={(e) => e.target.select()}
+                  onChange={(e) => {
+                    const val = e.target.value.replace(',', '.');
+                    if (val === '' || /^\d*\.?\d*$/.test(val)) {
+                      setPaidAmount(val);
+                    }
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      setShowCashChangeModal(false);
+                      setPaymentMethod('especes');
+                      setTimeout(() => handleCheckoutClick(), 100);
+                    } else if (e.key === 'Escape') {
+                      setShowCashChangeModal(false);
+                    }
+                  }}
+                  className="w-full bg-slate-950 border-2 border-emerald-500 rounded-2xl py-3 pl-4 pr-16 text-2xl font-mono font-black text-emerald-300 focus:outline-none focus:ring-4 focus:ring-emerald-500/20"
+                />
+                <span className="absolute right-4 top-3.5 text-sm font-black font-mono text-emerald-500 pointer-events-none">
+                  DT / TND
+                </span>
+              </div>
+
+              {/* Banknote quick selectors */}
+              <div className="grid grid-cols-5 gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPaidAmount(String(finalTotal));
+                    playScanBeep();
+                  }}
+                  className="bg-emerald-700 hover:bg-emerald-600 text-white font-bold py-2 rounded-xl text-xs font-mono transition-all active:scale-95 cursor-pointer border border-emerald-500/50"
+                >
+                  ⚡ {language === 'ar' ? 'مضبوط' : 'Exact'}
+                </button>
+                {[10, 20, 50, 100].map(amt => (
+                  <button
+                    key={amt}
+                    type="button"
+                    onClick={() => {
+                      setPaidAmount(String(amt));
+                      playScanBeep();
+                    }}
+                    className={`py-2 rounded-xl text-xs font-bold font-mono transition-all active:scale-95 cursor-pointer border ${
+                      Number(paidAmount) === amt
+                        ? 'bg-cyan-600 border-cyan-400 text-white shadow-md'
+                        : 'bg-slate-800 hover:bg-slate-700 border-slate-700 text-slate-200'
+                    }`}
+                  >
+                    {amt} DT
+                  </button>
+                ))}
+              </div>
+
+              {/* Increment buttons */}
+              <div className="flex items-center gap-1.5 pt-1 text-[11px] font-mono">
+                <span className="text-slate-400 text-xs mr-1 font-bold">{language === 'ar' ? 'إضافة سريعة:' : 'Ajouts :'}</span>
+                {[5, 10, 20, 50].map(inc => (
+                  <button
+                    key={inc}
+                    type="button"
+                    onClick={() => {
+                      setPaidAmount(prev => String((Number(prev) || 0) + inc));
+                      playScanBeep();
+                    }}
+                    className="px-2.5 py-1 bg-slate-800 hover:bg-indigo-700 text-indigo-300 hover:text-white rounded-lg border border-slate-700 transition-colors cursor-pointer"
+                  >
+                    +{inc} DT
+                  </button>
+                ))}
+                <button
+                  type="button"
+                  onClick={() => setPaidAmount('')}
+                  className="ml-auto px-2 py-1 bg-rose-950/60 hover:bg-rose-900 text-rose-300 rounded-lg border border-rose-800 transition-colors text-[10px] font-bold cursor-pointer"
+                >
+                  ✕ {language === 'ar' ? 'مسح' : 'Effacer'}
+                </button>
+              </div>
+            </div>
+
+            {/* Reste à Rendre (La Monnaie) Highlight Display */}
+            <div className={`p-4 rounded-2xl border-2 transition-all ${
+              changeDue > 0
+                ? 'bg-emerald-950/90 border-emerald-500 shadow-[0_0_20px_rgba(16,185,129,0.3)] animate-pulse'
+                : remainingDebt > 0 && currentPay > 0
+                ? 'bg-amber-950/90 border-amber-500 shadow-[0_0_15px_rgba(245,158,11,0.2)]'
+                : 'bg-slate-950 border-slate-800'
+            }`}>
+              <div className="flex items-center justify-between">
+                <div>
+                  <span className="text-[10px] uppercase font-black tracking-wider block text-slate-300">
+                    {changeDue > 0
+                      ? (language === 'ar' ? '🪙 الفائض / المتبقي الواجب إرجاعه للحريف :' : '🪙 MONNAIE À RENDRE (LE RESTE) :')
+                      : remainingDebt > 0 && currentPay > 0
+                      ? (language === 'ar' ? '⚠️ المتبقي للدفع (يسجل كدين) :' : '⚠️ MANQUE / RESTE À PAYER (CRÉDIT) :')
+                      : (language === 'ar' ? '✓ تم الاستيفاء بالكامل :' : '✓ RÈGLEMENT EXACT :')}
+                  </span>
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    {changeDue > 0
+                      ? (language === 'ar' ? `يرجى ترجيع ${formatCurrency(changeDue)} د.ت للحريف نقداً` : `Veuillez remettre ${formatCurrency(changeDue)} DT au client`)
+                      : remainingDebt > 0 && currentPay > 0
+                      ? (selectedPartnerId
+                          ? (language === 'ar' ? `سيسجل مبلغ ${formatCurrency(remainingDebt)} د.ت كدين على حساب ${activePartner?.name}` : `Sera enregistré à crédit sur le compte de ${activePartner?.name}`)
+                          : (language === 'ar' ? 'تنبيه: يلزم اختيار عميل مسجل لتسجيل الدين' : 'Attention : Client anonyme, règlement complet requis'))
+                      : (language === 'ar' ? 'المبلغ المستلم يطابق الحساب تماماً' : 'Compte rond au millime près')}
+                  </p>
+                </div>
+                <div className="text-right">
+                  <span className={`text-3xl sm:text-4xl font-mono font-black tracking-tight ${
+                    changeDue > 0
+                      ? 'text-emerald-400 drop-shadow-[0_0_10px_rgba(52,211,153,0.5)]'
+                      : remainingDebt > 0 && currentPay > 0
+                      ? 'text-amber-400'
+                      : 'text-slate-300'
+                  }`}>
+                    {formatCurrency(changeDue > 0 ? changeDue : remainingDebt > 0 && currentPay > 0 ? remainingDebt : 0)}
+                    <span className="text-sm font-sans ml-1 text-slate-300">DT</span>
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* Action Footer Buttons */}
+            <div className="grid grid-cols-2 gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => setShowCashChangeModal(false)}
+                className="bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold py-3 rounded-xl text-xs uppercase tracking-wider transition-colors cursor-pointer"
+              >
+                {language === 'ar' ? 'رجوع / إلغاء' : 'Annuler'}
+              </button>
+              <button
+                type="button"
+                disabled={!selectedPartnerId && remainingDebt > 0}
+                onClick={() => {
+                  setShowCashChangeModal(false);
+                  setPaymentMethod('especes');
+                  setTimeout(() => {
+                    handleCheckoutClick();
+                  }, 100);
+                }}
+                className="bg-emerald-600 hover:bg-emerald-500 disabled:bg-slate-800 disabled:text-slate-500 text-white font-black py-3 rounded-xl text-xs uppercase tracking-wider transition-all shadow-lg active:scale-95 cursor-pointer flex items-center justify-center gap-2"
+              >
+                <CheckCircle className="w-4 h-4" />
+                <span>{language === 'ar' ? 'تأكيد ودفع وطباعة' : 'Valider & Imprimer'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* QUICK CLIENT MODAL OVERLAY */}
       {showNewClientModal && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md flex items-center justify-center p-3 md:p-4 z-50 overflow-y-auto no-print">
@@ -5535,10 +6102,20 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
                           <span>{language === 'ar' ? 'الصافي للدفع:' : 'Net à Payer:'}</span>
                           <span>{formatCurrency(printedInvoice.total)}</span>
                         </div>
-                        <div className="flex justify-between text-xs font-bold text-slate-600">
-                          <span>{language === 'ar' ? 'المستلم:' : 'Reçu:'}</span>
-                          <span className="text-emerald-600">{formatCurrency(printedInvoice.paidAmount)}</span>
+                        <div className="flex justify-between text-xs font-bold text-slate-700">
+                          <span>{language === 'ar' ? 'المبلغ المستلم (المعطى):' : 'Montant Donné / Reçu:'}</span>
+                          <span className="text-slate-900 font-mono font-bold">
+                            {formatCurrency(printedInvoice.tenderedAmount !== undefined ? printedInvoice.tenderedAmount : printedInvoice.paidAmount)}
+                          </span>
                         </div>
+                        {((printedInvoice.changeReturned !== undefined ? printedInvoice.changeReturned : Math.max(0, (printedInvoice.tenderedAmount || printedInvoice.paidAmount) - printedInvoice.total)) > 0) && (
+                          <div className="flex justify-between text-xs bg-emerald-50 text-emerald-800 p-1 rounded font-black border border-emerald-200">
+                            <span>{language === 'ar' ? 'الباقي المرجع (الفائض):' : 'Reste Rendu (Monnaie):'}</span>
+                            <span className="font-mono text-emerald-700 font-black">
+                              {formatCurrency(printedInvoice.changeReturned !== undefined ? printedInvoice.changeReturned : ((printedInvoice.tenderedAmount || printedInvoice.paidAmount) - printedInvoice.total))}
+                            </span>
+                          </div>
+                        )}
                         {printedInvoice.balance > 0 && (
                           <div className="flex justify-between text-xs bg-rose-50 text-rose-800 p-1 rounded font-bold">
                             <span>{language === 'ar' ? 'المتبقي بالدين:' : 'Reste à CREDIT:'}</span>
@@ -5682,10 +6259,20 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
                             <span>{language === 'ar' ? 'الصافي النهائي للدفع:' : 'Total Net à Payer :'}</span>
                             <span>{formatCurrency(printedInvoice.total)}</span>
                           </div>
-                          <div className="flex justify-between text-xs font-bold pt-1 text-slate-600">
-                            <span>{language === 'ar' ? 'المبلغ المدفوع حينه:' : 'Montant Versé :'}</span>
-                            <span className="text-emerald-600">{formatCurrency(printedInvoice.paidAmount)}</span>
+                          <div className="flex justify-between text-xs font-bold pt-1 text-slate-700">
+                            <span>{language === 'ar' ? 'المبلغ المستلم من الحريف:' : 'Montant Donné par Client :'}</span>
+                            <span className="text-slate-900 font-mono font-bold">
+                              {formatCurrency(printedInvoice.tenderedAmount !== undefined ? printedInvoice.tenderedAmount : printedInvoice.paidAmount)}
+                            </span>
                           </div>
+                          {((printedInvoice.changeReturned !== undefined ? printedInvoice.changeReturned : Math.max(0, (printedInvoice.tenderedAmount || printedInvoice.paidAmount) - printedInvoice.total)) > 0) && (
+                            <div className="flex justify-between text-xs bg-emerald-50 text-emerald-800 p-1 rounded font-black border border-emerald-200">
+                              <span>{language === 'ar' ? 'الباقي المرجع (الفائض):' : 'Reste Rendu (Monnaie) :'}</span>
+                              <span className="font-mono text-emerald-700 font-black">
+                                {formatCurrency(printedInvoice.changeReturned !== undefined ? printedInvoice.changeReturned : ((printedInvoice.tenderedAmount || printedInvoice.paidAmount) - printedInvoice.total))}
+                              </span>
+                            </div>
+                          )}
                           {printedInvoice.balance > 0 && (
                             <div className="flex justify-between text-xs bg-rose-50 text-rose-800 p-1 rounded font-bold border border-rose-100">
                               <span>{language === 'ar' ? 'باقي الحساب (دين):' : 'Crédit Restant :'}</span>
@@ -5812,10 +6399,20 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
                         <span>{language === 'ar' ? 'الصافي للدفع:' : 'Net à Payer:'}</span>
                         <span>{formatCurrency(printedInvoice.total)}</span>
                       </div>
-                      <div className="flex justify-between text-xs font-bold text-slate-600">
-                        <span>{language === 'ar' ? 'المستلم:' : 'Reçu:'}</span>
-                        <span className="text-emerald-600">{formatCurrency(printedInvoice.paidAmount)}</span>
+                      <div className="flex justify-between text-xs font-bold text-slate-700">
+                        <span>{language === 'ar' ? 'المبلغ المستلم (المعطى):' : 'Montant Donné / Reçu:'}</span>
+                        <span className="text-slate-900 font-mono font-bold">
+                          {formatCurrency(printedInvoice.tenderedAmount !== undefined ? printedInvoice.tenderedAmount : printedInvoice.paidAmount)}
+                        </span>
                       </div>
+                      {((printedInvoice.changeReturned !== undefined ? printedInvoice.changeReturned : Math.max(0, (printedInvoice.tenderedAmount || printedInvoice.paidAmount) - printedInvoice.total)) > 0) && (
+                        <div className="flex justify-between text-xs bg-emerald-50 text-emerald-800 p-1 rounded font-black border border-emerald-200">
+                          <span>{language === 'ar' ? 'الباقي المرجع (الفائض):' : 'Reste Rendu (Monnaie):'}</span>
+                          <span className="font-mono text-emerald-700 font-black">
+                            {formatCurrency(printedInvoice.changeReturned !== undefined ? printedInvoice.changeReturned : ((printedInvoice.tenderedAmount || printedInvoice.paidAmount) - printedInvoice.total))}
+                          </span>
+                        </div>
+                      )}
                       {printedInvoice.balance > 0 && (
                         <div className="flex justify-between text-xs bg-rose-50 text-rose-800 p-1 rounded font-bold">
                           <span>{language === 'ar' ? 'المتبقي بالدين:' : 'Reste à CREDIT:'}</span>
@@ -5959,10 +6556,20 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
                           <span>{language === 'ar' ? 'الصافي النهائي للدفع:' : 'Total Net à Payer :'}</span>
                           <span>{formatCurrency(printedInvoice.total)}</span>
                         </div>
-                        <div className="flex justify-between text-xs font-bold pt-1 text-slate-600">
-                          <span>{language === 'ar' ? 'المبلغ المدفوع حينه:' : 'Montant Versé :'}</span>
-                          <span className="text-emerald-600">{formatCurrency(printedInvoice.paidAmount)}</span>
+                        <div className="flex justify-between text-xs font-bold pt-1 text-slate-700">
+                          <span>{language === 'ar' ? 'المبلغ المستلم من الحريف:' : 'Montant Donné par Client :'}</span>
+                          <span className="text-slate-900 font-mono font-bold">
+                            {formatCurrency(printedInvoice.tenderedAmount !== undefined ? printedInvoice.tenderedAmount : printedInvoice.paidAmount)}
+                          </span>
                         </div>
+                        {((printedInvoice.changeReturned !== undefined ? printedInvoice.changeReturned : Math.max(0, (printedInvoice.tenderedAmount || printedInvoice.paidAmount) - printedInvoice.total)) > 0) && (
+                          <div className="flex justify-between text-xs bg-emerald-50 text-emerald-800 p-1 rounded font-black border border-emerald-200">
+                            <span>{language === 'ar' ? 'الباقي المرجع (الفائض):' : 'Reste Rendu (Monnaie) :'}</span>
+                            <span className="font-mono text-emerald-700 font-black">
+                              {formatCurrency(printedInvoice.changeReturned !== undefined ? printedInvoice.changeReturned : ((printedInvoice.tenderedAmount || printedInvoice.paidAmount) - printedInvoice.total))}
+                            </span>
+                          </div>
+                        )}
                         {printedInvoice.balance > 0 && (
                           <div className="flex justify-between text-xs bg-rose-50 text-rose-800 p-1 rounded font-bold border border-rose-100">
                             <span>{language === 'ar' ? 'باقي الحساب (دين):' : 'Crédit Restant :'}</span>

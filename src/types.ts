@@ -85,6 +85,8 @@ export interface Invoice {
   taxAmount: number;
   total: number;
   paidAmount: number;
+  tenderedAmount?: number; // Montant donné par le client (espèces reçues)
+  changeReturned?: number; // Reste à rendre / Monnaie retournée au client
   balance: number; // total - paidAmount (credit)
   dueDate?: string;
   notes?: string;
