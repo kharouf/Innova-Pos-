@@ -47,6 +47,7 @@ import {
   Clock
 } from 'lucide-react';
 import { downloadInvoicePDF } from '../utils/pdfGenerator';
+import SplitTactilePOSLayout from './SplitTactilePOSLayout';
 
 interface POSProps {
   db: DatabaseState;
@@ -93,11 +94,20 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
   const [paymentMethod, setPaymentMethod] = useState<'especes' | 'ticket_cadeau'>('especes');
   const [ticketCadeauCode, setTicketCadeauCode] = useState<string>('');
   
-  // Stand-alone cart full view option is now always enabled (Panier Uniquement)
-  const [isCartOnlyMode] = useState<boolean>(true);
+  // Stand-alone cart full view option
+  const [isCartOnlyMode, setIsCartOnlyMode] = useState<boolean>(false);
 
-  // Special Tictaac-style Industrial Tactile cash register layout toggle (default classic-tactile)
-  const [posLayoutTheme, setPosLayoutTheme] = useState<'modern' | 'classic-tactile'>('classic-tactile');
+  // Special Industrial / Split Tactile cash register layout toggle (default split-tactile matching user screenshot)
+  const [posLayoutTheme, setPosLayoutTheme] = useState<'split-tactile' | 'classic-tactile' | 'modern'>(() => {
+    return (safeLocalStorage.getItem('pos_layout_theme') as any) || 'split-tactile';
+  });
+
+  // Split-Tactile states (matching user's screenshot)
+  const [tactileCategoryTab, setTactileCategoryTab] = useState<'categories' | 'favorites'>('categories');
+  const [tactileNumpadValue, setTactileNumpadValue] = useState<string>('');
+  const [tactilePendingQty, setTactilePendingQty] = useState<number>(0);
+  const [tactileCategoryPage, setTactileCategoryPage] = useState<number>(0);
+  const [showQuickCustomerModal, setShowQuickCustomerModal] = useState<boolean>(false);
 
   const [rightPaneView, setRightPaneView] = useState<'cartTable' | 'productGrid'>('cartTable');
   
@@ -1289,6 +1299,184 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
     return (db.partners || []).filter(p => p.type === 'client');
   }, [db.partners]);
 
+  // Split-tactile category visual mapping (matching user's photo)
+  const tactileCategories = useMemo(() => {
+    const defaultCats = [
+      { id: 'Tous', nameFr: 'Tous', nameAr: 'الكل', icon: '🛒', color: 'amber' },
+      { id: 'DIVERS', nameFr: 'DIVERS', nameAr: 'عام / متنوع', icon: '📦', color: 'slate' },
+      { id: 'Carte téléphonique', nameFr: 'Carte téléphonique', nameAr: 'كروت شحن', icon: '📱', color: 'emerald' },
+      { id: 'PAIN', nameFr: 'PAIN', nameAr: 'خبز', icon: '🥖', color: 'amber' },
+      { id: 'Pizza', nameFr: 'Pizza', nameAr: 'بيتزا', icon: '🍕', color: 'rose' },
+      { id: 'Fruits sec', nameFr: 'Fruits sec', nameAr: 'فواكه جافة', icon: '🥜', color: 'amber' },
+      { id: 'Chocolat', nameFr: 'Chocolat', nameAr: 'شكلاطة', icon: '🍫', color: 'amber' },
+      { id: 'Boissons', nameFr: 'Boissons & Eaux', nameAr: 'مشروبات', icon: '🥤', color: 'sky' },
+      { id: 'Produits Laitiers', nameFr: 'Produits Laitiers', nameAr: 'ألبان', icon: '🥛', color: 'blue' },
+      { id: 'Céréales & Pâtes', nameFr: 'Céréales & Pâtes', nameAr: 'عجائن', icon: '🍝', color: 'amber' },
+      { id: 'Conserves', nameFr: 'Conserves', nameAr: 'مصبرات', icon: '🥫', color: 'red' },
+      { id: 'Biscuits', nameFr: 'Biscuits & Gâteaux', nameAr: 'بسكويت', icon: '🍪', color: 'amber' },
+    ];
+
+    const existingNames = new Set(defaultCats.map(c => c.nameFr.toLowerCase()));
+    const dynamicCats: { id: string; nameFr: string; nameAr: string; icon: string; color: string }[] = [];
+    (db.products || []).forEach(p => {
+      const rawCat = (p.category || '').trim();
+      if (rawCat && !existingNames.has(rawCat.toLowerCase())) {
+        existingNames.add(rawCat.toLowerCase());
+        const norm = rawCat.toLowerCase();
+        let icon = '🏷️';
+        if (norm.includes('pain') || norm.includes('خبز')) icon = '🥖';
+        else if (norm.includes('piz') || norm.includes('بيتز')) icon = '🍕';
+        else if (norm.includes('fruit') || norm.includes('sec') || norm.includes('جاف')) icon = '🥜';
+        else if (norm.includes('choc') || norm.includes('شكلاط')) icon = '🍫';
+        else if (norm.includes('lait') || norm.includes('حليب')) icon = '🥛';
+        else if (norm.includes('bois') || norm.includes('مشروب') || norm.includes('eau')) icon = '🥤';
+        else if (norm.includes('oeuf') || norm.includes('بيض')) icon = '🥚';
+        else if (norm.includes('tel') || norm.includes('carte') || norm.includes('شحن')) icon = '📱';
+        dynamicCats.push({
+          id: rawCat,
+          nameFr: rawCat,
+          nameAr: rawCat,
+          icon,
+          color: 'amber'
+        });
+      }
+    });
+
+    return [...defaultCats, ...dynamicCats];
+  }, [db.products]);
+
+  // Categories Pagination for Left column in Split Tactile
+  const categoriesPerPage = 10;
+  const totalCategoryPages = Math.ceil(tactileCategories.length / categoriesPerPage) || 1;
+  const displayedTactileCategories = useMemo(() => {
+    const start = tactileCategoryPage * categoriesPerPage;
+    return tactileCategories.slice(start, start + categoriesPerPage);
+  }, [tactileCategories, tactileCategoryPage]);
+
+  // Products list for Split Tactile Center Catalog
+  const tactileProductsList = useMemo(() => {
+    let prods = (db.products || []);
+
+    if (tactileCategoryTab === 'favorites') {
+      prods = prods.filter(p => (p as any).isFavorite || p.sellingPrice > 0);
+      if (prods.length === 0) prods = db.products || [];
+    } else if (selectedCategory !== 'Tous') {
+      prods = prods.filter(p => {
+        const normP = normalizeCategoryName(p.category).toLowerCase();
+        const normSel = selectedCategory.toLowerCase();
+        return normP === normSel || (p.category || '').toLowerCase().includes(normSel);
+      });
+    }
+
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase().trim();
+      prods = prods.filter(p => p.name.toLowerCase().includes(q) || (p.code || '').includes(q));
+    }
+
+    return prods;
+  }, [db.products, tactileCategoryTab, selectedCategory, searchQuery]);
+
+  // Split-Tactile Keypad and Action Handlers
+  const handleTactileNumberPress = (digit: string) => {
+    playScanBeep();
+    setTactileNumpadValue(prev => {
+      if (prev === '0' && digit !== '.') return digit;
+      if (digit === '.' && prev.includes('.')) return prev;
+      return prev + digit;
+    });
+  };
+
+  const handleTactileClearEntry = () => {
+    playScanBeep();
+    setTactileNumpadValue('');
+    setTactilePendingQty(0);
+  };
+
+  const handleTactileQty = () => {
+    playScanBeep();
+    const qtyVal = parseFloat(tactileNumpadValue);
+    if (cart.length > 0) {
+      const targetIdx = selectedCartIdx >= 0 && selectedCartIdx < cart.length ? selectedCartIdx : cart.length - 1;
+      const targetItem = cart[targetIdx];
+      const newQty = !isNaN(qtyVal) && qtyVal > 0 ? qtyVal : targetItem.qty + 1;
+      handleUpdateQty(targetItem.product.id, isReturnMode ? -newQty : newQty);
+      setTactileNumpadValue('');
+      showToast(language === 'ar' ? `الكمية: ${newQty}` : `Quantité définie à ${newQty}`, 'success');
+    } else {
+      if (!isNaN(qtyVal) && qtyVal > 0) {
+        setTactilePendingQty(qtyVal);
+        setTactileNumpadValue('');
+        showToast(language === 'ar' ? `الكمية المحضرة: ${qtyVal}` : `Quantité préparée : ${qtyVal}`, 'info');
+      }
+    }
+  };
+
+  const handleTactilePriceSell = () => {
+    playScanBeep();
+    const priceVal = parseFloat(tactileNumpadValue);
+    if (cart.length > 0 && !isNaN(priceVal) && priceVal >= 0) {
+      const targetIdx = selectedCartIdx >= 0 && selectedCartIdx < cart.length ? selectedCartIdx : cart.length - 1;
+      const targetItem = cart[targetIdx];
+      const updated = cart.map((c, i) => i === targetIdx ? { ...c, customPrice: priceVal } : c);
+      setCart(updated);
+      setTactileNumpadValue('');
+      showToast(language === 'ar' ? `تم تعديل السعر إلى ${formatCurrency(priceVal)} TND` : `Prix de vente modifié : ${formatCurrency(priceVal)} TND`, 'success');
+    } else {
+      showToast(language === 'ar' ? 'حدد سلعة واكتب السعر المطلوب' : 'Sélectionnez un article et entrez le nouveau prix', 'error');
+    }
+  };
+
+  const handleTactilePriceBuy = () => {
+    playScanBeep();
+    if (cart.length > 0) {
+      const targetIdx = selectedCartIdx >= 0 && selectedCartIdx < cart.length ? selectedCartIdx : cart.length - 1;
+      const targetItem = cart[targetIdx];
+      showToast(
+        language === 'ar'
+          ? `سعر الشراء لـ "${targetItem.product.name}": ${formatCurrency(targetItem.product.purchasePrice)} TND`
+          : `Prix d'achat pour "${targetItem.product.name}" : ${formatCurrency(targetItem.product.purchasePrice)} TND`,
+        'info'
+      );
+    }
+  };
+
+  const handleTactileCancel = () => {
+    playScanBeep();
+    if (cart.length > 0) {
+      setCart([]);
+      setSelectedCartIdx(-1);
+      setTactileNumpadValue('');
+      setTactilePendingQty(0);
+      showToast(language === 'ar' ? 'تم إلغاء وإفراغ السلة' : 'Panier annulé et vidé', 'info');
+    }
+  };
+
+  const handleTactileProductClick = (product: Product) => {
+    const mult = tactilePendingQty > 0 ? tactilePendingQty : (parseFloat(tactileNumpadValue) > 0 ? parseFloat(tactileNumpadValue) : 1);
+    if (!isReturnMode && product.stock <= 0) {
+      showToast(`⚠️ Attention: Le produit "${product.name}" est en rupture de stock !`, 'info');
+    }
+    const qtyToAdd = isReturnMode ? -mult : mult;
+    const existingIndex = cart.findIndex(item => item.product.id === product.id);
+    if (existingIndex > -1) {
+      const newCart = [...cart];
+      const newQty = newCart[existingIndex].qty + qtyToAdd;
+      if (newQty === 0) {
+        setCart(cart.filter(item => item.product.id !== product.id));
+      } else {
+        newCart[existingIndex].qty = newQty;
+        setCart(newCart);
+      }
+      setSelectedCartIdx(existingIndex);
+    } else {
+      setCart([...cart, { product, qty: qtyToAdd, customPrice: getActiveProductPrice(product) }]);
+      setSelectedCartIdx(cart.length);
+    }
+    setTactilePendingQty(0);
+    setTactileNumpadValue('');
+    playScanBeep();
+  };
+
   // Quick Action: Add item or increment
   const handleAddToCart = (product: Product) => {
     if (!isReturnMode && product.stock <= 0) {
@@ -2352,6 +2540,44 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
 
 
 
+          {/* Layout Theme Switcher */}
+          <div className="flex items-center gap-1 bg-slate-100 p-0.5 rounded-lg border border-slate-200">
+            <button
+              type="button"
+              onClick={() => {
+                setPosLayoutTheme('split-tactile');
+                safeLocalStorage.setItem('pos_layout_theme', 'split-tactile');
+                showToast(language === 'ar' ? '📱 وضع الشاشة المقسمة (3 أقسام)' : '📱 Mode Caisse 3-Volets', 'info');
+              }}
+              className={`px-2.5 py-1 rounded text-[11px] font-black transition-all cursor-pointer flex items-center gap-1 ${
+                posLayoutTheme === 'split-tactile'
+                  ? 'bg-amber-500 text-white shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+              title="Caisse Tactile 3-Volets (Exact photo)"
+            >
+              <span>📱</span>
+              <span>{language === 'ar' ? 'كاسة 3 أقسام' : 'Caisse 3-Volets'}</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setPosLayoutTheme('classic-tactile');
+                safeLocalStorage.setItem('pos_layout_theme', 'classic-tactile');
+                showToast(language === 'ar' ? '🛒 وضع الكاسة الصناعية (لوحة مفاتيح)' : '🛒 Mode Caisse Industrielle 2-Volets', 'info');
+              }}
+              className={`px-2 py-1 rounded text-[11px] font-black transition-all cursor-pointer flex items-center gap-1 ${
+                posLayoutTheme === 'classic-tactile'
+                  ? 'bg-slate-800 text-white shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+              title="Caisse Industrielle 2-Volets"
+            >
+              <span>🛒</span>
+              <span>{language === 'ar' ? 'كاسة 2' : 'Caisse 2-Volets'}</span>
+            </button>
+          </div>
+
           {/* Toggle Fullscreen Button */}
           <button
             type="button"
@@ -2542,7 +2768,32 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
       </AnimatePresence>
 
       {/* Visual checkout grid layout */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+      {posLayoutTheme === 'split-tactile' ? (
+        <SplitTactilePOSLayout
+          language={language}
+          formatCurrency={formatCurrency}
+          cart={cart}
+          selectedCartIdx={selectedCartIdx}
+          setSelectedCartIdx={setSelectedCartIdx}
+          finalTotal={finalTotal}
+          db={db}
+          selectedCategory={selectedCategory}
+          setSelectedCategory={setSelectedCategory}
+          searchQuery={searchQuery}
+          setSearchQuery={setSearchQuery}
+          handleRapidBarcodeSubmit={handleRapidBarcodeSubmit}
+          handleUpdateQty={handleUpdateQty}
+          handleCheckoutClick={handleCheckoutClick}
+          isReturnMode={isReturnMode}
+          isFullscreen={isFullscreen}
+          playScanBeep={playScanBeep}
+          showToast={showToast}
+          setCart={setCart}
+          selectedPartnerId={selectedPartnerId}
+          setSelectedPartnerId={setSelectedPartnerId}
+        />
+      ) : (
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
         
         {/* Left column: Products catalog (8 cols in desktop) */}
         {!isCartOnlyMode && (
@@ -5600,6 +5851,7 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
         )}
 
       </div>
+      )}
 
       {/* 💵 CASHIER CASH & CHANGE RETURN CALCULATOR MODAL */}
       {showCashChangeModal && (

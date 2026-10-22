@@ -6,6 +6,7 @@ import { getProductVisual, isProductInPromo, getActiveProductPrice } from '../ut
 import { correctAndSyncProductBarcodes, OFFICIAL_TUNISIAN_PRODUCTS } from '../utils/tunisianBarcodes';
 import { deduplicateProductsCategories, normalizeCategoryName, CANONICAL_CATEGORIES, getCategoryMetadata } from '../utils/categories';
 import ProductPromotionsModal from './ProductPromotionsModal';
+import { ExpiryDateCameraScannerModal } from './ExpiryDateCameraScannerModal';
 import { useLanguage } from '../utils/LanguageContext';
 import { safeLocalStorage, checkIsIframe } from '../utils/storage';
 import { Html5Qrcode } from 'html5-qrcode';
@@ -24,6 +25,7 @@ import {
   Sparkles,
   Image as ImageIcon,
   Camera,
+  Calendar,
   Smile,
   Volume2,
   VolumeX,
@@ -217,6 +219,78 @@ export default function Products({ db, onUpdateDb }: ProductsProps) {
 
   // Promotions modal state
   const [showPromotionsModal, setShowPromotionsModal] = useState(false);
+
+  // 📅 AI Expiry Date Camera Scanner states
+  const [showExpiryScannerModal, setShowExpiryScannerModal] = useState<boolean>(false);
+  const [expiryScannerTarget, setExpiryScannerTarget] = useState<'form-general' | 'form-batch' | { productId: string } | null>(null);
+  const [expiryScannerInitialDate, setExpiryScannerInitialDate] = useState<string>('');
+  const [expiryScannerProductName, setExpiryScannerProductName] = useState<string>('');
+
+  const handleOpenExpiryScannerForGeneral = () => {
+    setExpiryScannerTarget('form-general');
+    setExpiryScannerInitialDate(expiryDate);
+    setExpiryScannerProductName(name || (language === 'ar' ? 'منتج جديد' : 'Nouveau produit'));
+    setShowExpiryScannerModal(true);
+  };
+
+  const handleOpenExpiryScannerForBatch = () => {
+    setExpiryScannerTarget('form-batch');
+    setExpiryScannerInitialDate(newBatchExpiry);
+    setExpiryScannerProductName(name ? `${name} (${language === 'ar' ? 'دفعة جديدة' : 'Nouveau lot'})` : (language === 'ar' ? 'دفعة جديدة' : 'Nouveau lot'));
+    setShowExpiryScannerModal(true);
+  };
+
+  const handleOpenExpiryScannerForProduct = (prod: Product) => {
+    setExpiryScannerTarget({ productId: prod.id });
+    setExpiryScannerInitialDate(prod.dateExpiration || prod.expiryDate || '');
+    setExpiryScannerProductName(prod.name);
+    setShowExpiryScannerModal(true);
+  };
+
+  const handleExpiryDateExtracted = (extractedDate: string) => {
+    if (!expiryScannerTarget) return;
+
+    if (expiryScannerTarget === 'form-general') {
+      setExpiryDate(extractedDate);
+      showToast(
+        language === 'ar'
+          ? `📅 تم استخراج وتعيين تاريخ الانتهاء: ${extractedDate}`
+          : `📅 Date d'expiration extraite et appliquée : ${extractedDate}`,
+        'success'
+      );
+    } else if (expiryScannerTarget === 'form-batch') {
+      setNewBatchExpiry(extractedDate);
+      showToast(
+        language === 'ar'
+          ? `📅 تم استخراج وتعيين تاريخ الدفعة: ${extractedDate}`
+          : `📅 Date du lot extraite et appliquée : ${extractedDate}`,
+        'success'
+      );
+    } else if (typeof expiryScannerTarget === 'object' && expiryScannerTarget.productId) {
+      const prodId = expiryScannerTarget.productId;
+      const targetProd = db.products.find(p => p.id === prodId);
+      const updated = db.products.map(p => {
+        if (p.id === prodId) {
+          return {
+            ...p,
+            expiryDate: extractedDate,
+            dateExpiration: extractedDate,
+          };
+        }
+        return p;
+      });
+      onUpdateDb({ ...db, products: updated });
+      if (editPriceProductId === prodId) {
+        setEditExpiryDate(extractedDate);
+      }
+      showToast(
+        language === 'ar'
+          ? `📅 تم تحديث وحفظ تاريخ انتهاء الصلاحية للمنتج "${targetProd?.name || ''}": ${extractedDate}`
+          : `📅 Date de péremption mise à jour pour "${targetProd?.name || ''}" : ${extractedDate}`,
+        'success'
+      );
+    }
+  };
 
   // 🏷️ Barcode Print states
   const [showBarcodeModal, setShowBarcodeModal] = useState(false);
@@ -2168,10 +2242,26 @@ export default function Products({ db, onUpdateDb }: ProductsProps) {
                                   ⚖️ {(prod as any).weightVolume}
                                 </span>
                               )}
-                              {(prod.expiryDate || prod.dateExpiration) && (
-                                <span className="bg-rose-100 text-rose-800 border border-rose-200 text-[8.5px] font-black uppercase px-1 rounded flex items-center gap-0.5 shrink-0">
-                                  📅 EXP: {prod.dateExpiration || prod.expiryDate}
-                                </span>
+                              {(prod.expiryDate || prod.dateExpiration) ? (
+                                <button
+                                  type="button"
+                                  onClick={() => handleOpenExpiryScannerForProduct(prod)}
+                                  className="bg-rose-100 hover:bg-rose-200 text-rose-800 border border-rose-200 text-[8.5px] font-black uppercase px-1.5 py-0.5 rounded flex items-center gap-1 shrink-0 cursor-pointer transition-all shadow-3xs"
+                                  title={language === 'ar' ? 'انقر لتحديث أو مسح تاريخ الصلاحية بالكاميرا (IA)' : 'Cliquer pour scanner/mettre à jour la date d\'expiration via caméra (IA)'}
+                                >
+                                  <span>📅 EXP: {prod.dateExpiration || prod.expiryDate}</span>
+                                  <Camera className="w-2.5 h-2.5 text-rose-600" />
+                                </button>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => handleOpenExpiryScannerForProduct(prod)}
+                                  className="text-[8.5px] text-slate-400 hover:text-rose-600 hover:bg-rose-50 border border-dashed border-slate-200 hover:border-rose-300 px-1 py-0.5 rounded flex items-center gap-0.5 shrink-0 cursor-pointer transition-all opacity-70 hover:opacity-100"
+                                  title={language === 'ar' ? 'إضافة/مسح تاريخ الصلاحية بالكاميرا (IA)' : 'Ajouter une date de péremption via caméra (IA)'}
+                                >
+                                  <Camera className="w-2.5 h-2.5 text-rose-500" />
+                                  <span>{language === 'ar' ? '+ صلاحية' : '+ EXP'}</span>
+                                </button>
                               )}
                               {prod.batches && prod.batches.length > 0 && (
                                 <span className="bg-indigo-100 text-indigo-800 border border-indigo-200 text-[8.5px] font-black uppercase px-1 rounded flex items-center gap-0.5 shrink-0" title={`${prod.batches.length} lots`}>
@@ -2375,6 +2465,13 @@ export default function Products({ db, onUpdateDb }: ProductsProps) {
                             title={language === 'ar' ? 'التقاط صورة المنتج بالكاميرا' : 'Prendre/Mettre à jour la photo du produit via la caméra'}
                           >
                             <Camera className="w-3.5 h-3.5 text-indigo-600" />
+                          </button>
+                          <button
+                            onClick={() => handleOpenExpiryScannerForProduct(prod)}
+                            className="p-1.5 bg-slate-100 hover:bg-rose-50 hover:text-rose-600 rounded text-slate-500 transition-colors cursor-pointer flex items-center justify-center"
+                            title={language === 'ar' ? 'مسح/استخراج تاريخ انتهاء الصلاحية بالكاميرا (IA)' : 'Scanner la date de péremption par caméra (IA)'}
+                          >
+                            <Calendar className="w-3.5 h-3.5 text-rose-500" />
                           </button>
                           <button
                             onClick={() => handleOpenEdit(prod)}
@@ -2779,15 +2876,36 @@ export default function Products({ db, onUpdateDb }: ProductsProps) {
                     </span>
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                       <div>
-                        <label className="text-[9px] font-bold text-slate-600 block mb-1">
-                          {language === 'ar' ? 'تاريخ الانتهاء *' : "Date d'Expiration *"}
-                        </label>
-                        <input
-                          type="date"
-                          value={newBatchExpiry}
-                          onChange={(e) => setNewBatchExpiry(e.target.value)}
-                          className="w-full bg-slate-50 border border-slate-200 rounded p-1 px-2 text-xs font-mono font-bold"
-                        />
+                        <div className="flex items-center justify-between mb-1">
+                          <label className="text-[9px] font-bold text-slate-600 block">
+                            {language === 'ar' ? 'تاريخ الانتهاء *' : "Date d'Expiration *"}
+                          </label>
+                          <button
+                            type="button"
+                            onClick={handleOpenExpiryScannerForBatch}
+                            className="text-[9px] font-extrabold text-rose-600 hover:text-rose-800 flex items-center gap-1 cursor-pointer"
+                            title={language === 'ar' ? 'مسح تاريخ الصلاحية للدفعة بالكاميرا (IA)' : 'Scanner la date du lot par caméra (IA)'}
+                          >
+                            <Camera className="w-3 h-3 text-rose-600" />
+                            <span>{language === 'ar' ? 'كاميرا IA' : 'Caméra IA'}</span>
+                          </button>
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                          <input
+                            type="date"
+                            value={newBatchExpiry}
+                            onChange={(e) => setNewBatchExpiry(e.target.value)}
+                            className="flex-1 bg-slate-50 border border-slate-200 rounded p-1 px-2 text-xs font-mono font-bold"
+                          />
+                          <button
+                            type="button"
+                            onClick={handleOpenExpiryScannerForBatch}
+                            className="p-1.5 bg-rose-100 hover:bg-rose-200 text-rose-700 rounded transition-colors cursor-pointer shrink-0"
+                            title={language === 'ar' ? 'مسح تاريخ الصلاحية بالكاميرا (IA)' : 'Scanner la date via caméra'}
+                          >
+                            <Camera className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
                       </div>
                       <div>
                         <label className="text-[9px] font-bold text-slate-600 block mb-1">
@@ -2873,20 +2991,52 @@ export default function Products({ db, onUpdateDb }: ProductsProps) {
                     </div>
                   ) : (
                     <div className="space-y-2">
-                      <label htmlFor="dateExpirationInput" className="text-[9.5px] font-bold text-rose-900 block mb-1 uppercase tracking-wider">
-                        {language === 'ar' ? 'تاريخ انتهاء عام للمنتج (في حالة عدم استخدام الدفعات)' : "Date limite de conservation générale (sans lots)"}
-                      </label>
-                      <input
-                        type="date"
-                        id="dateExpirationInput"
-                        value={expiryDate}
-                        onChange={(e) => setExpiryDate(e.target.value)}
-                        className="w-full max-w-xs bg-white border border-rose-200/80 rounded py-1.5 px-3 focus:outline-hidden text-slate-800 font-bold font-mono transition-shadow focus:ring-1 focus:ring-rose-450 text-xs"
-                      />
+                      <div className="flex items-center justify-between">
+                        <label htmlFor="dateExpirationInput" className="text-[9.5px] font-bold text-rose-900 block uppercase tracking-wider">
+                          {language === 'ar' ? 'تاريخ انتهاء عام للمنتج (في حالة عدم استخدام الدفعات)' : "Date limite de conservation générale (sans lots)"}
+                        </label>
+                        <button
+                          type="button"
+                          onClick={handleOpenExpiryScannerForGeneral}
+                          className="text-[9.5px] font-extrabold text-rose-600 hover:text-rose-800 flex items-center gap-1 cursor-pointer"
+                          title={language === 'ar' ? 'مسح تاريخ الصلاحية بالكاميرا (IA)' : 'Scanner la date par caméra (IA)'}
+                        >
+                          <Camera className="w-3 h-3 text-rose-600" />
+                          <span>{language === 'ar' ? 'مسح بالكاميرا (IA)' : 'Scanner caméra (IA)'}</span>
+                        </button>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="date"
+                          id="dateExpirationInput"
+                          value={expiryDate}
+                          onChange={(e) => setExpiryDate(e.target.value)}
+                          className="w-full max-w-xs bg-white border border-rose-200/80 rounded py-1.5 px-3 focus:outline-hidden text-slate-800 font-bold font-mono transition-shadow focus:ring-1 focus:ring-rose-450 text-xs"
+                        />
+                        <button
+                          type="button"
+                          onClick={handleOpenExpiryScannerForGeneral}
+                          className="px-2.5 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded text-xs font-bold transition-all shadow-xs flex items-center gap-1.5 cursor-pointer shrink-0 border-b-2 border-rose-800"
+                          title={language === 'ar' ? 'التقاط صورة تاريخ الصلاحية بالكاميرا واستخراجه تلقائياً' : 'Scanner la date de péremption par caméra (IA)'}
+                        >
+                          <Camera className="w-3.5 h-3.5" />
+                          <span>{language === 'ar' ? 'كاميرا IA' : 'Scanner IA'}</span>
+                        </button>
+                        {expiryDate && (
+                          <button
+                            type="button"
+                            onClick={() => setExpiryDate('')}
+                            className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded text-xs font-bold transition-all cursor-pointer"
+                            title={language === 'ar' ? 'مسح التاريخ' : 'Effacer la date'}
+                          >
+                            ✕
+                          </button>
+                        )}
+                      </div>
                       <span className="text-[10px] text-slate-450 block font-sans">
                         💡 {language === 'ar' 
-                          ? 'تلميح: يمكنك إدخال دفعات متعددة في الأعلى لتتبع تواريخ انتهاء صلاحية مختلفة لنفس المنتج بالتفصيل.' 
-                          : 'Astuce : Vous pouvez utiliser la section ci-dessus pour ajouter plusieurs lots à dates d\'expiration différentes.'}
+                          ? 'تلميح: يمكنك مسح تاريخ الانتهاء المطبوع على المنتج بالكاميرا بنقرة واحدة، أو إدخال دفعات متعددة في الأعلى لتتبع تواريخ انتهاء مختلفة.' 
+                          : 'Astuce : Vous pouvez scanner directement la date imprimée sur l\'emballage via la caméra, ou gérer plusieurs lots.'}
                       </span>
                     </div>
                   )}
@@ -3238,6 +3388,48 @@ export default function Products({ db, onUpdateDb }: ProductsProps) {
                     className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2 text-sm font-mono font-bold text-slate-900"
                   />
                 </div>
+
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-xs font-bold text-slate-700">
+                      {language === 'ar' ? 'تاريخ انتهاء الصلاحية' : 'Date d\'expiration'}
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => handleOpenExpiryScannerForProduct(product)}
+                      className="text-[10px] font-black text-rose-600 hover:text-rose-800 flex items-center gap-1 cursor-pointer"
+                    >
+                      <Camera className="w-3 h-3" />
+                      <span>{language === 'ar' ? 'مسح بالكاميرا (IA)' : 'Scanner caméra (IA)'}</span>
+                    </button>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <input
+                      type="date"
+                      value={editExpiryDate}
+                      onChange={(e) => setEditExpiryDate(e.target.value)}
+                      className="flex-1 bg-slate-50 border border-slate-200 rounded-lg p-2 text-xs font-mono font-bold text-slate-900"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => handleOpenExpiryScannerForProduct(product)}
+                      className="p-2 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-lg text-xs font-bold cursor-pointer transition-colors"
+                      title={language === 'ar' ? 'مسح تاريخ الصلاحية بالكاميرا (IA)' : 'Scanner la date par caméra (IA)'}
+                    >
+                      <Camera className="w-4 h-4" />
+                    </button>
+                    {editExpiryDate && (
+                      <button
+                        type="button"
+                        onClick={() => setEditExpiryDate('')}
+                        className="p-2 text-slate-400 hover:text-rose-600 rounded-lg text-xs font-bold cursor-pointer transition-colors"
+                        title={language === 'ar' ? 'مسح' : 'Effacer'}
+                      >
+                        ✕
+                      </button>
+                    )}
+                  </div>
+                </div>
               </div>
 
               <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
@@ -3254,7 +3446,13 @@ export default function Products({ db, onUpdateDb }: ProductsProps) {
                     const sp = parseFloat((document.getElementById('rapid-selling-price') as HTMLInputElement)?.value || '0');
                     const bp = parseFloat((document.getElementById('rapid-buying-price') as HTMLInputElement)?.value || '0');
                     if (db.products) {
-                      const updated = db.products.map(p => p.id === product.id ? { ...p, sellingPrice: sp, purchasePrice: bp } : p);
+                      const updated = db.products.map(p => p.id === product.id ? { 
+                        ...p, 
+                        sellingPrice: sp, 
+                        purchasePrice: bp,
+                        expiryDate: editExpiryDate || undefined,
+                        dateExpiration: editExpiryDate || undefined
+                      } : p);
                       onUpdateDb({ ...db, products: updated });
                     }
                     setEditPriceProductId(null);
@@ -4152,6 +4350,16 @@ export default function Products({ db, onUpdateDb }: ProductsProps) {
           </div>
         )}
       </AnimatePresence>
+
+      {/* 📅 Live AI Expiry Date Camera Scanner Modal */}
+      <ExpiryDateCameraScannerModal
+        isOpen={showExpiryScannerModal}
+        onClose={() => setShowExpiryScannerModal(false)}
+        onDateExtracted={handleExpiryDateExtracted}
+        language={language}
+        productName={expiryScannerProductName}
+        initialDate={expiryScannerInitialDate}
+      />
 
     </div>
   );
