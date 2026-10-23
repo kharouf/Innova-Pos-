@@ -1829,9 +1829,12 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
     setPaidAmount(finalTotal.toString());
   };
 
-  const currentPay = Number(paidAmount) || 0;
-  const remainingDebt = Math.max(0, finalTotal - currentPay);
-  const changeDue = Math.max(0, currentPay - finalTotal);
+  const isAnonymous = !selectedPartnerId;
+  const currentPay = isAnonymous && (!paidAmount || Number(paidAmount) <= 0) 
+    ? finalTotal 
+    : (Number(paidAmount) || 0);
+  const remainingDebt = isAnonymous ? 0 : Math.max(0, finalTotal - currentPay);
+  const changeDue = Math.max(0, (Number(paidAmount) || (isAnonymous ? finalTotal : 0)) - finalTotal);
 
   const creditLimitWarning = useMemo(() => {
     if (!activePartner || activePartner.creditLimit === undefined || activePartner.creditLimit <= 0) {
@@ -1931,11 +1934,11 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
       taxRate,
       taxAmount,
       total: finalTotal,
-      paidAmount: isReturnMode ? currentPay : Math.min(finalTotal, currentPay > 0 ? currentPay : finalTotal),
-      tenderedAmount: currentPay > 0 ? currentPay : finalTotal,
+      paidAmount: isReturnMode ? currentPay : (isAnonymous ? finalTotal : Math.min(finalTotal, currentPay > 0 ? currentPay : finalTotal)),
+      tenderedAmount: isAnonymous ? (Number(paidAmount) > 0 ? Number(paidAmount) : finalTotal) : (currentPay > 0 ? currentPay : finalTotal),
       changeReturned: isReturnMode ? 0 : changeDue,
-      balance: isReturnMode ? 0 : remainingDebt,
-      dueDate: remainingDebt > 0 && !isReturnMode ? new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0] : undefined,
+      balance: isReturnMode ? 0 : (isAnonymous ? 0 : remainingDebt),
+      dueDate: remainingDebt > 0 && !isReturnMode && !isAnonymous ? new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0] : undefined,
       notes: isReturnMode 
         ? (language === 'ar' ? 'عملية إسترجاع سلع للزبون (تذكرة إرجاع)' : 'Retour de marchandise (Avoir client)')
         : paymentMethodNotes(),
@@ -2029,7 +2032,11 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
 
     // 3. Register payment transactional ledger
     const newPayments = [...(db.payments || [])];
-    if (currentPay !== 0) {
+    const amountToRecord = isAnonymous
+      ? finalTotal
+      : (currentPay !== 0 ? Math.min(finalTotal, currentPay) : finalTotal);
+
+    if (amountToRecord !== 0) {
       newPayments.unshift({
         id: `pay-${Date.now()}`,
         date: new Date().toISOString(),
@@ -2037,12 +2044,12 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
         partnerName: clientName,
         partnerType: 'client',
         type: isReturnMode ? 'payment_sent' : 'payment_received',
-        amount: Math.abs(currentPay),
+        amount: Math.abs(amountToRecord),
         notes: isReturnMode 
           ? `Remboursement espèces pour retour ${invoiceNumber}`
           : paymentMethod === 'ticket_cadeau'
             ? `Ticket Cadeau${ticketCadeauCode.trim() ? ` (Code: ${ticketCadeauCode.trim()})` : ''} pour ${invoiceNumber}`
-            : `Espèces/Chèque comptant pour ${invoiceNumber}`,
+            : `${paymentMethod === 'carte' ? 'Carte bancaire' : paymentMethod === 'cheque' ? 'Chèque' : 'Espèces / Vente Comptoir'} pour ${invoiceNumber}`,
         invoiceId: newInvoice.id
       });
     } else if (isReturnMode && currentPay === 0 && selectedPartnerId) {
@@ -2129,23 +2136,23 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
       return;
     }
     
-    if (!selectedPartnerId && remainingDebt > 0) {
-      showToast(language === 'ar' ? "⚠️ العميل مجهول: لا يمكن تسجيل دين." : "⚠️ Client anonyme: impossible de reporter un crédit.", 'error');
-      return;
+    // For registered partner with debt: validate credit if applicable
+    // For anonymous client: ALWAYS PASS checkout directly, never block!
+    if (useOtpVerification && selectedPartnerId) {
+      const activePartner = db.partners.find(p => p.id === selectedPartnerId);
+      if (activePartner && (activePartner.phone || db.settings?.storePhone)) {
+        const targetPhone = activePartner?.phone || db.settings?.storePhone || '+213 (0) 550 12 34 56';
+        setOtpPhoneNumber(targetPhone);
+        setOtpCodeEntered('');
+        setOtpCodeGenerated('');
+        setIsOtpSent(false);
+        setOtpError(null);
+        setShowOtpModal(true);
+        return;
+      }
     }
 
-    if (useOtpVerification) {
-      const activePartner = db.partners.find(p => p.id === selectedPartnerId);
-      const targetPhone = activePartner?.phone || db.settings?.storePhone || '+213 (0) 550 12 34 56';
-      setOtpPhoneNumber(targetPhone);
-      setOtpCodeEntered('');
-      setOtpCodeGenerated('');
-      setIsOtpSent(false);
-      setOtpError(null);
-      setShowOtpModal(true);
-    } else {
-      handleConfirmCheckout();
-    }
+    handleConfirmCheckout();
   };
 
   const paymentMethodNotes = () => {
@@ -2153,7 +2160,7 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
       const codeStr = ticketCadeauCode.trim() ? ` (Code: ${ticketCadeauCode.trim()})` : '';
       return `Payé par Ticket Cadeau${codeStr}`;
     }
-    if (remainingDebt === 0) return 'Payé comptant';
+    if (!selectedPartnerId || remainingDebt === 0) return 'Payé comptant';
     if (currentPay === 0) return 'À crédit (30 jours)';
     return `Payé partiel: ${formatCurrency(currentPay)} - Reste à crédit: ${formatCurrency(remainingDebt)}`;
   };
@@ -2785,12 +2792,50 @@ export default function POS({ db, onUpdateDb, onNavigate }: POSProps) {
           handleUpdateQty={handleUpdateQty}
           handleCheckoutClick={handleCheckoutClick}
           isReturnMode={isReturnMode}
+          setIsReturnMode={setIsReturnMode}
           isFullscreen={isFullscreen}
           playScanBeep={playScanBeep}
           showToast={showToast}
           setCart={setCart}
           selectedPartnerId={selectedPartnerId}
           setSelectedPartnerId={setSelectedPartnerId}
+          heldTickets={heldTickets}
+          onOpenHeldTickets={() => setIsHeldTicketsOpen(true)}
+          onHoldCurrentCart={() => handleHoldCurrentCart()}
+          onToggleCamera={() => setIsCameraActive(!isCameraActive)}
+          subTotal={subTotal}
+          cartHTAmount={cartHTAmount}
+          finalTaxAmount={finalTaxAmount}
+          activePartner={activePartner}
+          clients={clients}
+          clientDiscount={clientDiscount}
+          creditLimitWarning={creditLimitWarning}
+          loyaltyDiscount={loyaltyDiscount}
+          maxPointsRedeemable={maxPointsRedeemable}
+          redeemedPoints={redeemedPoints}
+          setRedeemedPoints={setRedeemedPoints}
+          cashRegisterType={cashRegisterType}
+          setCashRegisterType={setCashRegisterType}
+          globalDiscount={globalDiscount}
+          setGlobalDiscount={setGlobalDiscount}
+          taxRate={taxRate}
+          setTaxRate={setTaxRate}
+          onOpenNewClientModal={() => setShowNewClientModal(true)}
+          isCameraActive={isCameraActive}
+          isInfraredMode={isInfraredMode}
+          setIsInfraredMode={setIsInfraredMode}
+          autoFocusScanField={autoFocusScanField}
+          setAutoFocusScanField={setAutoFocusScanField}
+          rapidScanValue={rapidScanValue}
+          setRapidScanValue={setRapidScanValue}
+          isRapidScanFocused={isRapidScanFocused}
+          setIsRapidScanFocused={setIsRapidScanFocused}
+          rapidScanInputRef={rapidScanInputRef}
+          handleResolveAndAddProduct={handleResolveAndAddProduct}
+          paymentMethod={paymentMethod}
+          setPaymentMethod={setPaymentMethod}
+          paidAmount={paidAmount}
+          setPaidAmount={setPaidAmount}
         />
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
